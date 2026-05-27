@@ -1,0 +1,78 @@
+# GitHub Pages auto-deploy workflow.
+#
+# Triggers:
+#   - push to main (re-builds HTML and publishes)
+#   - manual run (workflow_dispatch)
+#
+# After first push:
+#   1. Settings → Pages → Source: "GitHub Actions"
+#   2. The site will be available at https://<user>.github.io/<repo>/
+#
+# Notes:
+#   - PDF/EPUB are NOT built in CI by default (xelatex install is large).
+#     Uncomment the pdf-epub step if you want them included.
+name: Deploy vLLM learning docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install markdown pygments
+
+      - name: Build HTML
+        # build_html.py defaults to <repo>/_site/, which is also where
+        # actions/upload-pages-artifact expects to find the site. No env
+        # override needed.
+        run: python3 build_html.py
+
+      # Uncomment to also produce PDF/EPUB on every push.
+      # - name: Install pandoc + xelatex
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended fonts-noto-cjk
+      # - name: Build PDF + EPUB
+      #   env:
+      #     VLLM_LEARNING_DST: ${{ github.workspace }}/_site
+      #   run: |
+      #     # Linux uses Noto Sans CJK SC instead of PingFang SC.
+      #     sed -i 's|PingFang SC|Noto Sans CJK SC|g' build_pdf_epub.py
+      #     python3 build_pdf_epub.py
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
