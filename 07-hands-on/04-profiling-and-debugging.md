@@ -465,16 +465,23 @@ benchmarks/benchmark_serving.py \
 ```
 
 **在 trace 里找什么**：
-```
-最慢的 root span: engine_step (duration: 850ms)  ← 异常长（正常 30-50ms）
-├── schedule (5ms)
-├── execute_model (840ms)               ← GPU forward 极慢
-│   ├── forward (200ms)                  ← 这一步正常
-│   ├── preempt_requests (300ms)         ← 触发了 preempt
-│   │   ├── free_blocks (50ms)
-│   │   └── update_block_table (250ms)   ← block_table 更新慢，是热点
-│   └── update_from_output (340ms)       ← 触发了 swap-in
-└── ...
+```mermaid
+flowchart TD
+    R["engine_step<br/>850 ms ⚠️ 异常长（正常 30-50 ms）"]
+    R --> S["schedule<br/>5 ms ✓"]
+    R --> E["execute_model<br/>840 ms ⚠️"]
+    E --> F["forward<br/>200 ms ✓"]
+    E --> P["preempt_requests<br/>300 ms ⚠️"]
+    E --> U["update_from_output<br/>340 ms ⚠️ 触发 swap-in"]
+    P --> FB["free_blocks<br/>50 ms"]
+    P --> UB["update_block_table<br/>250 ms 🔥 热点"]
+
+    classDef ok fill:#dcfce7,stroke:#15803d,color:#1a1f29;
+    classDef warn fill:#fef3c7,stroke:#b45309,color:#1a1f29;
+    classDef hot fill:#fee2e2,stroke:#b91c1c,color:#1a1f29;
+    class S,F ok;
+    class R,E,P,U,FB warn;
+    class UB hot;
 ```
 
 **典型发现**：

@@ -87,16 +87,21 @@ spec:
 
 普通服务冷启 2-10s，LLM 是 1-10 **分钟**：
 
-```
-Pod 创建    ─►  3-10s   K8s schedule
-镜像拉取    ─►  30-300s 镜像大 (15-30GB)
-权重下载    ─►  60-600s 模型权重 (10-300GB)
-profile run ─►  10-30s  vLLM 测显存
-torch.compile ─► 30-300s 第一次编译
-CUDA Graph capture ─► 10-60s 多个 batch_size
-warmup      ─►  5-30s   填 prefix cache
-                ────
-总计：2-20 分钟才能服务请求
+```mermaid
+flowchart LR
+    A["Pod 创建<br/>3-10 s<br/>K8s schedule"] --> B
+    B["镜像拉取<br/>30-300 s<br/>镜像 15-30 GB"] --> C
+    C["权重下载<br/>60-600 s<br/>权重 10-300 GB"] --> D
+    D["profile run<br/>10-30 s<br/>vLLM 测显存"] --> E
+    E["torch.compile<br/>30-300 s<br/>第一次冷编译"] --> F
+    F["CUDA Graph<br/>10-60 s<br/>多 batch size capture"] --> G
+    G["warmup<br/>5-30 s<br/>填 prefix cache"] --> H
+    H(["可服务请求<br/>累计 2-20 分钟"])
+
+    classDef stage fill:#fef3c7,stroke:#b45309,color:#1a1f29;
+    classDef ready fill:#dcfce7,stroke:#15803d,color:#1a1f29;
+    class A,B,C,D,E,F,G stage;
+    class H ready;
 ```
 
 **这意味着 reactive autoscaling 不够**。等指标涨起来再扩，业务已经崩了 5 分钟。
@@ -164,18 +169,12 @@ spec:
 
 最常见问题之一。给个**口算公式**：
 
-```
-所需 Pod 数 = ceil(
-    峰值 RPS × avg_request_duration_seconds
-    ─────────────────────────────────────────
-    每 Pod 并发能力 × utilization_target
-)
-```
+$$\text{Pods} = \left\lceil \frac{\text{RPS}_{\text{peak}} \times \overline{\text{duration}}}{\text{capacity\_per\_pod} \times u_{\text{target}}} \right\rceil$$
 
 其中：
-- `avg_request_duration` ≈ TTFT + avg_output_tokens × TPOT
-- `每 Pod 并发能力` ≈ `kv_capacity_tokens / avg_total_tokens_per_request`
-- `utilization_target` 取 0.6-0.7（留缓冲应对峰值）
+- $\overline{\text{duration}} \approx \text{TTFT} + \overline{\text{output\_tokens}} \times \text{TPOT}$
+- $\text{capacity\_per\_pod} \approx \dfrac{\text{kv\_capacity\_tokens}}{\overline{\text{total\_tokens\_per\_request}}}$
+- $u_{\text{target}} \in [0.6, 0.7]$（留缓冲应对峰值）
 
 ### 示例：Llama-3-70B chat 服务
 - 峰值 100 RPS
