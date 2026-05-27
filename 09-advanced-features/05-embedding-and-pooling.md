@@ -212,15 +212,13 @@ API 通过 `PoolingTask` 控制返回哪个。
 
 ## 9. Late Interaction（ColBERT）
 
-`vllm/v1/pool/late_interaction.py` 实现 ColBERT 的 token-level 相似度：
+`vllm/v1/pool/late_interaction.py` 实现 ColBERT 的 token-level 相似度。
 
-```
-query embedding: [Lq, dim]
-doc embedding:   [Ld, dim]
-score = sum_i max_j (q_i · d_j)
-```
+给定 query embedding 形状 $[L_q, d]$ 和 doc embedding 形状 $[L_d, d]$（每行是一个 token 的 embedding），score 是 **MaxSim**——每个 query token 找它在 doc 里相似度最大的 token，再求和：
 
-这是 reranker 模型（rerank-large, bge-reranker）的核心。vLLM 把 token-level pooling（`TokenPooler`，返回 all token embeds）+ 外部 score 算法分开。
+$$\text{score}(q, d) = \sum_{i=1}^{L_q} \max_{j=1, \ldots, L_d} \, q_i \cdot d_j$$
+
+这是 reranker 模型（rerank-large、bge-reranker）的核心。vLLM 把 token-level pooling（`TokenPooler`，返回 all token embeds）+ 外部 score 算法分开。
 
 ---
 

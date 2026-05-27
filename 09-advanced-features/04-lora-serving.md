@@ -18,16 +18,14 @@
 
 ## 1. LoRA 基础（30 秒回顾）
 
-LoRA = Low-Rank Adaptation。微调时不动 base weight `W (d×d)`，而是新增两个小矩阵：
+LoRA = Low-Rank Adaptation。微调时不动 base weight $W \in \mathbb{R}^{d \times d}$，而是新增两个小矩阵 $B \in \mathbb{R}^{d \times r}$、$A \in \mathbb{R}^{r \times d}$，$r \ll d$（常 8–64）：
 
-```
-delta_W = B · A     # B: [d, r], A: [r, d]，r << d (常 8~64)
-W_eff = W + alpha/r · B·A
-output = x · W_eff = x·W + alpha/r · x·B·A
-```
+$$\Delta W = B A, \quad W_{\text{eff}} = W + \frac{\alpha}{r} \, B A$$
 
-只需要存 `B, A`（几十 MB / adapter，远小于 base 模型几十 GB）。
-推理时把 `delta` 加上去就成另一个"模型"。
+$$\text{output} = x \, W_{\text{eff}} = x W + \frac{\alpha}{r} \, x B A$$
+
+只需要存 $B, A$（几十 MB / adapter，远小于 base 模型几十 GB）。
+推理时把 $\Delta$ 加上去就成另一个"模型"。
 
 ---
 

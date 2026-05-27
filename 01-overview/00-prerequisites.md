@@ -90,30 +90,22 @@ LLM 99% 是 **decoder-only Transformer**（GPT 家族）。一层 Transformer �
 
 ### 2.1 Attention 公式（背下来）
 
-```
-            Q · K^T
-Attention(Q, K, V) = softmax( ──────── ) · V
-                              √ d_k
-```
+$$\text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{Q K^{\top}}{\sqrt{d_k}}\right) V$$
 
 直观理解：
 
 - **Q（Query）**：当前 token "我想找谁"
 - **K（Key）**：每个 token "我能被找到的特征"
 - **V（Value）**：每个 token "我的具体内容"
-- `Q·K^T` → 每个 token 与所有 token 的相似度矩阵
+- $Q K^{\top}$ → 每个 token 与所有 token 的相似度矩阵
 - softmax 把相似度变成概率（注意力权重）
-- 权重乘 V → 加权求和的结果
+- 权重乘 $V$ → 加权求和的结果
 
 每个 token 算自己的 Q、K、V：
 
-```
-Q_i = x_i · W_Q       # x_i 是第 i 个 token 的输入向量
-K_i = x_i · W_K
-V_i = x_i · W_V
-```
+$$Q_i = x_i W_Q, \quad K_i = x_i W_K, \quad V_i = x_i W_V$$
 
-`W_Q / W_K / W_V` 是模型权重，**对所有 token 共享**。
+其中 $x_i$ 是第 $i$ 个 token 的输入向量。$W_Q, W_K, W_V$ 是模型权重，**对所有 token 共享**。
 
 ### 2.2 多头注意力
 
@@ -225,25 +217,17 @@ flowchart LR
 
 ### 4.1 KV cache 多大？
 
-一个 token 在一个 attention 层占的 KV 大小：
+一个 token 在一个 attention 层占的 KV 大小（每 token 都要存 K 和 V 两份）：
 
-```
-per_token_kv_bytes = 2  ×  hidden_size  ×  dtype_bytes
-                    ↑       ↑              ↑
-                    K + V   每 token 隐藏维  FP16 = 2
-```
+$$\text{per\_token\_layer\_bytes} = 2 \times \text{hidden\_size} \times \text{dtype\_bytes}$$
 
-整个模型 N 层：
+整个模型 $N$ 层累加：
 
-```
-per_token_total = N × 2 × hidden × dtype_bytes
-```
+$$\text{per\_token\_total} = N \times 2 \times \text{hidden\_size} \times \text{dtype\_bytes}$$
 
-Llama-3-70B 实例：N=80、hidden=8192、BF16：
+Llama-3-70B 实例：$N = 80$、hidden = 8192、BF16（2 字节）：
 
-```
-per_token = 80 × 2 × 8192 × 2 = 2,621,440 字节 ≈ 2.5 MB
-```
+$$\text{per\_token} = 80 \times 2 \times 8192 \times 2 = 2{,}621{,}440 \text{ 字节} \approx 2.5 \text{ MB}$$
 
 一个 4K token 的请求 → 10 GB KV！一张 80GB H100 也装不下几个并发请求。
 

@@ -115,9 +115,7 @@ flowchart LR
 
 数学公式还是经典的：
 
-```
-out = softmax(Q · K^T / √d) · V
-```
+$$\text{out} = \text{softmax}\!\left(\frac{Q K^{\top}}{\sqrt{d}}\right) V$$
 
 K、V 不再是连续张量，要通过 block table 间接访问。
 
