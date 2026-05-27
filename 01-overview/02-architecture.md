@@ -347,22 +347,32 @@ vLLM 不是凭空发明新概念，而是把**操作系统的虚拟内存 + 分�
 
 **1. 画出完整请求路径，标 IPC 机制。**
 
-```
-[Client HTTP POST /v1/chat/completions]
-         ↓ TCP / HTTP
-[API Server 进程]   (FastAPI / uvloop)
-         ↓ ZMQ ROUTER↔DEALER + msgspec.msgpack
-[EngineCore 进程]   (Scheduler + Executor)
-         ↓ shared-memory MessageQueue + PickleBuffer OOB（零拷贝）
-[Worker 进程 × N]   (每 GPU 一个，绑 local_rank)
-         ↓ CUDA stream
-[GPU forward]       (Worker 间 NCCL AllReduce)
-         ↓ shared-memory MQ 回流
-[EngineCore]
-         ↓ ZMQ PUSH↔PULL + msgpack
-[API Server]
-         ↓ HTTP SSE 流式
-[Client]
+```mermaid
+flowchart TB
+    Client["客户端<br/>HTTP POST /v1/chat/completions"]
+    API["API Server 进程<br/>FastAPI / uvloop"]
+    Engine["EngineCore 进程<br/>Scheduler + Executor"]
+    W0["Worker 0<br/>GPU 0"]
+    W1["Worker 1<br/>GPU 1"]
+    Wn["Worker N-1<br/>GPU N-1"]
+
+    Client -- "TCP / HTTP" --> API
+    API -- "ZMQ ROUTER↔DEALER<br/>+ msgspec.msgpack" --> Engine
+    Engine -- "shared-memory MQ<br/>+ PickleBuffer OOB 零拷贝" --> W0
+    Engine -- "shared-memory MQ" --> W1
+    Engine -- "shared-memory MQ" --> Wn
+    W0 <-. "NCCL AllReduce<br/>NVLink / IB" .-> W1
+    W1 <-. "NCCL" .-> Wn
+    W0 -- "shared-memory MQ 回流" --> Engine
+    Engine -- "ZMQ PUSH↔PULL<br/>+ msgpack" --> API
+    API -- "HTTP SSE 流式" --> Client
+
+    classDef client fill:#fef3c7,stroke:#b45309,color:#1a1f29;
+    classDef proc fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
+    classDef worker fill:#dcfce7,stroke:#15803d,color:#1a1f29;
+    class Client client;
+    class API,Engine proc;
+    class W0,W1,Wn worker;
 ```
 
 **三层 IPC 的关键区别**：

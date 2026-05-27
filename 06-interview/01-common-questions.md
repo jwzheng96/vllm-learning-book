@@ -201,39 +201,38 @@
 
 **2. Q4（请求生命周期）时序图，标进程归属。**
 
-```
-[Client / API Server 进程]                  [EngineCore 进程]              [Worker 进程×N]
-       │                                            │                              │
-   add_request                                       │                              │
-   (HTTP → tokenize)                                 │                              │
-       │  ZMQ DEALER → ROUTER                        │                              │
-       ├────────────────────────────────────────────►│                              │
-       │                                       入 waiting queue                      │
-       │                                            │                              │
-       │  step（每 10-50 ms 一次循环）                  │                              │
-       │                                       schedule()                            │
-       │                                       (CPU 算 budget / preempt)              │
-       │                                            │  共享内存 MQ (零拷贝)              │
-       │                                            ├─────────────────────────────►│
-       │                                            │                       execute_model()
-       │                                            │                       (forward + sample)
-       │                                            │  共享内存 MQ ◄────────────────│
-       │                                            │                              │
-       │                                       update_from_output                   │
-       │                                       (token append, finished check)        │
-       │                                            │                              │
-       │  ZMQ PUSH ← PULL (token / finished 流式回传)  │                              │
-       │◄────────────────────────────────────────────│                              │
-       │                                            │                              │
-   stream to client                                  │                              │
-       │                                            │                              │
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as 客户端
+    participant A as API Server 进程<br/>FastAPI / uvloop
+    participant E as EngineCore 进程<br/>Scheduler + Executor
+    participant W as Worker 进程 × N<br/>每 GPU 一个
+
+    C->>A: HTTP POST /v1/chat/completions
+    Note over A: tokenize + 构造 Request
+    A->>E: add_request<br/>(ZMQ ROUTER↔DEALER + msgpack)
+    Note over E: 请求入 waiting queue
+
+    loop 每 10-50 ms 一个 step
+        E->>E: schedule()<br/>CPU 算 budget / preempt
+        E->>W: SchedulerOutput<br/>(共享内存 MQ + OOB 零拷贝)
+        activate W
+        Note over W: execute_model<br/>forward + sample (GPU)
+        W-->>E: ModelRunnerOutput<br/>(共享内存 MQ 回流)
+        deactivate W
+        E->>E: update_from_output<br/>token append + 结束检查
+        E-->>A: 新 token / finished<br/>(ZMQ PUSH↔PULL)
+        A-->>C: SSE stream chunk
+    end
 ```
 
 **进程归属总结**：
-- `add_request`：API Server 进程接收，序列化后 ZMQ 发到 EngineCore
+- `add_request`：API Server 进程接收（tokenize），ZMQ 发到 EngineCore
 - `schedule`：EngineCore 进程内（CPU 跑）
 - `execute_model`：EngineCore 进程发起，Worker 进程接收并跑（GPU 跑）
-- `update_from_output`：EngineCore 进程内（Worker 把结果传回 EngineCore）
+- `update_from_output`：EngineCore 进程内（Worker 把结果传回 EngineCore 后处理）
+- `SSE stream`：API Server 流式回客户端，每 step 一次
 
 ---
 
