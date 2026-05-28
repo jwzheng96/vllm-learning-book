@@ -344,6 +344,7 @@ A: ①避免每步重新分配 GPU tensor；②满足 CUDA Graph 对固定地址
 **规则**：维护一个 `free_rows` 集合（位图或 list）。新请求来时优先从 `free_rows.pop()` 取**最小空闲 row index**；没有空闲时往 `next_row` 扩。请求结束 / preempt 时把 row 加回 `free_rows`。
 
 **关键**：**复用 free row 而不重新分配**。原因：
+
 - InputBatch 是预分配的固定大 buffer（`[max_num_seqs, max_model_len]`）
 - 复用 row 意味着 GPU tensor 地址不变 → CUDA Graph 可以跨 step 复用
 - 紧致填充（取 min index）→ 实际跑的 batch 是 `input_batch[:num_active_rows]`，省去对未用 row 的计算
@@ -357,6 +358,7 @@ A: ①避免每步重新分配 GPU tensor；②满足 CUDA Graph 对固定地址
 **只算 1 条 logits**（最后一个 token 的 hidden_state → lm_head）。
 
 **为什么？**
+
 - Prefill 的目的是把 prompt 的 KV 写入 cache，**不需要中间每个 token 的 logits**——这些 token 是用户给的，已知
 - 只有最后一个 token 的 logits 用来采样**第一个新 token**
 

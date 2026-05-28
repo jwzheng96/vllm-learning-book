@@ -360,11 +360,13 @@ TP=4 时共 **6 个进程**：1 API + 1 EngineCore + 4 Worker。
 **改 EngineCore**（`vllm/v1/engine/core.py` 的 `EngineCoreProc.step()` 内）。
 
 **理由**：
+
 - `LLMEngine.step()` 只是个**客户端 wrapper**——把请求扔给 EngineCore，再从 ZMQ 收回结果。它根本不知道 EngineCore 内部 schedule 了多少 token
 - `EngineCoreProc.step()` 是真正的"step"——它持有 `scheduler_output.total_num_scheduled_tokens` 字段，直接 log 即可
 - 加在 LLMEngine 端只能拿到"完成的请求数"，拿不到"本步 token 数"——粒度不对
 
 **实际代码**（伪）：
+
 ```python
 # vllm/v1/engine/core.py
 def step(self):

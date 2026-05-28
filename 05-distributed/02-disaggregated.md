@@ -223,6 +223,7 @@ class KVConnectorBase(ABC):
 ```
 
 **接入新 transport 要做的事**：
+
 1. 继承 `KVConnectorBase`，实现上面 3 个方法
 2. 把传输细节封装在内部（建立连接、序列化 KV、流控）
 3. 通常需要异步（`send` 返回 Future）—— scheduler 不能阻塞等
@@ -236,16 +237,19 @@ class KVConnectorBase(ABC):
 **2. prefill 节点跑到 80% 时崩了，请求会怎样？**
 
 **默认 vLLM 行为**：
+
 1. **检测**：decode 节点等 KV 超时（默认 30-60s timeout）→ 标该请求 failed
 2. **响应**：API Server 收到 abort，返回 5xx 错误给客户端
 3. **重试**：取决于客户端策略，vLLM 自己不重试
 
 **进阶（部分平台如 llm-d 实现）**：
+
 1. **重新调度**：把请求送回 prefill 节点池（新选一个健康节点），从头开始 prefill
 2. **代价**：80% 的 prefill 算力全部白费
 3. **复杂度**：需要 router 层记得请求原始 prompt（API Server 端的状态），prefill 输出尚未到 decode 时算丢失
 
 **生产建议**：
+
 - prefill 集群冗余度高于 decode（prefill 重做代价更高）
 - 设置合理的 prefill 超时（不能太短让正常长 prompt 误杀，也不能太长拖累恢复）
 - 监控 `prefill_node_failure_total` metric，超阈值告警
@@ -255,6 +259,7 @@ class KVConnectorBase(ABC):
 **3. 为什么用 InfiniBand / RoCE 而不是以太网？100K token KV 转多少 MB？**
 
 **Llama-70B KV 计算**（GQA：8 KV head × 128 head_dim × 80 layer）：
+
 - 单 token KV = 2 (K+V) × 8 × 128 × 80 × 2 (BF16) = **327,680 字节 ≈ 320 KB**
 - 100K token = 320 KB × 100,000 = **32 GB**（确实大）
 
@@ -277,6 +282,7 @@ class KVConnectorBase(ABC):
 **4. prefix cache 在 disaggregated 下命中率怎么变？怎么补救？**
 
 **变差**。原因：
+
 1. **prefill 集群分片**：原本同 prompt 命中同一 vLLM 实例的 cache，disaggregated 后分散到多个 prefill 节点，每个节点的 cache 独立 → 命中率 ÷ prefill_node_count
 2. **decode 节点 cache 失效**：decode 节点收到的 KV 是"传过来的"，不算 cache 命中（每次都重传等价于重算）
 

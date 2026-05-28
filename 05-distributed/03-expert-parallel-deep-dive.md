@@ -278,6 +278,7 @@ vllm serve deepseek-ai/DeepSeek-V3 \
 **前提**：装 `deep_ep` 库（`pip install deep_ep`）+ NVLink 集群。
 
 **观察 metric**：
+
 1. **`vllm:time_to_first_token_seconds` p99** —— prefill TTFT 应明显下降（AllToAll 占 prefill 不小）
 2. **`vllm:request_time_per_output_token_seconds`** —— decode TPOT 看是否抖动减小
 3. **`nvidia-smi dmon`** 或 NCCL profile —— 每层 AllToAll 时长（AgRs 1-2 ms，DeepEP HT 0.2-0.8 ms，5× 提速）
@@ -324,6 +325,7 @@ def use_deepep_ll_kernels(self):
 ```
 
 **两个条件**：
+
 1. `use_all2all_kernels`：需要 `dp_size > 1` **且** `use_ep == True`
 2. `all2all_backend == "deepep_low_latency"`
 

@@ -340,6 +340,7 @@ K_full = concat(K_nope, K_rope) # 完整 K
 ```
 
 **为什么拆？**
+
 - RoPE（旋转位置编码）需要对 K 的某些维度做位置变换；如果先压到 latent 再展开，**位置信息丢失**（latent 维度太低，丢失高频）
 - 解法：把 K 拆成两段——`K_nope` 走 latent 压缩节省 KV cache；`K_rope` 维持原维度独立存，专门承载位置信息
 - 形状：`K_nope` 维度 = `qk_nope_head_dim`（128），`K_rope` 维度 = `qk_rope_head_dim`（64）
@@ -366,6 +367,7 @@ Jamba 是 hybrid 架构：部分层是 Mamba（SSM state），部分层是 Atten
 3. 都成功才整体成功；任一失败回滚
 
 **group_id 与 block_table 关系**：
+
 - request 的 `block_ids` 是 `dict[group_id, list[int]]`
 - `block_ids[0]` 是 attention block 序列，`block_ids[1]` 是 Mamba state block 序列
 - 两组长度不同：attention 按 token 累积，Mamba 通常每层一个固定大小的 state（不按 token 增长）
@@ -381,11 +383,13 @@ Jamba 是 hybrid 架构：部分层是 Mamba（SSM state），部分层是 Atten
 **输入**：每个 token 的 expert id（top-k 选出来的）`[B × k]`，比如 `[3, 1, 7, 3, 1, 5, ...]`
 
 **输出**：
+
 - `sorted_token_ids`：按 expert id 排序后的 token id 列表
 - `expert_ids`：每个 group 对应哪个 expert
 - `num_tokens_post_padded`：padding 后总 token 数（pad 到 `block_size` 倍数）
 
 **为什么加速**：
+
 1. **按 expert 分组**：原本 token 散落（用户角度），排序后**同一 expert 的 token 连续**
 2. **Grouped GEMM 友好**：CUDA grouped gemm 接口要求"每个 group 是一段连续 batch"，排序后正好满足
 3. **CTA 分配清晰**：每个 expert 一个 CTA 块，处理它那段连续 token，wave 数减少
@@ -409,6 +413,7 @@ T=M+1: 下一 step forward 开始用新表，dispatch 时 token 在 A/B 间负�
 ```
 
 **关键点**：
+
 - weights 复制期间 router 表**未变**，forward 仍 dispatch 到 rank A——正确性不破坏
 - 切换是**整步边界**进行（同步点）——不在 forward 中途切
 - 切换后旧 weights 不立刻 free（要等所有还在 fly 的 token 处理完）

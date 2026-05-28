@@ -203,6 +203,7 @@ python benchmarks/benchmark_serving.py \
 **算法**：启动时跑一次 `profile_run`（用 max_num_batched_tokens 的 dummy batch 走一次 forward），观察峰值显存占用，剩下的显存按"单 block 字节数"切成 num_blocks。
 
 **影响 N 的 3 个启动参数**：
+
 1. **`--gpu-memory-utilization`**（默认 0.9）：可用显存上限 = total × util。util 调到 0.95 → 多 5GB → 多约 2000 个 block
 2. **`--block-size`**（默认 16）：单 block 字节数 = block_size × num_kv_heads × head_dim × layers × 2 (K+V) × dtype_bytes。block_size 翻倍 → 单 block 翻倍 → num_blocks 减半
 3. **`--max-num-batched-tokens`**（默认 8192）：profile run 用的 dummy batch 大小，越大占用激活越多 → 留给 KV 的剩余显存越少 → num_blocks 减少
@@ -216,6 +217,7 @@ python benchmarks/benchmark_serving.py \
 **2. `enforce_eager=True` 去掉后启动时间增加多少？TPOT 下降？**
 
 **启动时间**：
+
 - `enforce_eager=True`：跳过 CUDA Graph capture，启动快约 **30-60 秒**
 - 去掉后：CUDA Graph 录制需要遍历 capture sizes（如 [1,2,4,8,16,32,...,256]），单个 capture 1-5 秒，总共增加 **30-120 秒**
 - 加上 torch.compile（默认开），首次编译再加 **30-300 秒**
@@ -223,11 +225,13 @@ python benchmarks/benchmark_serving.py \
 → 启动总时长从 ~30s 涨到 1-5 分钟。生产部署用 `VLLM_TORCH_COMPILE_CACHE_DIR` + 持久 CG cache 减轻。
 
 **TPOT 是否下降**：
+
 - **下降**，典型 decode TPOT 从 30-50ms 降到 20-30ms（30-40% 提速）
 - 原因：CUDA Graph 消 kernel launch overhead，每步省几 ms；torch.compile fusion 再省几 ms
 - 但**首请求 TPOT 会变高**（先触发 compile），第二个请求开始才稳定
 
 **实测对比**（Llama-3-8B + H100 + decode batch=8）：
+
 - `enforce_eager=True`：TPOT median 38 ms
 - 默认（CG + compile）：TPOT median 24 ms
 
@@ -240,22 +244,26 @@ python benchmarks/benchmark_serving.py \
 设系统单 GPU 极限吞吐约 50 req/s（看模型大小）。
 
 **`--request-rate 10`（10 req/s）**：
+
 - 远低于极限 → 请求几乎不排队
 - TTFT p99 ~ 单请求 prefill 时长 = 50-200 ms
 - throughput = 10 req/s（达到 offered load）
 - KV cache utilization 低（30-50%）
 
 **`--request-rate 100`（100 req/s）**：
+
 - 远超极限 → 请求大量堆积在 waiting queue
 - TTFT p99 ~ "排队时长 + prefill 时长" = 几秒甚至几十秒
 - throughput 被卡在 50 req/s（系统极限）
 - KV utilization ~100%，开始触发 preempt
 
 **拐点（约 50 req/s 附近）**：
+
 - 之下：TTFT 缓慢上升、throughput 线性跟随 rate
 - 之上：TTFT 雪崩式增长（排队论 M/M/1 公式：等待时间 ∝ 1/(μ-λ)，λ 接近 μ 时趋无穷）、throughput 平台
 
 **生产意义**：
+
 - 用 `benchmark_serving.py` 找到拐点 → 单实例容量
 - 设 HPA target = 拐点的 70%（留缓冲）
 - 跨过拐点的告警条件：`vllm:num_requests_waiting` > 阈值 + `vllm:kv_cache_usage_perc` > 0.9
@@ -267,6 +275,7 @@ python benchmarks/benchmark_serving.py \
 **4. `gpu_memory_utilization=0.95` 触发 OOM，错误栈定位到哪？**
 
 **错误链路**：
+
 1. profile_run 时分配比 0.9 时更多的 activation buffer
 2. capture CUDA Graph 时还要额外 1-2 GB
 3. 总占用 > 0.95 × HBM → CUDA OOM
@@ -284,11 +293,13 @@ torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate ...
 ```
 
 **真正的"分配出错点"**：
+
 - 如果在 profile_run 时 OOM：`vllm/v1/worker/gpu_worker.py::determine_available_memory()`
 - 如果在 CG capture 时 OOM：`vllm/v1/worker/gpu_model_runner.py::capture_model()`
 - 如果在请求时 OOM（kvcache 容量不够）：`vllm/v1/core/block_pool.py::get_new_blocks()` 抛 IndexError 而非 OOM——这是 vLLM 设计：kvcache 满了应该 preempt 而不是真 OOM
 
 **修法**：
+
 - 调回 `--gpu-memory-utilization 0.9` 或更小
 - 看启动日志的 "available memory" 行确认 vLLM 估算
 - 加 `VLLM_LOGGING_LEVEL=DEBUG` 看更详细的显存分配 trace

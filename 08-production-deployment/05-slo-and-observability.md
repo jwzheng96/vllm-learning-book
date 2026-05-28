@@ -348,11 +348,13 @@ sum(rate(vllm:time_to_first_token_seconds_count[5m])) by (model_name)
 ```
 
 **结果是 0-1 之间的"合规率"**。如果 SLO 是 99%（即 p99 < 500ms 等价于 ≥99% 请求 < 500ms），告警条件：
+
 ```promql
 (合规率) < 0.99
 ```
 
 **如果 le 没有正好 0.5 这个 bucket**，方案 B 用 `histogram_quantile` 反查：
+
 ```promql
 histogram_quantile(0.99,
   sum by (le)(rate(vllm:time_to_first_token_seconds_bucket[5m]))
@@ -405,6 +407,7 @@ TPOT p99 抖动
 **不能的原因**：
 
 **Prometheus metric label = 笛卡尔积维度**。每多一个 unique label value，metric 就多一个 time series。
+
 - 100 万用户 × 80 个 vllm metric = **8 千万 time series**
 - Prometheus 内存爆（每 series ~3KB → 240 GB 内存）
 - query 慢得离谱（GROUP BY 上百万 series）
@@ -420,6 +423,7 @@ TPOT p99 抖动
 | 用户级限流 | Redis / 内存 counter，不进 Prometheus |
 
 **Prometheus label 选什么**：
+
 - 低基数：`model_name`（< 10 个）、`finished_reason`（< 5 个）、`backend`（< 5 个）、`pod`（< 100 个）
 - **绝对不要**：user_id、request_id、prompt（hash 也不行，hash 仍是高基数）
 
@@ -434,15 +438,18 @@ TPOT p99 抖动
 **`vllm:num_requests_waiting`**（gauge）
 
 **验证假设**：
+
 - 如果 waiting 也持续高 → 真的是流量超容量，**应该扩容（HPA）**
 - 如果 waiting 时高时低（spike）→ 流量突刺，需要更激进的 HPA 或 admission control
 - 如果 waiting 低但 queue_wait 仍高 → **`vllm:kv_cache_usage_perc`**——KV 满了，新请求即使被 scheduler"看到"也无法 allocate slot，卡在 waiting
 
 **进一步验证**：
+
 - `rate(vllm:num_preemptions_total[5m])` 高 → 频繁踢人 + 重 admit，导致 queue 抖
 - `vllm:num_requests_running` 是否长期低于 max_num_seqs → 如果是，说明不是 batch 满，是 KV 满
 
 **修复路径决策**：
+
 - 单 pod 容量够（waiting 0 spike）→ HPA 扩 pod 数
 - 单 pod KV 满 → 调 `--gpu-memory-utilization` 或减 `max_num_seqs`
 - workload 突刺导致 → 引入 admission control + rate limit

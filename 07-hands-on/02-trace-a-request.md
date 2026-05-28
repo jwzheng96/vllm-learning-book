@@ -202,11 +202,13 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 假设 prompt 占 N 个 block。
 
 **第 1 次**：
+
 - prefix 命中 0 个（首次，cache 为空）
 - alloc N 个 block prefill + 后续 decode 累积
 - `free_blocks` 减少 N + decode 增量
 
 **第 2 次（同 prompt）**：
+
 - prefix 命中 **N-1 个 block**（最后一个 block 因为只用了部分 token，下次匹配时 hash 不同——见 [`02-core-concepts/04-prefix-caching.md`](../02-core-concepts/04-prefix-caching.md) §5.1）。注意：若是完美 block 对齐的 prompt，可能命中全部 N 个 block
 - 命中的 block ref_cnt++ → **它们不从 free_queue 取出**（已被引用），所以 free_blocks 不减
 - 只需要 alloc decode 累积的少量 block
@@ -243,12 +245,14 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 ```
 
 **chunked prefill 救短请求的原理**：
+
 - 每步都给短请求 1 个 decode token slot（除了 step 1 它在 prefill）
 - 长请求被切成 chunk（1998, 2047, 955），不是 5000 一次性
 - 每步 GPU 时长稳定约 2048 token forward
 - 短请求每步都能 decode → TPOT 平稳
 
 **反例（不开 chunked prefill）**：
+
 ```
 step 1: {req_short: 50, req_long: 5000} → total 5050, 单步几百 ms
   这一步内 req_long 5000 token prefill 全跑
@@ -263,6 +267,7 @@ step 2: 全员 decode
 **3. `num_preemptions_total` 与 `gpu_cache_usage_perc` 因果关系。**
 
 **因果链**：
+
 ```
 请求并发 ↑
   → KV 占用 ↑                    （vllm:gpu_cache_usage_perc 升高）
@@ -273,6 +278,7 @@ step 2: 全员 decode
 ```
 
 **典型曲线**：
+
 ```
 gpu_cache_usage:    ____......^^^^____...^^^^____
                                 ↑           ↑
@@ -283,6 +289,7 @@ preemptions:        ____________╱___________╱___
 `preemptions` 几乎只在 `cache_usage > 0.9` 时增长——存在强因果。如果 `preemptions` 涨而 `cache_usage` 不高，多半是 PRIORITY 模式下优先级反演（高优请求挤低优）。
 
 **告警规则**：
+
 ```promql
 # 容量预警
 vllm:gpu_cache_usage_perc > 0.9 for 5m → warning
@@ -301,6 +308,7 @@ gpu_cache_usage > 0.95 AND preempt_rate > 1 → critical (扩容)
 **4. torch.profiler prefill vs decode 排前 3 kernel + 差异。**
 
 **Prefill 阶段排前 3**（典型）：
+
 1. `flash_attn_varlen_func` 或 `_flash_attn_v3_fwd_kernel` — attention 主 kernel
 2. `gemm_kernel`（cuBLAS / cutlass）— Q/K/V/O 投影 + MLP 矩阵乘
 3. `silu_and_mul_kernel`（fused）— SwiGLU MLP 激活
@@ -308,6 +316,7 @@ gpu_cache_usage > 0.95 AND preempt_rate > 1 → critical (扩容)
 特点：**compute-bound**——大 batch × 长 seq，算力打满。kernel 时长正比 token 数。
 
 **Decode 阶段排前 3**（典型）：
+
 1. `paged_attention_v2_kernel` 或 `flash_attn_with_kvcache` — 单 query attention，纯 memory-bound
 2. `gemm_kernel`（GEMM）— Linear 投影，每步 batch_size × hidden_size 的矩阵乘
 3. `_rms_norm_kernel` 或 `reshape_and_cache_kernel` — LayerNorm + KV 写入 cache

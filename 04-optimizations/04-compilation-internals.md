@@ -373,6 +373,7 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 源码：`vllm/compilation/backends.py:548` 的 `split_graph`。切点由 `CompilationConfig.splitting_ops` 控制。
 
 **默认 `splitting_ops`** 通常包含：
+
 - `vllm.unified_attention`（或具体 attention backend op）
 - `vllm.silu_and_mul`（如果作为分段标记）
 - 部分通信 op（`vllm.all_reduce`、`vllm.reduce_scatter`）—— 因为通信 op torch.compile 无法 fuse
@@ -380,6 +381,7 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 **切点意义**：把整 forward 切成 N+1 段（N 个 attention op → N+1 piecewise），每段是纯 PyTorch op（没有自定义 CUDA），可以放心交给 Inductor 编译 + fusion。
 
 **配置例**：
+
 ```python
 compilation_config = {
     "mode": 3,  # VLLM_COMPILE
@@ -412,6 +414,7 @@ cache_key = sha256(json.dumps(hash_components, sort_keys=True))
 ```
 
 **升级 vLLM 后必然失效的原因**：
+
 1. **`vllm_version`** 直接进 hash → 版本号变 hash 变
 2. 升级带来代码变动 → FX graph 序列化字符串变 → `graph_hash` 变
 3. 可能伴随 PyTorch 升级 → `torch_version` / `cuda_version` 变
@@ -459,6 +462,7 @@ def model_forward(x):
 ```
 
 **为什么 fake 注册是关键**：
+
 - Dynamo 在 trace 时遇到 unknown op 会**整段 graph break**（切回 eager 跑这一段）
 - 注册 fake → Dynamo 知道这个 op 的 abstract（fake）输出形状 → 能继续 trace 后续 op
 - piecewise 编译时，这个 op 仍是 `splitting_ops` 之一（如果你想它当切点）或被透明跨过（如果不切）

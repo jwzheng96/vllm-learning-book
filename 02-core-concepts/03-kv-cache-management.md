@@ -304,6 +304,7 @@ T=END (请求 finish):       block 0..9 ref_cnt -= 1 → 全归 0
 ```
 
 **如果有共享 prefix**（比如 system prompt 占 block 0-2，跟另一个请求一样）：
+
 - 启动时：block 0-2 是 hash 命中 → ref_cnt++ 共享，**只新 alloc block 3 + 后续**
 - 完成时：block 0-2 ref_cnt-- 回到原值（可能 > 0，仍在共享）；block 3+ ref_cnt → 0 回 free queue
 
@@ -365,6 +366,7 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 3. **实现简单**：recompute = "free 所有 block + 回到 WAITING 状态"，无需管理 host buffer 池、PCIe DMA 调度、双端同步
 
 **Swap 反而合理的场景**：
+
 - **Grace Hopper / GH200**：CPU↔GPU 900 GB/s NVLink-C2C，swap 接近免费
 - **超长上下文 + 极低 prefix cache 命中**：每次 prompt 都不一样，recompute 等于全部重 prefill 没意义
 - **prefill 算力严重 contended**：大并发同时争 GPU，swap 释放 GPU 给其他 running 任务
@@ -376,6 +378,7 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 **5. H100 80GB / Llama-3-8B / BF16，切到 fp8 KV num_blocks 多多少？**
 
 **BF16 基线**：
+
 - Llama-3-8B：32 层、num_kv_heads=8（GQA）、head_dim=128
 - 单 token KV = 2 × 8 × 128 × 32 × 2 = 131072 字节 = **128 KB**
 - 单 block = 16 token × 128 KB = **2 MB**
@@ -384,6 +387,7 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 - num_blocks = 58 GB / 2 MB = **29,696 个 block** ≈ 475,136 token
 
 **FP8 KV**：
+
 - 单 token KV 字节减半 = 64 KB
 - 单 block = 1 MB
 - 可用 KV 显存还是 58 GB（fp8 不影响模型权重）
@@ -392,6 +396,7 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 → **block 数翻倍**，理论并发 / 并发上下文长度也接近翻倍。
 
 **注意**：
+
 - fp8 KV 是有损精度（per-tensor 或 per-channel scale + fp8 encoding）。多数模型 perplexity 影响 < 1%，但极敏感场景（math reasoning）要 ablation 验证
 - 启用：`--kv-cache-dtype fp8`（前提硬件支持 fp8，H100/H200/B200 OK，A100 不行）
 - 实际吞吐增益往往低于理论 2×，因为算力 / 调度也会成为新瓶颈

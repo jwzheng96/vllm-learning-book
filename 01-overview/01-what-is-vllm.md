@@ -220,6 +220,7 @@ flowchart LR
 3. **TensorRT-LLM + CUDA Graph 是更好的选择**：NVIDIA 把单请求路径优化到了 metal——CUDA Graph capture 单 batch、kernel fusion 重度做、无 PagedAttention overhead。
 
 **反建议**：如果"VIP + 低延迟" 实际上是"少量 VIP + 中等并发 + 严苛 SLO"，vLLM 还是值得用，但要：
+
 - 关 `--enforce-eager` 走 CUDA Graph
 - 把 `max-num-batched-tokens` 调小以减 step 时长方差
 - 用 `--scheduling-policy priority` 给 VIP 优先级

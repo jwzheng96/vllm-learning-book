@@ -103,6 +103,7 @@ flowchart TD
 ```
 
 **关键点：**
+
 - **FCFS** 踢 `running` 末尾（最近被加入 batch 的）——简单粗暴，靠"近来的最易被踢"近似公平。
 - **PRIORITY** 用 `max(self.running, key=lambda r: (r.priority, r.arrival_time))` 选最低优先级（最大 priority 值）。
 - 被踢请求重新入 `waiting`，本步剩余 budget / 已分配 block 全部退还。
@@ -165,6 +166,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 - 占 host 内存
 
 **与 RECOMPUTE 对比**：
+
 - KV 极大、prefix cache 命中率低 → SWAP 偏好
 - KV 中等、prefix cache 命中高 → RECOMPUTE 偏好
 
@@ -276,6 +278,7 @@ curl :8000/metrics | grep -E "preempt|kv_cache_usage|queue_time"
 3. **预算粒度太粗**：token budget 按步分配，无法做 inter-request weighted 切分。
 
 **正确做法**（放路由层）：
+
 - **Weighted round-robin**：路由器按 10:1 比例 dispatch 请求到 vLLM 实例
 - **多实例物理隔离**：A 用 10 个 vLLM pod，B 用 1 个，K8s HPA 各自扩缩容
 - **Token rate limiting**：在 API gateway 用 leaky bucket，A 限 10000 token/s，B 限 1000 token/s

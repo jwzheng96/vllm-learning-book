@@ -77,6 +77,7 @@ spec:
 ```
 
 **几条规则**：
+
 - `pollingInterval` 10s 是合理起点（不要更短，免得抖动）
 - `cooldownPeriod` 必须长（5-10 分钟），LLM 缩容代价大
 - `minReplicaCount` 至少 2（保证可用性）
@@ -336,6 +337,7 @@ spec:
 ```
 
 **取舍**：
+
 - 用单一 trigger（如 num_requests_waiting）容易抖
 - 多 trigger OR 关系：任一触发即扩，更敏感但可能过度扩容
 - 调 `pollingInterval: 15s`（默认 30s）让响应更快
@@ -357,6 +359,7 @@ spec:
 | **总冷启动** | **2-5 分钟** | 优化后 **<60s** 可达 |
 
 **生产实战**：
+
 - 镜像内 bake 模型权重（避免运行时下载）→ 省 30s
 - compile cache 持久化（CSI volume / S3 sync）→ 省 60-180s
 - 用 `--enforce-eager` 跳过 compile + CG（但 TPOT 慢 30%，仅 serverless 冷启动场景值得）
@@ -374,6 +377,7 @@ spec:
 - queue_wait < 400ms（留 100ms 给 prefill）
 
 **queue_wait 与队列长度关系**：
+
 - 单 pod 每 step 处理 ~16-32 个请求（max_num_seqs）
 - step 时长 ~50ms
 - 每 50ms 推进 32 个请求 = 640 req/s 出队速度
@@ -382,6 +386,7 @@ spec:
 **反推**：queue_wait < 400ms → **queue_depth < 256**
 
 **告警阈值**：
+
 - Warning：queue_depth > 100（提前预警，有时间扩容）
 - Critical：queue_depth > 200（接近 SLO 边界）
 - 自动扩容：queue_depth > 50（KEDA 触发扩容前留 spike 余量）
@@ -393,20 +398,24 @@ spec:
 **4. 100 RPS, 平均 9.2s 的 chat 服务，从公式估算到 benchmark 验证的步骤。**
 
 **Step 1 · Little's Law 估算 in-flight 请求数**：
+
 ```
 concurrent_requests = RPS × avg_duration = 100 × 9.2 = 920
 ```
 
 **Step 2 · 单 pod 容量估算**：
+
 - 假设 Llama-3-8B TP=2 + max_num_seqs=64
 - 单 pod 持续并发 = 64
 - 920 / 64 ≈ **15 个 pod**（粗算）
 
 **Step 3 · 留余量**：
+
 - Utilization 目标 70%：15 / 0.7 = **22 个 pod**
 - 加 spike buffer +30%：**29 个 pod**
 
 **Step 4 · benchmark 验证**：
+
 ```bash
 # 在测试环境部署 1 个 pod，跑递增 RPS
 python benchmark_serving.py \
@@ -421,11 +430,13 @@ python benchmark_serving.py \
 ```
 
 **Step 5 · 根据 benchmark 调整估算**：
+
 - 如果单 pod 拐点是 8 RPS（不是 6.7 RPS = 100/15），实际需要 100/8 = 13 pod
 - 如果发现 prefix cache 命中率 70% → 等效降低有效 RPS → pod 数可减
 - 如果 KV 提前满 → 减 max_num_seqs 或调 gpu_memory_utilization
 
 **Step 6 · 上线**：
+
 - 部署估算 pod 数 ×1.5（首次保守）
 - HPA 配 KEDA + Prometheus query
 - 观察 1 周生产数据，再调整目标 pod 数

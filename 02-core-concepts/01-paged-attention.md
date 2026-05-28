@@ -292,11 +292,13 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 **2. block_size=16, hidden=4096, num_layers=32, FP16, 100k token 请求的 BlockTable / KV 占多少？**
 
 **BlockTable**（每请求一张）：
+
 - 需要的 block 数 = ⌈100000 / 16⌉ = 6250 个
 - 每条 entry 是个 int32（physical_block_id）= 4 字节
 - BlockTable 大小 = 6250 × 4 = **25 KB**
 
 **物理 KV**：
+
 - 单 token 单层 KV = 2 (K+V) × hidden × dtype_bytes = 2 × 4096 × 2 = 16 KB
 - 32 层一个 token = 16 KB × 32 = 512 KB
 - 100k token = 512 KB × 100000 = **48.8 GB**
@@ -335,6 +337,7 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 **慢的来源**：每个 KV 访问要先查 block_table（间接寻址），多一层指针 chase，attention kernel 比连续 KV 的版本慢约 20%。
 
 **赚回来的更多**：
+
 1. **KV 利用率 20% → 96%**：同一张 H100 装下 5× 的并发请求
 2. **GPU 利用率 30% → 80%+**：continuous batching 让 GPU 不空转
 3. **prefix caching 净赚**：相同前缀直接复用，跳过 prefill，省的不只是 20% 而是 95%+

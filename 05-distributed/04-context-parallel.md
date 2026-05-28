@@ -37,6 +37,7 @@ vLLM 把 CP 分成了两个独立的并行维度，源码：`vllm/config/paralle
 | **DCP** | `decode_context_parallel_size` | **decode 阶段**切 KV cache 的 seq 维 | **否** — 复用 TP 组 GPU |
 
 **为什么要分开？**
+
 - Prefill 是 compute-bound，长 seq 算力压力大，PCP 真的需要更多 GPU 参与同一次 forward。
 - Decode 每步只产 1 个新 token，算力不大，但 **KV cache 沿 seq 维堆得越来越长**——DCP 把 KV 切到多个 attention head 组（实质 reuse TP），不需要额外 GPU。
 
@@ -124,6 +125,7 @@ then store next interleave_size tokens on total_cp_rank i+1.
 - token 0..15 → rank 0, token 16..31 → rank 1, ...
 
 **为什么不只用 1 或 chunk-of-block_size？**
+
 - `=1` 最均匀但每个 rank 都要存"散乱"的 token，cache 局部性差。
 - `=block_size`（如 16）按块切，物理连续，与 PagedAttention block 友好。
 - 默认 1（最均匀），生产可调。
@@ -139,15 +141,18 @@ PCP 是较新的功能（注释提到"will be deprecated when PCP is fully suppo
 **思路**：prefill 长 seq 切到多卡，每卡算一段，attention 时跨卡组合。
 
 **典型用法**：长上下文（128K+）prefill。例如 prompt 长 200K，TP-8 + PCP-4：
+
 - 每张卡 hidden_dim ÷ 8
 - 每张卡 seq_len ÷ 4 = 50K
 - attention 跨 4 卡组合（环形 KV 传递，类似 Ring Attention）
 
 **与 chunked prefill 的关系**：互补。
+
 - chunked prefill：**时间维度**切（一次 forward 跑一段，多次 forward 完成全 prefill）
 - PCP：**空间维度**切（一次 forward 多卡并行，每卡一段）
 
 **适用判据**：
+
 - chunked prefill 已能用 → 单机够用，简单可靠
 - 单机塞不下 prefill 中间激活 → 上 PCP（需要 RDMA 网络）
 
@@ -271,16 +276,19 @@ TP-8 + DCP-2：
 **有影响**，主要在"哪些 token 在同一 rank 上"。
 
 **`interleave_size=1`**（最均匀）：
+
 - token 0 → rank 0, token 1 → rank 1, ..., 轮询
 - 一个 16-token block 的 K/V **散布在所有 CP rank**
 - prefix cache hash 是按 block 算的，**block 内部 token 跨 rank 无所谓**——hash 仍能命中（因为 hash 用的是 token id，不是物理位置）
 
 **`interleave_size=16`** (= block_size)：
+
 - token 0..15 → rank 0, token 16..31 → rank 1, ...
 - 一个 16-token block 的 K/V **全在同一 rank**
 - prefix cache 命中行为**相同**——hash 一样命中
 
 **所以 prefix cache 命中率本身不变**。但有间接影响：
+
 - `interleave_size=1` 时，命中 block 后实际 K/V 数据要跨 rank 收集 → DCP 通信路径变长
 - `interleave_size=16` 时，命中 block 后 K/V 都在本地 → 更高效
 
@@ -317,6 +325,7 @@ TP-8 + DCP-2：
 - **弊**：需要 2 机 + 高速互联（IB / RoCE），ring attention 跨机有通信开销；vLLM 的 PCP 还在路上，部分 attention backend 不完善
 
 **何时选哪个**：
+
 - 偶发长 prompt + 没有 RDMA 集群 → 配置 A
 - 长上下文是核心 KPI + 有 RDMA → 配置 B
 - 多数请求 ≤ 32K，只有 1% 是 200K → 配置 A 简单

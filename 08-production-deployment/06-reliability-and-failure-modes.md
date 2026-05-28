@@ -120,18 +120,22 @@ KV 接近满 → 新请求来 → preempt 一个 running → 那个 running 被�
 ### 4.2 防御
 
 **入场准入控制**（admission control）：
+
 - KV usage > 阈值（如 0.85）时拒绝新请求或排队
 - 而不是接收后再 preempt
 
 **优先级队列**：
+
 - 已 running 的请求 priority 高于刚进的
 - 一个请求被 preempt 一次后下次更高优先级（避免反复牺牲）
 
 **Long context 隔离**：
+
 - 100k+ token 请求路由到专门 Pod
 - 不和 chat 请求竞争同一 KV pool
 
 **配置调优**：
+
 - `--max-num-seqs` 适当下降，避免过度并发
 - `--max-num-batched-tokens` 防长 prefill 抢 KV
 
@@ -153,18 +157,22 @@ KV 接近满 → 新请求来 → preempt 一个 running → 那个 running 被�
 ### 5.2 防御
 
 **Gateway 强制 max_tokens 上限**：
+
 - 普通用户 `max_tokens ≤ 4096`
 - 长文档生成业务专用 endpoint
 
 **Repetition detection**：
+
 - vLLM 的 stop_token、stop_string
 - 或自定义：n-gram 重复检测，触发后强制 EOS
 
 **Server-side timeout**：
+
 - `--max-model-time-per-request 30s`（伪 API，按实际版本）
 - 超时强制结束
 
 **计费导向**：
+
 - 按 token 计费天然约束滥用
 
 ---
@@ -177,14 +185,17 @@ LLM 服务一时抖动 → 客户端 SDK 自动重试 → 流量翻倍 → 服�
 ### 6.2 防御
 
 **Server 端：限流 + 区分 503/429**
+
 - 503：服务真有问题，客户端不该立刻重试
 - 429：你超 quota，客户端不该 retry 这个请求
 
 **Client SDK：指数退避 + jitter**
+
 - 第一次 1s，然后 2s, 4s, 8s, + random jitter
 - 重试 budget：总重试次数 / 时间窗内有上限
 
 **Server 端：负载丢卒保车**
+
 - 流量极高时主动返回 429 给低优先级客户端
 - 保关键客户
 
@@ -358,6 +369,7 @@ kubectl exec <pod> -- nvidia-smi nvlink -e
 ```
 
 **典型根因**：
+
 1. **不同 rank 看到不一致的 batch shape**（scheduler bug，scheduler 没同步广播）
 2. **某 rank 慢了几百 ms**（GC pause、CPU 抢占等）触发其他 rank wait 超时
 3. **NVLink 物理故障**
@@ -380,6 +392,7 @@ kubectl exec <pod> -- nvidia-smi nvlink -e
 | 5. 临时切到长 chunked prefill | `--max-num-batched-tokens 2048` | step 时长稳定，减少 KV 峰值瞬时占用 | TTFT 略升 |
 
 **实战顺序**：
+
 1. **立即**：admission control 拒新请求（保护当前用户）
 2. **5 分钟内**：扩 pod（HPA 自动 / 手动）
 3. **若 HPA 太慢**：rolling update 降 max_num_seqs 或切 FP8
@@ -401,6 +414,7 @@ kubectl exec <pod> -- nvidia-smi nvlink -e
 | **KV cache hit rate 退化 > 50%** | `cache_hit_rate_new < cache_hit_rate_baseline × 0.5` | prefix caching 失效（hash 算法改了、cache key 不兼容） |
 
 **实施**：
+
 - 用 Argo Rollouts / Flagger 等 progressive delivery 工具
 - 每个阈值连续命中 N 分钟（比如 3 分钟）才触发，避免毛刺
 - 触发后自动 abort rollout + 通知 oncall
@@ -438,16 +452,19 @@ watch kubectl get pods -l app=vllm
 | T=90-120s | 新 pod ready，加入服务池 | 全集群恢复 |
 
 **目标 SLA**：
+
 - **MTTR < 2 分钟**
 - **影响用户比例 < 1/N（N 为 pod 总数），retry 后 100% 成功**
 - **整体 SLO 不受影响**（按 5 分钟滑动窗口）
 
 **演练通过标准**：
+
 - LWS 自动重建（不需人工 `kubectl delete pod`）
 - 客户端 retry 后请求成功（gateway 摘除挂掉 pod 的速度足够快）
 - 监控告警在 T=10s 内触发（不需 oncall 来检查）
 
 **演练失败的常见 root cause**：
+
 - liveness probe 太宽松（如 60s 才检测 hang）→ 改成 10s
 - LWS 没配（用了 Deployment）→ 改 CRD
 - gateway 健康检查间隔太久（5min）→ 改 10s

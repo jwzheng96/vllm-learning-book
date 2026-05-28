@@ -376,6 +376,7 @@ flowchart TB
 ```
 
 **三层 IPC 的关键区别**：
+
 - **API ↔ EngineCore**：ZMQ + msgpack。低频（每请求 1-2 次），跨机器友好，μs 级序列化。
 - **EngineCore ↔ Worker**：共享内存 ring + OOB 零拷贝。高频（每 step 1 次，100+ Hz），KB-MB 级消息，序列化几乎免费。
 - **Worker ↔ Worker**：NCCL。每层 forward 1-2 次 AllReduce，必须最高带宽。
@@ -454,12 +455,14 @@ def step(self):
 前提：单 step forward = 30 ms（GPU），schedule = 3 ms（CPU）。
 
 **同步**（V0）：
+
 ```
 step n:   [sched 3ms][forward 30ms][sched 3ms][forward 30ms]...
 单 step = 3 + 30 = 33 ms
 ```
 
 **async**（V1）：
+
 ```
 step n:   CPU [sched 3ms]
               ↓ 启动 forward 后立即返回

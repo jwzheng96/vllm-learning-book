@@ -187,6 +187,7 @@ LLM 需要的维度：
 - 或自研：Envoy ExtAuthz → 自定义 quota 服务
 
 **token 维度的 ratelimit 难点**：实际 token 数只有推理完才知道。两种做法：
+
 1. 用 tokenizer 在 gateway 层先算 input tokens；预估 output（max_tokens 上限）
 2. 推理完上报真实用量，超出 quota 下次拒绝
 
@@ -393,15 +394,18 @@ A: Istio multi-cluster（mesh federation）或者 Cilium ClusterMesh。但**跨 
 **思路**：在 **API Server 出口（vLLM 自己）** 或 **Envoy ExtProc/Lua 在响应流过滤时计数**，**不要**在中间路由层做。
 
 **最小侵入方案**：
+
 1. **vLLM 已经在 `metrics` 里暴露 `vllm:generation_tokens_total{model, user_id}`**——如果用户 ID 已经通过 header 传到 vLLM，直接订阅这个 metric 就有计费数据
 2. **Envoy Lua filter on response_body**：解析 SSE chunk（`data: {"choices":[{"text":"..."}]}`），统计 token 数（用 tiktoken Lua 或简单字数估算），写入 Redis 用户计数
 
 **为什么不在路由层**：
+
 - 路由器拿到的是请求 metadata，不知道实际生成多少 token
 - 复杂逻辑塞路由器影响路由本身延迟
 - 路由器换实现（llm-d → AIBrix）就要重新写
 
 **核心架构**：
+
 ```
 client → Envoy (Lua: count_response_tokens) → vLLM
                   ↓

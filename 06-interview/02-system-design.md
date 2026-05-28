@@ -85,6 +85,7 @@ flowchart TD
 
 ### 阶段 4：Engine 选择
 **vLLM 是首选**：
+
 - 模型支持广（70B 一键跑）
 - continuous batching 成熟
 - prefix caching 默认开（chatbot 收益大）
@@ -175,10 +176,12 @@ flowchart TD
 ## 题 5：单实例 vs 多实例的取舍
 
 **单实例（一个大实例）**：
+
 - 优点：prefix cache 集中命中率高、TP 内通信快
 - 缺点：故障域大、扩容粒度粗
 
 **多实例（多个小实例）**：
+
 - 优点：故障域小、能精细扩缩、水平扩展
 - 缺点：prefix cache 分散（除非路由 sticky）
 
@@ -238,23 +241,28 @@ flowchart TD
 **1. 10k 并发 chatbot + 200B 模型 + 2k 输入 / 1k 输出 + 单卡 80GB，capacity 怎么算？**
 
 **Step 1 · 模型显存**：
+
 - 200B × 2 (BF16) = 400 GB → 单卡 80GB **塞不下，必须 TP ≥ 8**
 - TP=8（单机 H100×8 = 640GB）：每卡装 50GB 模型 + KV 预算
 - 若用 FP8 量化：200B × 1 = 200GB → TP=4 即可
 
 **Step 2 · KV cache 容量**：
+
 - 假设 200B GQA: hidden=12288, num_kv_heads=16, head_dim=128（推测）, layers=80
 - 单 token KV = 2 × 16 × 128 × 80 × 2 = **655 KB**（远大于 70B 的 320 KB）
 - 单请求 (2K+1K)=3K token → 1.9 GB / 请求
 
 **Step 3 · 单实例并发能力**：
+
 - TP=8 BF16：每卡剩余 30GB KV → 8 × 30 / 1.9 ≈ **126 个并发请求 / 实例**
 - 但实际有 active vs total batch 区别——running 通常占 max_num_seqs 50%。安全估 **64 active**
 
 **Step 4 · 实例数**：
+
 - 10000 并发 / 64 = **157 个实例**，每个 8 卡 H100 → **1256 张 H100**！
 
 **Step 5 · 优化建议**（这数太大）：
+
 - **量化**：FP8 减半显存 → 80 实例 × 4 卡 = **320 张 H100**（仍多但可行）
 - **disaggregated**：prefill 集群 32 节点 + decode 集群 80 节点
 - **prefix caching**：若 system prompt 长（如 1K token）且共享，命中率 70% → 等效减少 70% prefill 算力
@@ -269,6 +277,7 @@ flowchart TD
 **2. 自出题："500 并发多模态助手"按 6 步框架。**
 
 **Step 1 · Requirements**：
+
 - 500 并发，图像 + 文本
 - 文本 prompt 1K token + 图像 1024×1024（≈1024 image tokens）+ 输出 500 token
 - TTFT < 800ms（用户上传图后等回答）, TPOT < 100ms
@@ -276,6 +285,7 @@ flowchart TD
 **Step 2 · 模型选型**：Qwen2-VL 72B 或 Llama-3-VL 90B
 
 **Step 3 · Capacity**：
+
 - 72B BF16 = 144GB → TP=2 (H100×2=160GB)
 - 每个请求 KV = (1024 + 1024 + 500) × ~256KB = 650 MB
 - 图像 encoder 输出（mm_embeddings）= 1024 × 4096 × 2 = 8 MB / image，需要 encoder cache
@@ -283,15 +293,18 @@ flowchart TD
 - 500 并发 → 7 实例 × 2 卡 = **14 张 H100**
 
 **Step 4 · 路由层**：
+
 - **图像 hash 路由**：相同图像打到同一实例（encoder cache 共享，省 8MB embed 重算）
 - prefix cache aware：相同 system prompt 打同一实例
 
 **Step 5 · SLO 与监控**：
+
 - TTFT p99 < 800ms，单独监控 mm_encoder time
 - `vllm:mm_cache_hits / vllm:mm_cache_queries` 命中率 > 60%
 - `vllm:kv_cache_usage_perc` < 0.85
 
 **Step 6 · 失效模式**：
+
 - Encoder OOM：限制 `--mm-encoder-cache-size`
 - 大图爆 token：限制图像分辨率（API 层 resize 到 1024×1024）
 - 文本长 prefill 卡死：开 chunked prefill
@@ -312,6 +325,7 @@ flowchart TD
 | **冷启动恢复** | 慢（NCCL 重建 + 大模型加载）| 快（小模型 + 部分降级）| 多实例胜 |
 
 **判断条件**：
+
 - **prefix cache 命中率 > 50% + 单 query 延迟敏感 → 单实例**（例：chatbot 长 system prompt、agent 工具调用）
 - **prefix cache 命中率 < 20% + 高 QPS + 强可用要求 → 多实例**（例：RAG 每问不同、batch 推理）
 - **平衡区**：多实例 + cache-aware routing（路由层做 prefix awareness 弥补命中率，又保留多实例的故障域优势）
@@ -369,6 +383,7 @@ flowchart TD
 ```
 
 **4 部分要点**：
+
 1. **Sticky LB**：用 session_id hash 让同用户落同 pod（L1 cache 命中）；prefix-aware fallback（即使首次访问，按 prompt prefix hash 路由）
 2. **vLLM 实例**：TP=8 单机部署，每实例独立 L1 cache
 3. **Prefix Cache 层级**：L1 GPU HBM（每 pod 本地）、L2 CPU DRAM（LMCache 跨 pod 共享）、L3 NVMe（超长冷 cache）

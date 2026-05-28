@@ -63,6 +63,7 @@ vllm/lora/
 朴素做法：每个请求带不同 LoRA → batch 内不能合并 matmul，因为每行用不同 `delta_W`。这会让 batching 失效。
 
 **Punica 思想**（论文 Punica: Multi-Tenant LoRA Serving, Chen et al.）：
+
 - batch 还是合并跑 `x · W`
 - 然后 batched 算 `delta_y = x · B · A`：每行用各自的 `B_i, A_i`，但 kernel 内部按 `lora_id` 索引
 - 输出 `y = x·W + delta_y`
@@ -249,6 +250,7 @@ flowchart TD
 参见 `08-production-deployment/02-smart-routing-and-load-balancing.md` 第 6 节。
 
 **LoRA-aware routing 策略**：
+
 - Router 维护"每 Pod 当前激活哪些 adapter"的视图
 - 路由请求时优先选**该 adapter 已激活**的 Pod
 - 否则触发 swap，cost 100ms~1s

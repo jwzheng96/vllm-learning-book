@@ -1070,13 +1070,16 @@ _heading_re = re.compile(r"^#{1,6}\s")
 
 
 def _prev_is_block_friendly(prev: str) -> bool:
-    """判断前一行是否已是 block 元素（不需要再插空行）。"""
+    """判断前一行是否已是 block 元素（不需要再插空行）。
+
+    注意：用正则区分列表标记 vs 粗体——`- text` / `* text` / `+ text` 是列表，
+    `**bold**` 不是。原先 startswith(('-','*','+',...)) 会把粗体误判。"""
     if prev.strip() == "":
         return True
     ps = prev.lstrip()
-    if ps.startswith(("-", "*", "+", "|", ">", "#", "```")):
+    if ps.startswith(("|", ">", "#", "```")):
         return True
-    if _ordered_list_re.match(ps):
+    if _unordered_list_re.match(ps) or _ordered_list_re.match(ps):
         return True
     return False
 

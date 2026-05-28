@@ -88,6 +88,7 @@ def __init__(self, num_gpu_blocks, enable_caching, hash_block_size, ...):
 ```
 
 **关键设计**：
+
 1. `blocks` 是预分配的**元数据数组**，长度固定为 `num_gpu_blocks`。物理 KV 显存张量在 Worker 那里持有；BlockPool 只管"哪个 id 现在被谁占"。
 2. `free_block_queue` 是双向链表而非栈：`append_n` 放尾部，`popleft` 取头部 → **LRU 复用**。
 3. `null_block` 是个占位 trick，避免 block_id=0 被误用。
@@ -146,6 +147,7 @@ def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
 ```
 
 **两个细节**：
+
 - 调用方负责把 blocks 按"优先回收顺序"传入（通常是 **逆序**：tail 先 free）。KVCacheManager.free 就是 `reversed(...)`。这样回收时 free queue 里 tail 排前面，会被先 evict（保留更可能复用的 head block）。
 - 只有 `ref_cnt → 0` 的才真正放回 free queue。
 
@@ -425,6 +427,7 @@ flowchart TD
 - `ref_cnt == 0` 的 cached block：曾被使用、现在没人用了，但**还没被覆盖**——hash 表保留它的 entry，是 prefix cache 的"冷库存"
 
 **为什么两种都允许？**
+
 - 只允许 `> 0` → 请求结束就立刻丢失 cache，多轮对话第二轮命中率 = 0
 - 只允许 `== 0` → cache 内容随时被人改写，不可信
 
@@ -437,6 +440,7 @@ flowchart TD
 **`num_tokens - 1` 的原因**：必须留至少 1 个 token 让模型实际算 forward 才能产生 logits 采样下一个 token。
 
 **如果设成 `num_tokens`**（全部命中）：
+
 - prefill 完全跳过，进入 decode 直接...采样什么？
 - decode 需要 logits = lm_head(hidden_state)，而 hidden_state 来自最后一个 forward
 - 没 forward 就**没 logits**，sampler 直接 crash 或返回垃圾

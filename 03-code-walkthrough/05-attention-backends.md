@@ -42,6 +42,7 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
 ```
 
 **直觉记法**：
+
 - 普通 Transformer attention：FLASH_ATTN / FLASHINFER / TRITON_ATTN
 - DeepSeek MLA：所有名字含 `MLA` 的（FLASHMLA、CUTLASS_MLA、TRITON_MLA…）
 - AMD ROCm 平台：ROCM_* 系列
@@ -135,6 +136,7 @@ class FlashAttentionMetadata:
 ```
 
 **学懂这张图，你才能解释"query_len、context_len、seq_len 的区别"**：
+
 - `context_len`：N-1 步结束时已有的 token（KV 已写好的部分）
 - `query_len`：本步要新算的 token
 - `seq_len`：context_len + query_len，总长度
@@ -380,10 +382,12 @@ slot_id = physical_block_id * block_size + (new_token_idx % block_size)
 **4. cascade attention 触发条件 + `get_num_common_prefix_blocks` 调用时机？**
 
 **cascade attention** 的核心 idea：当 batch 内多个请求共享一段长 prefix（如同一 system prompt），把 attention 拆成两段：
+
 1. 共享段：所有 query 一起跟同一份 KV 做 attention（cache miss 一次，所有 query 重复利用）
 2. 独立段：每个请求各自跟自己后段的 KV
 
 **触发条件**（典型）：
+
 - batch 内请求数 ≥ 阈值（一般 ≥ 2）
 - 共享 prefix 长度 ≥ 阈值（一般 ≥ 256 token）
 - attention backend 支持 cascade（FlashInfer 已支持，FlashAttn 在加）

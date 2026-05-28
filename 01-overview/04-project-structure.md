@@ -862,6 +862,7 @@ csrc/
 - `csrc/quantization/`（CUDA）：纯 kernel（marlin / awq / gptq / fp8 / cutlass_w8a8）
 
 **拆两层原因**：
+
 1. 算法与硬件解耦——同一 AWQ 可适配 SM80/SM90/SM100，Python 不动
 2. 多算法共享 kernel——fp8 kernel 同时给 fp8-static / fp8-dynamic / fp8-marlin 用
 3. front-end / back-end 分离：Python 编排，CUDA 算

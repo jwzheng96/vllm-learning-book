@@ -41,6 +41,7 @@ T=0  T=1  T=2  T=3  T=4  T=5  T=6 ...
          C 出 E 进  B 出 F 进  E 出 G 进  D 出 H 进
 ```
 **每一步**（每生成一个 token）都检查：
+
 - 谁完成了 → 立刻退出，释放 KV
 - 等待队列有谁 → 立刻加入
 
@@ -242,6 +243,7 @@ V1 默认混合策略（[`05-chunked-prefill.md`](05-chunked-prefill.md) §5）�
 4. 一步内 forward 总 token = 16 + 8176 = 8192，正好打满
 
 **接下来的 step**：
+
 - step 2：16 个 decode（已经又生成 1 token）+ prefill 剩余 12000-8176=3824 token
 - 16 decode + 3824 prefill chunk = 3840 token，仍在 8192 之内 → 这一步把 prefill 跑完
 - prefill 完了立刻 decode 第一个新 token
@@ -286,12 +288,14 @@ def schedule(self):
 **4. Recompute 比 swap 快的原因 + swap 反而更优的场景。**
 
 **Recompute 快的原因**：
+
 1. **PCIe 太慢**：H100 PCIe Gen5 ×16 单向 ~64 GB/s，70B 模型一个长上下文请求 KV 可达 GB 级，swap 一次几十到几百 ms
 2. **GPU 算力富余**：现代 H100/B200 算力 dense，prefill 100 ms 内能干完几千 token
 3. **Prefix cache 救场**：被踢请求重新调度时，前缀部分大概率命中 cache，实际重算只是 cache miss 段——往往很短
 4. **代码实现简单**：recompute 路径就是"释放 block + 重新入 waiting"，无需管 host buffer / 拷贝调度
 
 **Swap 反而更优的场景**：
+
 - **KV 极大 + prefix cache 命中率低**（如全新 RAG，每次 prompt 都不一样）→ recompute 等于完全重 prefill，比 swap 慢
 - **Prefill 算力极度紧张**（极大 batch 同时争 GPU）→ swap 释放算力给其他 running
 - **特殊硬件**（如 Grace Hopper，CPU↔GPU 带宽 900 GB/s 接近 HBM）→ swap 成本接近免费

@@ -111,6 +111,7 @@ def _schedule_running(self, token_budget, num_scheduled_tokens):
 ```
 
 **核心逻辑**：
+
 1. 给每个 running 请求分配本步要算几个 token
 2. 如果 KV 不够，从队尾踢人（preempt）
 3. 踢到自己头上就把自己设回 waiting
@@ -164,6 +165,7 @@ def _schedule_waiting(self, token_budget, num_scheduled_tokens):
 ```
 
 **注意**：
+
 - waiting 队列是按 FCFS（或 priority）排序的
 - 只要 KV 不够或 budget 用完，立刻停止往 batch 塞，**不会跳过等小请求**（避免饥饿）
 
@@ -278,12 +280,14 @@ CPU/GPU overlap 节省 5-10%。
 **1. preempt victim 从队头还是队尾选？**
 
 **FCFS 模式**：队尾（`self.running.pop()`，最近加入 batch 的）。代码（约 line 450）：
+
 ```python
 if self.policy == SchedulingPolicy.FCFS:
     preempted_req = self.running.pop()         # 队尾，最后加入的
 ```
 
 **PRIORITY 模式**：`max((priority, arrival_time))`——优先级最低（priority 数值最大）的，同优先级里最晚到的：
+
 ```python
 if self.policy == SchedulingPolicy.PRIORITY:
     preempted_req = max(
@@ -322,6 +326,7 @@ step 17: decode 第一个新 token
 例：N=16 个 decode，每 step prefill 2032 token → 需要 ⌈32768/2032⌉ = **17 个 step** 跑完 prefill。
 
 **时间轴**（gantt 风格）：
+
 ```
 T=0  [decode×16 + prefill 2032 (chunk 0)]   ← 17 个用户在 decode 中, prefill 在并行
 T=1  [decode×16 + prefill 2032 (chunk 1)]
@@ -390,6 +395,7 @@ def step():
 **为什么能 overlap**：CPU schedule 与 GPU forward 不依赖同一资源（CPU vs GPU stream），可以真正并行。
 
 **正确性问题与解法**：
+
 - **新 token 状态没更新就 schedule 下一步**？不会——schedule 不需要新 token 内容，它只需要"running 列表 + KV 占用"，这些上一步已经记好
 - **新请求 add_request 时机**？AsyncScheduler 仍在 schedule 前同步 add，不会丢失
 - **preempt 导致状态不一致**？这是真坑——AsyncScheduler 有专门处理"上一步触发 preempt 后下一步的 running 列表"的逻辑（`vllm/v1/core/sched/async_scheduler.py`），通过把 preempted 请求标记后再继续

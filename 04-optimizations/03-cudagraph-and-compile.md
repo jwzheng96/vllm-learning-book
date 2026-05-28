@@ -172,6 +172,7 @@ flowchart TD
 ```
 
 **判断技巧：**
+
 - 错误信息里有 `cudaGraphExec*` / `graphExec*` → CG 问题
 - 错误里有 `inductor` / `dynamo` / FX trace 栈 → compile 问题
 - 数值无声错位（perplexity 异常但不报错）→ 优先怀疑 compile 数值精度，先 `--enforce-eager` 复现

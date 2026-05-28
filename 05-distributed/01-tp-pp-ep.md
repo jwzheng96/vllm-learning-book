@@ -101,6 +101,7 @@ flowchart TD
 ```
 
 **5 句话口诀**：
+
 - 单卡塞不下 → **TP**（同机）/ **PP**（跨机）
 - MoE 模型 → **必加 EP**
 - 高 QPS → **DP** 横向
@@ -326,6 +327,7 @@ flowchart LR
 ```
 
 **注意 embedding 与 LM head 的归属**：
+
 - **rank 0** 额外持有 token embedding（`[V, H]`，V 是词表大小，BF16 下 Llama-3 的 128K × 8192 × 2 ≈ 2 GB）
 - **rank P-1** 额外持有 LM head（同样 `[H, V]` 或与 embedding tied）
 - 中间 rank 只有 transformer 层 + 其 KV cache
@@ -385,6 +387,7 @@ rank P-1:
 格子里的 `mb1`..`mb4` 表示"那个时刻那张卡正在跑哪个 micro-batch"；`─` 是 bubble（空闲）。
 
 **怎么读这张表**：
+
 - **横着读一行** = 这张卡的时间线。卡 0 从 T=0 一直忙到 T=3，之后闲了 3 步。卡 3 反之，前 3 步全闲。
 - **竖着读一列** = 这个时刻全集群在干嘛。T=3 是唯一全员满载的时刻。
 - **斜着读对角线** = 同一个 micro-batch 的旅程。mb1 从 T=0 卡 0 → T=1 卡 1 → T=2 卡 2 → T=3 卡 3，逐段往下传 hidden state。
@@ -693,6 +696,7 @@ flowchart TB
 ```
 
 **Coordinator 的职责**（**不做 forward 协同**）：
+
 - 监控每个 DP rank 的负载（running / waiting 请求数）
 - 协调全局 sleep/wake（elastic EP 场景下空闲 rank 可挂起）
 - 处理 EP 启用时跨 DP rank 的 group 初始化
@@ -774,11 +778,13 @@ TP + SP:
 ```
 
 **收益**：
+
 - LayerNorm / Dropout / residual add 各省 (N-1)/N 份算力
 - LN 在大 seq 时占 5-15%（不算大但白省）
 - 中间激活 [B, H] 在 rank 上变成 [B/N, H] → **显存省 ~33%**
 
 **代价**：
+
 - 引入 AllGather + ReduceScatter 替代 AllReduce（总通信量近似相等）
 - 实现复杂度↑
 
@@ -811,10 +817,12 @@ vLLM 在不同并行场景调用 5 种 NCCL 原语。一张表对完：
 | **P2P Send/Recv** | 一对一传输 | `\|tensor\|` | PP 的段边界传 hidden state | 极轻 |
 
 **通信量关系**：
+
 - AllReduce ≡ ReduceScatter + AllGather（NCCL ring 算法的实际实现就是这样）
 - AllToAll 数据量与 AllReduce 同，但**实现复杂度更高**（每对 rank 都要建独立通道），所以 DeepEP / FlashInfer 才有用武之地
 
 **vLLM 调用入口**：
+
 - AllReduce / AllGather / ReduceScatter：`vllm/distributed/communication_op.py`
 - AllToAll：`vllm/distributed/device_communicators/all2all.py`（6 个后端）
 - Broadcast：`vllm/distributed/parallel_state.py::broadcast_tensor_dict`
@@ -963,6 +971,7 @@ world_group = ...                           # 所有 rank
 每个 ProcessGroup 内独立调 AllReduce / AllGather / AllToAll 等 collective，不互相干扰。
 
 **启动顺序的关键**（多机部署常踩坑）：
+
 1. 所有机器上的 EngineCore + Worker 必须**同时启动**（NCCL handshake 要求）
 2. rank 0（driver）先发"我是 master，监听 port X"
 3. 其他 rank 用 master 的 IP:port 加入
@@ -1012,6 +1021,7 @@ H100 8 卡机典型拓扑（NVLink 4 + NVSwitch）：
 NVLink 4.0 速度：**单方向 900 GB/s** per GPU 对（H100），所有 GPU 互连。
 
 **关键**：用 `nvidia-smi topo -m` 看实际拓扑：
+
 ```
         GPU0  GPU1  GPU2  GPU3  GPU4  GPU5  GPU6  GPU7
 GPU0     X   NV18  NV18  NV18  NV18  NV18  NV18  NV18
@@ -1031,6 +1041,7 @@ GPU1   NV18    X   NV18  NV18  NV18  NV18  NV18  NV18
 | **10Gbps 以太网** | 1.25 GB/s | 100+ μs | 不可用（即使 PP 也卡） |
 
 **NCCL 关键环境变量**：
+
 ```bash
 # IB 配置
 export NCCL_IB_HCA=mlx5_0:1,mlx5_1:1   # 指定使用的 IB 卡
@@ -1225,6 +1236,7 @@ dp_group = dist.new_group(...)
 ```
 
 **driver vs 普通 worker 的差异**：
+
 - **Driver worker**：TP group 内 rank 0（local_rank=0）。承担额外职责：
   - 从 EngineCore 收 SchedulerOutput（broadcast 给其他 TP rank）
   - 收集所有 TP rank 的输出，聚合后发回 EngineCore（结果就 1 份）
@@ -1241,17 +1253,20 @@ dp_group = dist.new_group(...)
 Mixtral：8 expert，top-2，dense hidden ≈ 4096。
 
 **TP=2 + EP=4**：
+
 - ep_size = 2 × 4 / dp = 8 → 不对，需要 dp 调整。实际配置可能是 TP=2, DP=2, EP=4。
 - 简化：TP=2（每层 2 次 AllReduce，dense 部分通信小，hidden 4096 → 8 KB/token/AR）
 - EP=4：每张卡 2 expert，每 MoE 层 2 次 AllToAll
 - AllToAll 数据 = token × top_k × hidden = ... × 2 × 4096 × 2 = 16 KB/token/AT
 
 **TP=4 + EP=2**：
+
 - TP=4：每 dense 层 2 次 AllReduce，hidden 4096，每次 AR 数据 8 KB/token，但**走 4 卡 ring 比 2 卡 ring 慢约 1.5×**
 - EP=2：每张卡 4 expert，每 MoE 层 2 次 AllToAll（在 EP-2 时也就是 2 个 rank 互发，本质是 AllToAll over P2P）
 - AllToAll 数据相对小（仅 2 卡间）
 
 **取舍**：
+
 - TP 数据小但频繁（每层 AR），TP=4 比 TP=2 通信总量大约 1.5× **per layer**
 - EP 数据大但稀疏（仅 MoE 层），EP=4 vs EP=2 通信量类似（同样的 token 数量飞）
 

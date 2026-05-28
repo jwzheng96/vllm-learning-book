@@ -75,6 +75,7 @@ flowchart LR
 一句话长度从字符数变成 token 数——这是 LLM 推理里所有"长度"指标的实际单位。**1 个英文单词 ≈ 1.3 token，1 个汉字 ≈ 2 token**（粗略经验值）。
 
 **在 vLLM 里**：
+
 - API 请求里的 prompt 会在进入引擎前被 tokenize 成 `prompt_token_ids: list[int]`
 - 后续所有 batch 处理都在 token id 层面进行
 - 用户的 `max_tokens` 参数限制生成的 token 数
@@ -129,6 +130,7 @@ mask[i, j] = 0       if j ≤ i  (允许)
 softmax 后未来位置权重为 0。
 
 **在 vLLM 里**：
+
 - 每层 Attention 走 PagedAttention（详见 `02-core-concepts/01-paged-attention.md`）
 - 因果 mask 是 attention backend 的默认行为，不用每次手动构造
 
@@ -171,6 +173,7 @@ sequenceDiagram
 ```
 
 **在 vLLM 里**：
+
 - 这条循环在 `EngineCore.run_busy_loop()` 里
 - 每生成 1 个 token = 1 个 **step**（也叫 1 个 iteration）
 
@@ -234,6 +237,7 @@ $$\text{per\_token} = 80 \times 2 \times 8192 \times 2 = 2{,}621{,}440 \text{ �
 **这就是 vLLM 要解决的核心矛盾**：KV cache 太大、太碎，怎么用得起来。
 
 **在 vLLM 里**：
+
 - KV cache 由 `BlockPool`（`vllm/v1/core/block_pool.py`）管
 - 每个请求一张 `BlockTable` 把逻辑序列映射到物理 block
 - 详见 `02-core-concepts/01-paged-attention.md`
@@ -284,6 +288,7 @@ attention(Q_new, K_0..n, V_0..n)   ← 读全部 KV cache
 | 一个请求里有几次 | 1 次 | output_tokens 次 |
 
 **在 vLLM 里**：
+
 - V1 把这两个阶段**混在同一个 forward** 里跑（continuous batching + chunked prefill），详见 `02-core-concepts/02,05`
 - 一个 step 内可能既有几个请求在 prefill、又有十几个请求在 decode
 
@@ -334,6 +339,7 @@ flowchart TB
 2. **HBM 带宽是 LLM 推理 decode 阶段的核心瓶颈**——3 TB/s 看似很大，但读一遍 70B 权重（140 GB FP16）就要 47 ms。所以每生成 1 token 的硬件极限就是 ~47 ms
 
 **在 vLLM 里**：
+
 - `--gpu-memory-utilization 0.9` 指 HBM 用 90%
 - KV cache 占的就是这 90% 里扣掉模型权重和 activation 的剩余空间
 - `--kv-cache-dtype fp8` 让 KV 用一半 HBM，相当于翻倍并发量
@@ -399,6 +405,7 @@ batched_input = [A_tok, B_tok, C_tok, D_tok, ...]   shape [batch, hidden]
 ```
 
 **直觉**：每生成 1 个 token 都要把整个模型从 HBM 读一遍（~140 GB）。
+
 - 串行 1 个请求：读 140 GB → 算 1 个 token
 - batch=32：读 140 GB → 算 32 个 token
 
@@ -413,6 +420,7 @@ batched_input = [A_tok, B_tok, C_tok, D_tok, ...]   shape [batch, hidden]
 每生成 1 个 token 都重新组 batch：完成的请求立刻退出，新请求立刻进入。GPU 永远满载。
 
 **关键词**：
+
 - **Throughput（吞吐）**：单位时间服务的总 token 数（tokens/s）
 - **Latency（延迟）**：单个用户感受到的等待时间
 
@@ -426,10 +434,12 @@ Batching 提高吞吐，**但单请求延迟可能略增**（要等 batch 凑够
 
 ### 9.1 数据并行（Data Parallel, DP）
 **复制模型到多卡**，每卡服务不同请求。简单粗暴。
+
 - 训练里也叫 DP；推理里就是"多副本"。
 
 ### 9.2 张量并行（Tensor Parallel, TP）
 **把一层的权重切到多卡**，每步合并：
+
 - MLP 列切 → 行切，每层末尾一次 AllReduce
 - Attention QKV 列切 → output 行切
 
@@ -437,6 +447,7 @@ Batching 提高吞吐，**但单请求延迟可能略增**（要等 batch 凑够
 
 ### 9.3 流水并行（Pipeline Parallel, PP）
 **不同层放不同卡**，前一段算完把 hidden 传给下一段。
+
 - 适合跨机器（通信少，每段边界一次）
 - 有 bubble（流水启动期的空闲）
 
@@ -625,6 +636,7 @@ vLLM 的回答：
 ```
 
 **关键点**：
+
 - 第一次（prefill）n 个 token 一起算，K/V 写入 cache；之后每次 decode 只算 1 个 token，但 attention 还要读**全部历史的 K/V cache**——这就是 decode memory-bound 的根因。
 - **写 cache**：每层 attention 算完 K/V 投影后立刻写。
 - **读 cache**：每层 attention 做 Q·K^T 和 attention·V 时读。
@@ -650,6 +662,7 @@ vLLM 的回答：
 ```
 
 **如果没开 GQA、按 hidden=8192 算（错误算法但常见误区）**：
+
 ```
 2 × 8192 × 2 × 80 × 4096 = 10.7 GB  ← 8× 大！
 ```

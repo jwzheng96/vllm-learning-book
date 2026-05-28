@@ -35,11 +35,13 @@ LLM 应用中存在大量"前缀重复"：
 假设 system prompt 长 1000 tokens，用户每次问 50 tokens，生成 100 tokens。
 
 **关闭 prefix caching**：
+
 - 每次 prefill = 1050 token
 - 总 token = 1050 (prefill) + 100 (decode) = 1150
 - 实际算力 ≈ prefill dominates
 
 **开启 prefix caching**（第二次开始）：
+
 - 每次 prefill = 50 token（前 1000 命中）
 - TTFT 直接降 95%
 - 吞吐提升对应倍数
@@ -131,6 +133,7 @@ V1 提供两种 cbor-encoded hash（`vllm/utils/hashing.py`）：
 入口：`generate_block_hash_extra_keys()`（line 503）按 block 区间合并这些 key。
 
 **实战含义：**
+
 - 多模态：图像内容变了 hash 就变（不会错误命中）。但**完全相同的图像**仍能命中——这是优势。
 - LoRA：同 token + 同 LoRA 才命中。多 LoRA 服务下命中率自然分摊。
 - 端到端加密场景：传 `cache_salt`，每用户独立 cache。

@@ -308,11 +308,13 @@ kubectl logs <envoy-pod> | grep "stream_idle"
 **4. 跨 region 共享 prefix cache 为什么不可行？冷启动新 region cache hit rate 曲线？**
 
 **不可行的原因**：
+
 - KV cache 物理上在 GPU HBM，跨 region 传输延迟 100ms+
 - prefix cache 命中后还要从 cache 加载 KV 数据到本地 HBM，跨 region 加载比 recompute 还慢
 - 网络成本：每 GB cache 跨 region 传输 ~$0.02-0.09，prefix cache 几 GB 反复传 → 不经济
 
 **冷启动新 region 的 cache hit rate 曲线**（典型）：
+
 ```
 hit rate
   ↑

@@ -443,11 +443,13 @@ flowchart LR
 **2. `multiprocessing.Process(daemon=True)` 与 CUDA fork 冲突，vLLM 怎么绕？**
 
 **冲突原因**：
+
 - `daemon=True` 进程会随父进程退出强制 kill，不允许有子进程
 - `fork` 启动方式在子进程里复制父进程的 CUDA context，**CUDA context 不支持 fork after init**——父进程已经 `torch.cuda.init()`、子进程一摸 GPU 就 crash 或死锁
 - 三者撞在一起：daemon Worker 不能再 fork 出 helper、CUDA 又禁 fork
 
 **vLLM 的解法**：
+
 1. **强制 spawn 启动方式**：`multiprocessing.get_context("spawn")`，spawn 不复制 CUDA context，子进程从干净状态启动后自己 `cuda.init()`
 2. **顺序控制**：API Server 进程**绝不**触 CUDA（只做 HTTP / tokenize / ZMQ）；EngineCore 进程在 spawn 出 Worker 后才允许触 GPU；Worker 进程一启动立即绑 device
 3. **Worker 用 `daemon=False`**：Worker 内部还要起辅助线程（NCCL watchdog 等），不能 daemon
@@ -480,6 +482,7 @@ scheduler_output = msgspec.msgpack.decode(serialized, type=SchedulerOutput)
 ```
 
 **关键点**：
+
 - 编码器 / 解码器：`msgspec.msgpack` —— 用 schema 加速，比 vanilla pickle 快 5-10×
 - 主流序列化（控制字段）：~ μs 级
 - OOB（大 tensor）：**零拷贝**——writer 写 mmap 段，reader 直接读，物理上同一份内存
@@ -491,6 +494,7 @@ scheduler_output = msgspec.msgpack.decode(serialized, type=SchedulerOutput)
 **PEP 574** 是 Python 3.8 引入的 pickle 协议 5：支持"out-of-band buffer"——大对象（如 numpy / tensor）的内存不嵌入 pickle 主流，而是作为旁路 buffer 单独传输。
 
 **常规 pickle 链路**（4 次拷贝）：
+
 ```
 tensor.numpy() → bytes (拷贝 1)
                  → 嵌入 pickle byte stream (拷贝 2)
@@ -499,6 +503,7 @@ reader 读出  → 反序列化拷贝出来 (拷贝 4)
 ```
 
 **PickleBuffer + OOB 链路**（0 次拷贝）：
+
 ```
 tensor.numpy() 的底层 buffer 直接被 PickleBuffer 引用
 writer 写共享内存 mmap 段（OOB 通过 mmap 共享，不 memcpy）
@@ -512,12 +517,14 @@ reader 直接对 mmap 段做 np.frombuffer + torch.from_numpy（不 memcpy）
 **5. 跨机器部署时 ZMQ 与共享内存怎么变？**
 
 **控制平面 ZMQ endpoint**：
+
 - 单机：`ipc:///tmp/vllm_xxx`（Unix domain socket，最快）
 - 跨机：`tcp://<host>:<port>`（TCP，会经网卡但 ZMQ 协议透明切换）
 
 → 应用层代码无需改，只是 endpoint 字符串换形式。
 
 **数据平面共享内存**：
+
 - 跨机器**不能用**（mmap 是单机文件系统的概念）
 - 替换方案：
   1. **RPC over TCP**（Ray executor 走这条路，性能损失 5-10%）
@@ -533,6 +540,7 @@ reader 直接对 mmap 段做 np.frombuffer + torch.from_numpy（不 memcpy）
 **6. 一张 GPU OOM，整组进程怎么级联？K8s 怎么配？**
 
 **级联反应**：
+
 1. Worker N OOM → 该 Worker 进程崩溃
 2. 其他 Worker 在下一次 NCCL collective（AllReduce）时**永远 hang**——NCCL 是 collective，缺一个 rank 就死锁
 3. EngineCore 检测到 Worker 进程死了 → 主动 abort 整组 Worker
@@ -543,6 +551,7 @@ reader 直接对 mmap 段做 np.frombuffer + torch.from_numpy（不 memcpy）
 → 这就是 §9 说的 **"故障域 = 整组"**。无法只重启一个 Worker（NCCL 通信组无法 dynamic add member）。
 
 **K8s 配置**：
+
 - **`LeaderWorkerSet`**（KubeRay 等提供的 CRD）：把 API+Engine+Workers 当成一个 atomic unit，任一进程退出就重启整组
 - 不能用 `Deployment` + 单 pod 部署（默认行为是按 pod 重启，无法保证整组同步）
 - 不能用 `StatefulSet` 分 pod（NCCL group 需要进程同时启动）

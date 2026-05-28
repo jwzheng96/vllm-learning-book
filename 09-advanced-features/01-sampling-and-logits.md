@@ -130,6 +130,7 @@ def forward(self, logits, sampling_metadata, predict_bonus_token=False, ...):
 ```
 
 **关键设计**：
+
 - raw_logprobs 用**没经过 temperature/penalty 的原始分布**（V0 的 sampler 不是这样，V1 修正）
 - sampled 用 `int32`（节省 IPC 字节，FlashInfer kernel 返回 int32）
 - greedy 与 random 用 `torch.where` 合并：同一 batch 里部分请求 temp=0 部分 temp>0 也能一次 forward

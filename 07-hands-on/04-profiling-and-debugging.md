@@ -404,6 +404,7 @@ gdb -p <pid>                          # attach gdb，看 C++ 栈
 ```
 
 **典型 root cause**：
+
 - 不同 TP rank 看到的 batch shape 不一致（scheduler 广播 bug）
 - 某个 rank 慢了几百 ms（preempt 后），其他 rank timeout
 - NVLink 物理故障（`nvlink -e` 显示 corrupted packet）
@@ -418,26 +419,31 @@ gdb -p <pid>                          # attach gdb，看 C++ 栈
 **两者都能**，但 **nsys 更适合**。
 
 **torch.profiler 的优势**：
+
 - Python 友好（在代码里 `with torch.profiler.profile():` 即可）
 - 与 PyTorch op 名直接对应（`flash_attn_varlen_fwd`、`paged_attention_v2` 等）
 - 能直接在 TensorBoard 看 timeline
 
 **torch.profiler 的局限**：
+
 - **kernel 内部不可见**——只显示"这个 op 花了 X ms"
 - 不能区分"kernel launch 慢"还是"kernel compute 慢"
 - 时间分辨率较粗（ms 级精确）
 
 **nsys 的优势**：
+
 - **CUDA stream + kernel 内部时序全可见**——看到每个 warp、SM 占用率
 - 区分 launch overhead vs compute time vs memory transfer
 - 可定位 "attention kernel 内部哪段慢"（例如 softmax 或 reduce 慢）
 - μs 级分辨率
 
 **所以**：
+
 - 想知道"是不是 attention 慢" → torch.profiler 几分钟搞定
 - 想知道"attention 为什么慢（哪一步）" → nsys（多花点时间但能挖到底）
 
 **实际工作流**：
+
 1. torch.profiler 先看 → 定位到"是 attention 占 60% 而不是 GEMM" → 知道方向
 2. 用 nsys 再 profile 同样 workload → 看 attention kernel 内部
 3. nsys 显示"split-K merge 占 attention 80%" → 你知道要去看 `merge_attn_states.cu`
@@ -467,6 +473,7 @@ benchmarks/benchmark_serving.py \
 ```
 
 **在 trace 里找什么**：
+
 ```mermaid
 flowchart TD
     R["engine_step<br/>850 ms ⚠️ 异常长（正常 30-50 ms）"]
@@ -487,11 +494,13 @@ flowchart TD
 ```
 
 **典型发现**：
+
 - `engine_step` p99 异常时，多半是 preempt 或 swap-in
 - 子 span 时长能直接指向 root cause（不是 forward 慢，是周边操作慢）
 - KV 压力大时 `update_block_table` / `allocate_slots` 的 span 会拖长
 
 **修复路径**：
+
 - 增加 KV 容量（扩 `--gpu-memory-utilization` 或减 `--max-num-seqs`）
 - 看是不是 preempt-loop（被踢请求重 prefill 又被踢，永动机）→ 改 `--scheduling-policy fcfs` 试试
 
@@ -510,6 +519,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
 ```
 
 **指标 1：`vllm:time_to_first_token_seconds` (histogram)**
+
 - 看 p99：如果 > SLO 阈值（如 800ms） → TTFT 出问题
 - **root cause 决策**：
   - p99 突涨 + 队列深 → 流量超容量
@@ -517,6 +527,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
   - p99 暴涨 + corrupted_requests 涨 → KV 损坏 / NCCL 错乱
 
 **指标 2：`vllm:num_requests_waiting` (gauge)**
+
 - 看绝对值：如果 > 50 → 队列积压
 - **root cause 决策**：
   - 持续高 + GPU util 100% → 真的超容量，需要扩容
@@ -524,6 +535,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
   - 高 + GPU util 低 → scheduler 异常（罕见，看 EngineCore log）
 
 **指标 3：`vllm:kv_cache_usage_perc` (gauge)**
+
 - 看是否 > 0.9：
 - **root cause 决策**：
   - > 0.9 + preempt 速率高 → KV 不够，扩 pod
@@ -531,6 +543,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
   - < 0.7 但 TTFT 高 → 不是 KV 问题，看其他
 
 **加分指标（如果时间够）**：
+
 - `rate(vllm:request_success_total{finished_reason="abort"}[5m])` — 错误率
 - `rate(vllm:num_preemptions_total[5m])` — 抢占率
 - `vllm:prefix_cache_hits / vllm:prefix_cache_queries` — cache 命中率

@@ -304,6 +304,7 @@ groups:
 |  | KV block lifetime p50/p99 | `vllm:kv_block_lifetime_seconds_bucket` |
 
 **关键设计原则：**
+
 - 默认 5min 时间窗、按 model_name 维度 group（多模型一份 dashboard）
 - 用 **Repeat by instance** 实现多 GPU pod 切换
 - 颜色统一：错误红、延迟黄、容量蓝、cache 绿
@@ -362,12 +363,14 @@ vLLM 默认在 `/metrics` 暴露 Prometheus 格式：
 ```
 
 **云厂商接入：**
+
 - **AWS CloudWatch**: 通过 OTel Collector + CloudWatch exporter
 - **GCP**: GCP Managed Service for Prometheus 直接 scrape
 - **Datadog**: Datadog Agent 配 OpenMetrics check 抓 `/metrics`
 - **阿里云 ARMS**: Prometheus 监控直接接入
 
 **OpenTelemetry trace（更细粒度）**：
+
 - 开启：`--otlp-traces-endpoint <collector>`
 - 源码：`vllm/tracing.py` 暴露每个 request 的 span（含 prefill / decode / sampling）
 - 适合追"这一个请求为什么慢"——配合 metric 看"宏观趋势"

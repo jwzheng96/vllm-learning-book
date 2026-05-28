@@ -77,6 +77,7 @@ void paged_attention_v1_launcher(
 ```
 
 **线程组织**：
+
 - grid：`(num_heads, num_seqs)` —— 每个 (head, seq) 一个 CTA（thread block）
 - block：128 threads 协作处理一个 (head, seq) 的 attention
 - shared memory：存 partial logits 和归约结果
@@ -170,6 +171,7 @@ flowchart TB
 `merge_attn_states.cu` 负责"合并 partial softmax"——用 LogSumExp trick 把多段 partial softmax 拼成正确的全段 softmax。
 
 **为什么 split-K 有用？**
+
 - decode 一个请求只有 1 个 query token，一个 head 一个 CTA → CTA 数 = head 数 × seq 数
 - 假设 num_heads = 32, batch = 1，只有 32 个 CTA，跑不满 H100 的 132 个 SM
 - split-K 把每个 (head, seq) 拆 P 份，CTA 数 = 32 × P，能填满 SM
@@ -322,6 +324,7 @@ A: 性能。FlashAttention v2/v3 由 Tri Dao 团队持续优化，针对最新�
 `dim3 grid(num_heads, num_seqs)` → 总共 `num_heads × num_seqs` 个 CTA。每个 CTA 算 `(head_i, seq_j)` 这一对的完整 attention。
 
 **为什么 `num_heads` 在前？**
+
 - CUDA grid 第一维 `gridDim.x` 是 32-bit 上限大（约 2^31），第二维 `gridDim.y` 上限 65535
 - `num_heads` 可能很大（多头 attention，64 头 + 多层即可达上千）→ 放第一维更安全
 - `num_seqs` 通常 < 256（batch size 受 KV 容量限制）→ 65535 足够
@@ -342,6 +345,7 @@ grid = (num_heads, num_seqs, P)
 ```
 
 **P 大（细粒度切）的优势 / 代价**：
+
 - ✓ CTA 数翻 P 倍，小 batch 下也能填满 SM
 - ✗ merge kernel 工作量翻 P 倍
 - ✗ 每个 partition 太短的话，attention 计算量摊到 partition 启动开销上
@@ -359,11 +363,13 @@ grid = (num_heads, num_seqs, P)
 公式：`y = silu(a) * b`，其中 a 和 b 是同形 tensor。
 
 **Fused kernel**：
+
 ```cuda
 y[i] = silu(a[i]) * b[i]   // 一次 load a + load b, 一次 store y
 ```
 
 **分开两个 kernel**：
+
 ```cuda
 // kernel 1: tmp = silu(a)
 tmp[i] = silu(a[i])         // load a, store tmp
@@ -372,6 +378,7 @@ y[i] = tmp[i] * b[i]        // load tmp, load b, store y
 ```
 
 **性能损失**：
+
 - 多一次 store + load `tmp`：tmp 是 `[B, I_local]` 大小，FP16 下数 MB 级，进出 HBM
 - 多一次 kernel launch：~5 μs overhead
 - 这两个 op 都是 element-wise，**纯 memory-bound**——多走一次 HBM 就慢一倍
@@ -396,6 +403,7 @@ TORCH_LIBRARY_EXPAND(vllm_C, m) {
 ```
 
 **Python 端调用**：
+
 ```python
 import torch
 
@@ -440,6 +448,7 @@ def paged_attention_v1(out, query, ...):
 4. `paged_attention_v1_launcher` 接收新参数并传给 kernel template
 
 **注意点**：
+
 - sliding window 与 prefix caching 不太兼容（窗口滑过的部分被覆盖）——要么单独存窗口外的 KV，要么 Mistral 那种纯 sliding window 模型直接丢掉历史
 - 想看现成实现：FlashAttention 已有 `window_size` 参数，vLLM 的 `vllm/v1/attention/backends/flash_attn.py` 把它传下去就行——**别自己手写 CUDA**，直接复用 FlashAttention
 

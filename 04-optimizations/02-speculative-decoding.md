@@ -230,6 +230,7 @@ class NgramProposer:
 ```
 
 **核心差别**：
+
 - EAGLE 需要 **target 模型的中间 hidden state** —— 因为 draft 模型 reuse target 的 hidden 来减少自己的 forward 开销
 - NgramProposer **纯文本统计** —— 只看 token id 序列，做 n-gram 查找，零模型开销
 
@@ -240,6 +241,7 @@ class NgramProposer:
 **2. "全部接受"时为什么还能多采 1 个 bonus token？**
 
 **拒绝采样的概率论**：当前位置 i，draft 给的 token x，target 概率 p(x)，draft 概率 q(x)：
+
 - 若 `p(x) ≥ q(x)`：直接接受
 - 若 `p(x) < q(x)`：以概率 `1 - p(x)/q(x)` 拒绝。拒绝后从 **"剩余分布" `max(0, p - q) / Z`** 重新采样
 
@@ -309,6 +311,7 @@ class RejectionSampler:
 **测量在哪**：rejection sampler 内部最自然（信息齐全）。Scheduler 端也可以加，但要在 `update_from_output` 时统计。
 
 **Prometheus 查询**：
+
 ```promql
 rate(vllm:spec_accepted_total[5m]) / rate(vllm:spec_proposed_total[5m])
 ```
@@ -328,6 +331,7 @@ rate(vllm:spec_accepted_total[5m]) / rate(vllm:spec_proposed_total[5m])
 | **整体加速比** | **2-3×**（明显赢）| **0.8-1.2×**（可能亏）|
 
 **为什么 bs=64 时反而可能亏**：
+
 1. **target compute-bound**：大 batch 下 GPU 算力被打满，多算 N+1 token 是真实代价（不再是"反正闲着不如算"）
 2. **scheduler overhead**：每步要管理 64 × (1+N) 个 token slot 的状态，CPU 开销上升
 3. **rejection rebatch 复杂**：每个 seq 接受不同数量的 token，下一步要重新组 batch，input 不再齐整

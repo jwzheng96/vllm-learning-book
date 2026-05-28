@@ -299,6 +299,7 @@ python benchmarks/benchmark_throughput.py \
 > "在 system prompt = 500 token + 用户 query = 50 token 的 chatbot workload 下，开启 prefix caching 让**首次同 prompt 之后的请求 TTFT 从 ~180ms 降到 ~30ms，降低约 83%**。降幅与 (cached_tokens / total_prompt_tokens) 比值正相关——cached 占比越高，降幅越接近 95%。"
 
 **详细数字依赖**：
+
 - system prompt 越长 → 降幅越大（500-token prompt 降 83%，2000-token prompt 降 95%+）
 - 命中率（连续请求间是否同 prefix）决定平均收益
 - 第一次请求 TTFT 不变（cache 还没建立）
@@ -312,16 +313,19 @@ python benchmarks/benchmark_throughput.py \
 典型实验 2 设置：长请求 prompt=8192，短请求 prompt=50，同时进。
 
 **不开 chunked prefill（或 budget 极大）**：
+
 - 长请求一次 forward 跑 8192 token → ~250ms
 - 短请求 TTFT = 排队 + 长请求 prefill 时长 ≈ **250 ms**
 
 **开 chunked prefill, `max-num-batched-tokens=2048`**：
+
 - 长请求被切成 4 chunk，每步 2048 token → ~60ms / step
 - 短请求 step 1 就能并行 prefill（50 + 1998 = 2048 内）→ TTFT ≈ **60 ms**
 
 → **短请求多等的 ms = 250 - 60 = 190 ms**（4× 减少）。
 
 **`max-num-batched-tokens` 取值建议**（参考表）：
+
 - 4096-8192：通用 chatbot，平衡 TTFT 和 throughput
 - 2048：TPOT 敏感（code completion），切更小 chunk
 - 16384+：离线 batch，不在意 TPOT 抖动
@@ -355,6 +359,7 @@ ratio = 100 / 50 = 2.0  ← 理论值
 **但实际**：FP8 KV 启用后 attention kernel 需要额外 `k_scale, v_scale` per layer → ~MB 级开销，影响微小。
 
 **真正拉低比值的因素**：
+
 - 模型权重始终占固定显存
 - profile_run 用大 batch 测峰值，FP8 时激活仍 BF16/FP16 → 激活预算不变
 - CUDA Graph capture sizes 与 dtype 无关
@@ -370,6 +375,7 @@ ratio = 100 / 50 = 2.0  ← 理论值
 **当前 preempt 速率**例：约 1-5 次/s（在并发饱和时）。
 
 **KV 再降一半**：
+
 - num_blocks 减半 → 同时能装的并发请求减半
 - 同样并发流量下：
   - `kv_cache_usage_perc` 持续 100%
@@ -378,6 +384,7 @@ ratio = 100 / 50 = 2.0  ← 理论值
 - **症状**：throughput 崩溃，TPOT 抖动剧烈（10×+），出现"刚 admit 又被踢"的振荡
 
 **临界条件**：
+
 - 单请求平均 KV 占用 = `K KB / 请求`
 - 可用 KV = `M KB`
 - 稳定不 preempt 的并发上限 ≈ `M / K`
@@ -391,12 +398,14 @@ ratio = 100 / 50 = 2.0  ← 理论值
 **5. 实验 5 ngram spec decode 在什么 workload 收益最高？为什么大 batch 收益下降？**
 
 **ngram 收益最高的 workload**：
+
 - **高重复性文本**：code completion（变量名、API、boilerplate 反复出现）
 - **结构化输出**：JSON / XML / SQL（语法 token 高度可预测）
 - **长输出 + 模板化**：写报告、邮件模板、文档生成
 - **多轮对话同 system prompt**：前缀重复带来 ngram 库丰富
 
 **ngram 接受率典型范围**：
+
 - code/JSON：30-50%
 - 通用对话：10-20%
 - 创意写作（高随机性）：5-10%
@@ -412,12 +421,14 @@ batch_size 与 GPU 状态的关系：
 | 64+ | compute-bound（算力满）| **低甚至负** —— 每个 token 都要算力 |
 
 **算力账**：
+
 - 小 batch：target 跑 1 token 的算力 = 跑 5 token 的算力（GPU 闲着，多算免费）
 - 大 batch：target 跑 1 个新 token 的实际算力 ≈ batch_size 个 token 的工作量。多算 N 个 token 就是真实地多花 N × batch_size 的算力
 - spec decode 加速比 ≈ `1 + acceptance_rate × (N - 1)` × (1 - overhead)
 - 大 batch 下 overhead 上升 + 算力成本上升 → 实际加速比可能 < 1
 
 **生产建议**：
+
 - 用 `vllm:num_requests_running` 当 batch_size 代理
 - batch_size > 32 时自动关 spec decode（动态开关）
 - 或换成 MTP（DeepSeek-V3 内置）—— 几乎零额外开销，大 batch 也能开

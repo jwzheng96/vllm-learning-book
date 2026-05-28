@@ -146,6 +146,7 @@
 
 ### Q29. 一个用户报告"延迟突然变高"，你怎么排查？
 **骨架**：
+
 1. 看 Prometheus：是 TTFT 高（prefill 阻塞）还是 TPOT 高（KV 压力 / decode batch 过大）
 2. `vllm:num_preemptions_total` 涨 → KV 不够，扩 cache 或降 max_num_seqs
 3. `vllm:prefix_cache_hit_rate` 跌 → workload 模式变了或 cache 太小
@@ -155,6 +156,7 @@
 
 ### Q30. vLLM vs SGLang vs TensorRT-LLM 怎么选？
 **骨架**：
+
 - vLLM：通用、迭代快、模型支持广、社区大 → 生产首选
 - SGLang：RadixAttention 前缀复用更激进、结构化生成强 → agent / chain / 结构化输出
 - TensorRT-LLM：NVIDIA 官方、单请求延迟最低、CUDA Graph 优化极致 → 极低延迟要求 + 固定模型
@@ -230,6 +232,7 @@ sequenceDiagram
 ```
 
 **进程归属总结**：
+
 - `add_request`：API Server 进程接收（tokenize），ZMQ 发到 EngineCore
 - `schedule`：EngineCore 进程内（CPU 跑）
 - `execute_model`：EngineCore 进程发起，Worker 进程接收并跑（GPU 跑）

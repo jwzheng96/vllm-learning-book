@@ -367,6 +367,7 @@ def should_admit(request) -> bool:
 ```
 
 **阈值依据**：
+
 - `kv_usage > 0.95`：留 5% 安全垫，否则下一个请求 alloc 必失败
 - `waiting > 100`：假设 step 时长 50ms，100 个请求要至少 5s 才能依次进 batch，超过 TTFT SLO
 - 复合规则：两个都吃紧时降低阈值，更早拒绝避免雪崩
@@ -391,6 +392,7 @@ def should_admit(request) -> bool:
 4. **pod failure 时重路由**：用户被切到新 pod，原 pod 的 cache 失效
 
 **需要补充**：
+
 - **Prefix-aware fallback**：除了 session hash，还按 prompt 前缀的 block hash 路由
 - **Load-balanced 一致性 hash**：bounded load consistent hashing，每个 pod 容量上限
 - **EPP routing**：根据 vLLM metric 实时调整权重
@@ -404,12 +406,14 @@ def should_admit(request) -> bool:
 **几乎不用改**——这是 Gateway API Inference Extension 的核心价值。
 
 **Envoy 端只需要**：
+
 - 配置 ExtProc filter 指向新 EPP 的 gRPC endpoint
 - 改一行 endpoint URL：`llm-d-epp.svc:9002` → `aibrix-epp.svc:9002`
 
 **EPP 端**：协议遵循 Gateway API Inference Extension 标准（ExtProc gRPC），所以新 EPP 实现只要也遵循同一协议，Envoy 就能透明替换。
 
 **协议核心**：
+
 ```
 Envoy → EPP (gRPC): request_header + body
 EPP   → Envoy   : routing decision (target endpoint) + optional modifications
@@ -417,6 +421,7 @@ Envoy → backend : forward request
 ```
 
 **Gateway API Inference Extension 的价值**：
+
 1. **解耦**：路由策略（EPP）与数据面（Envoy）分离。替换策略不动数据面
 2. **可插拔**：用户可以自己实现 EPP（rust / go / python 都行），只要符合协议
 3. **标准化**：不同 LLM serving 平台（llm-d / AIBrix / 自研）可共用同一 Gateway 基础设施

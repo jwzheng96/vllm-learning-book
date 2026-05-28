@@ -192,6 +192,7 @@ A: 反量化开销 > 算力节省时（小 batch、prefill 阶段 compute-bound�
 - **GPTQ**：`vllm/model_executor/layers/quantization/gptq.py` + `gptq_marlin.py`
 
 **`apply` 是否调 Marlin**：
+
 - 默认场景（H100/H200 + INT4）：**两者都走 Marlin**——AWQ-Marlin 和 GPTQ-Marlin 共享底层 `csrc/quantization/marlin/` kernel
 - 不能走 Marlin 的场景：硬件不支持（A100 之前）、checkpoint 格式不兼容、group_size 不匹配 → fallback 到原始 dequant + cublas gemm
 
@@ -231,6 +232,7 @@ FP8 路径：
 **读出来是 FP16**（或 BF16），attention 内部 compute 仍是 FP16 精度——只是 HBM 存储省了。
 
 **实现细节**：
+
 - `k_scale`、`v_scale`：每个 layer 一个（可选 per-tensor），从 calibration 来
 - attention kernel 模板特化：FlashAttention v3 支持 fp8 KV
 - 写入端 `slot_mapping`：写之前先 quantize（FP16 → FP8 + scale）
@@ -259,11 +261,13 @@ FP8 路径：
 **LM head**：`hidden_state [B, H] · W_lm_head [H, V] → logits [B, V]`。V 通常 128K（vocab size），矩阵很大但只跑**一次/请求**（decode 时每步 1×）。
 
 **不量化原因**：
+
 1. **输出敏感性**：LM head 直接产 logits，logits 的微小偏差经 softmax 放大后**采样分布显著偏移**——不同于 attention/MLP 输出还会被后续层"消化"
 2. **精度需求**：top-k / top-p 采样依赖排序，FP8 的 1 位 mantissa 精度可能让相邻概率的 token 排序错位
 3. **总收益小**：LM head 只占模型权重的 ~5%（70B 模型 LM head 才 ~4 GB），量化收益不大但风险大
 
 **量化 LM head 会怎样**：
+
 - Perplexity 通常退化 2-5%（attention/MLP 量化 < 1%）
 - 容易出"小幅高频错误"——比如把 "the" 输出成 "The"、"is" → "Is"、token 边界附近偏移
 - code generation / 结构化输出（JSON / function call）尤其敏感
