@@ -19,11 +19,13 @@
 ## 1. 为什么量化？
 
 LLM 推理瓶颈：
+
 - **Decode 阶段访存密集**（FLOPs/Bytes ~ 1），weight 从 HBM 读到 SRAM 是主要时间
 - **显存有限**（H100 80GB 只能装 40B FP16 模型）
 - **KV cache 占用**与 dtype 线性相关
 
 量化的核心收益：
+
 - 权重压缩：FP16 → INT4 = **4× 显存节省 + 4× 带宽节省**
 - decode 阶段几乎线性提速
 - prefill 阶段提速有限（compute-bound）
@@ -102,6 +104,7 @@ vLLM 推荐路径：**通过 `LinearMethodBase` 接口让每种量化方法实�
 
 ### 5.1 异常值（Outlier）处理
 LLM activation 有少量极大值（outlier），naive 量化会让它们挤压剩余值。
+
 - AWQ：激活感知，重要 channel 不量化或加大 scale
 - SmoothQuant：把 activation 的难度迁移到 weight（scale + 反 scale）
 
@@ -112,6 +115,7 @@ LLM activation 有少量极大值（outlier），naive 量化会让它们挤压�
 
 ### 5.3 Marlin Kernel 的魔法
 INT4 W × FP16 A 直接做 GEMM 比"反量化再 FP16 GEMM"快 3-4×。原理：
+
 - 用 tensor core 的 mixed precision 模式
 - 反量化和乘法在寄存器层面融合
 - 极致的 shared memory layout

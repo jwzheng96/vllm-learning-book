@@ -80,12 +80,14 @@ vLLM 启动时 profile run 已经预留好 KV cache。运行时 OOM 通常是：
 
 ### 3.1 症状
 TP=8 部署，某个时刻所有 8 个 Pod 全部"看似正常运行"但没有任何 GPU 活动。
+
 - `vllm:num_requests_running` 不变
 - Pod 没崩、健康检查通过
 - 但是新请求全部超时
 
 ### 3.2 根因
 一个 Pod 内的 NCCL 集合通信（AllReduce）卡住了：
+
 - 某张卡卡了一次 kernel
 - 其他卡在等它，整组通信 hang
 
@@ -143,6 +145,7 @@ KV 接近满 → 新请求来 → preempt 一个 running → 那个 running 被�
 
 ### 5.1 问题
 一个请求 `max_tokens=999999` 加 `temperature=0.0`，可能停不下来生成几百万 token。
+
 - 占着 KV 不放
 - 让 batch 平均处理时间变长
 - 影响其他用户的 TPOT
@@ -235,6 +238,7 @@ flowchart LR
 
 ### 8.2 蓝绿
 适合"完全不同模型"切换：
+
 - 新模型 cluster 起来跑 staging
 - Gateway 一键切流
 - 老 cluster 留 24h 准备回滚

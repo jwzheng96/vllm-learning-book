@@ -36,12 +36,14 @@ flowchart TD
 ## 2. 为什么需要 vLLM 自己的 backend？
 
 直接 `torch.compile(model)` 在 vLLM 下有几个问题：
+
 1. **PagedAttention 是自定义 op**，Dynamo 不认得 → 整图 fallback eager
 2. **Attention 内有 dynamic shape**（block_table 长度可变）→ 编译图爆炸
 3. **CUDA Graph 要求固定 shape**，但不同 step 的 num_tokens 变化
 4. **整图编译太大**，编译时间 minutes 级
 
 vLLM 的 `VllmBackend` 解决：
+
 - 把 attention 当 **"图断点"**：图被切成多个 piecewise 子图
 - 每个子图小、shape 稳定，可单独编译 + 单独 CUDA Graph
 - 自定义 op 通过 `torch.library` 注册成可见 op，参与图融合
@@ -90,6 +92,7 @@ class VllmBackend:
 `vllm/compilation/backends.py:548 (split_graph)`：
 
 策略：**遇到 attention op 就切**。
+
 - attention 输入有 `block_table`、`slot_mapping`（dynamic shape）→ 不能 CUDA Graph
 - 其余部分（QKV proj、MLP、norm、residual）shape 固定 → 适合 CUDA Graph
 
@@ -165,6 +168,7 @@ def _(out, query, ...):
 ```
 
 注册后 Dynamo 能识别这个 op：
+
 - 不会 fallback eager
 - 可以参与图变换（move / fuse）
 - 可以放进 CUDA Graph（如果它的 shape 是 graph-friendly 的）
@@ -218,6 +222,7 @@ class CompilationConfig:
 ```
 
 启动命令传 JSON：
+
 ```bash
 vllm serve <model> \
   --compilation-config '{"level": 3, "use_cudagraph": true, "cudagraph_capture_sizes": [1,2,4,8,16,32,64]}'
@@ -279,6 +284,7 @@ class CompilerInterface(ABC):
 ```
 
 实现：
+
 - `InductorAdaptor`（默认）→ torch.compile inductor backend
 - 其他 backend（试验性）：eager、aot_eager 等
 
@@ -296,6 +302,7 @@ class CompilerInterface(ABC):
 | **合计** | **30 s ～ 8 min** |
 
 加速：
+
 1. `VLLM_TORCH_COMPILE_CACHE_DIR` 命中缓存
 2. 减少 `cudagraph_capture_sizes`（如只留 1,4,16,64,256）
 3. `compile_sizes`：只编译特定 batch size 的优化版本

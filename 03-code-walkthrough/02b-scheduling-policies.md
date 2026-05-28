@@ -58,6 +58,7 @@ self.skipped_waiting = create_request_queue(self.policy)
 ```
 
 `skipped_waiting` 是个"被本步跳过"的旁置队列。常见跳过原因（`scheduler.py:430-440` 区段）：
+
 - 请求超 `max_model_len`
 - encoder budget 耗尽
 - encoder cache 耗尽
@@ -70,6 +71,7 @@ self.skipped_waiting = create_request_queue(self.policy)
 即：**FCFS 模式下，如果队头请求暂时不能跑（如等 encoder cache），后面的小请求会被先跑——FCFS 不严格守"先来先服务"**。这通常是好事（throughput +），但生产中调试"为什么我的请求被晚到的请求挤了"时要记住。
 
 到下一步 `_select_waiting_queue_for_scheduling()`（`scheduler.py:1620`）会决定先消费哪个：
+
 - FCFS：先消费 `skipped_waiting`，腾完再 `waiting`
 - PRIORITY：比较两队头，选更小的 `(priority, arrival_time)`
 
@@ -109,6 +111,7 @@ flowchart TD
 ### 4.1 V1 默认 RECOMPUTE
 
 V0 默认 SWAP，V1 改成 RECOMPUTE。原因：
+
 - SWAP 需要 PCIe 拷贝 KV：H100 ↔ host ~50 GB/s，70B 模型一个长上下文请求 KV 可达数 GB——拷贝几十到几百 ms。
 - RECOMPUTE 只需在重新调度时跑一次 prefill；现代 GPU FLOPS 充足，且 chunked prefill 可分摊。
 - prefix caching 命中时 RECOMPUTE 大部分免费——前面 cached 的块复用，只重算 miss 段。
@@ -144,6 +147,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 ### 6.1 RECOMPUTE 模式
 
 被踢请求损失：
+
 - 已生成 N 个 decode token 全丢
 - prefill 算力 = prompt_len × hidden_size² × layers × 2 （粗算）
 - 加上重新调度的 schedule overhead
@@ -155,6 +159,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 ### 6.2 SWAP 模式
 
 被踢请求 KV 拷出 CPU + 恢复时拷回。Llama-70B 长 2500 token KV ≈ 2.5 GB（BF16 GQA）。
+
 - H100 PCIe Gen5 ×16 单向理论 ~64 GB/s → 一次 ~40 ms
 - 恢复时再 40 ms
 - 占 host 内存
@@ -166,6 +171,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 ### 6.3 监控
 
 抢占次数：`vllm:num_preemptions`（Counter）。生产突然 spike 通常意味着：
+
 1. 大批高优先级请求涌入；
 2. KV cache 容量配置过小（`--num-gpu-blocks-override` 不足）；
 3. 长上下文请求集中到达。
@@ -192,6 +198,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 理论上能：实现一个 `RequestQueue` 子类 + 把 `SchedulingPolicy` 加一项 + 修 `scheduler.py` 中 `if self.policy == ...` 的分支。
 
 但实际**不建议**：
+
 - vLLM 主线只有 FCFS / PRIORITY，每次主线升级你要重新 rebase。
 - 复杂策略放路由层更合适——你能拿到全局视野（多实例、跨用户配额）。
 - 调度复杂度 vs. 多卡 batching 的吞吐增益经常不成正比。
@@ -222,6 +229,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 | **PRIORITY queue + 长尾请求**（已运行的低优请求被新进的高优请求踢飞）| `request_queue_time_seconds` p99 异常高；说明请求在 waiting 长时间排队 |
 
 排查命令：
+
 ```bash
 curl :8000/metrics | grep -E "preempt|kv_cache_usage|queue_time"
 ```
@@ -245,6 +253,7 @@ curl :8000/metrics | grep -E "preempt|kv_cache_usage|queue_time"
 **3. 7B 模型, prompt=4000, 已 decode 1000, preempt 后 RECOMPUTE 浪费多少 token？**
 
 被踢请求损失：
+
 - 已 decode 的 1000 个 token 全部丢弃（重新进 waiting 后从 prompt 重新 prefill）
 - 加上**重新 prefill 4000 token**
 

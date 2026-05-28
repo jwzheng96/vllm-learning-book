@@ -27,6 +27,7 @@ prefill 和 decode 的硬件特性完全不同：
 | 适合的硬件         | 算力强的卡（H100、B200）       | 带宽强的卡（同上 + 大 KV）     |
 
 把它们混在同一卡：
+
 - 长 prefill 阻塞 decode（被 chunked prefill 缓解但没根治）
 - decode 的 sampling/调度开销在 prefill 时浪费
 - 难以同时优化 TTFT 和 TPOT
@@ -48,6 +49,7 @@ flowchart LR
 ```
 
 流程：
+
 1. 请求到达 Router
 2. Router 派给某个 Prefill 节点跑 prefill
 3. Prefill 完成，把 KV 写到该请求的 block，通过 RDMA 传到 Decode 节点
@@ -68,6 +70,7 @@ flowchart LR
 | Custom  | 自己写            | 实验/特殊场景         |
 
 接口要点：
+
 - `send_kv(req_id, blocks)`：prefill 节点调用
 - `recv_kv(req_id) -> blocks`：decode 节点调用
 - 异步：传输与计算 overlap
@@ -95,6 +98,7 @@ sequenceDiagram
 ```
 
 关键点：
+
 - 传输的是 **KV cache 内容**（block 数据），不是模型权重
 - 不是 SwapOut/SwapIn 那种"换出再换入"，而是 source 节点的 KV 永久转移
 - 用 RDMA 才有意义（PCIe 慢得多）
@@ -104,6 +108,7 @@ sequenceDiagram
 ## 5. 为什么 NIXL 重要
 
 NIXL 是 NVIDIA 开发的库，封装 GPUDirect RDMA：
+
 - 从一卡的显存直接 DMA 到另一台机器上的卡显存
 - 不经 CPU、不经主机内存（不像 vanilla MPI）
 - 延迟 < 10 μs，带宽接近 NIC 上限
@@ -115,6 +120,7 @@ vLLM 通过 NIXL 让 disaggregated 在 ms 级 KV 转移上可行。
 ## 6. Scheduler 协调
 
 两端都有自己的 Scheduler。挑战：
+
 - Prefill 端要知道"KV 传过去了"才能 free 自己的 block
 - Decode 端要知道"KV 收到了"才能开始 decode
 
@@ -171,6 +177,7 @@ A: 互补。chunked prefill 是同卡上把长 prefill 切片，缓解阻塞但�
 | 高 prefix cache 命中率（70%+）| 谨慎 | cache 散布到多 prefill 节点，命中率会下降，需要 cache-aware routing 抵消 |
 
 业界报告的收益（参考量级，不要当真实数字）：
+
 - Moonshot Kimi：TTFT -30% / TPOT -40%（混合长短 prompt workload）
 - llm-d 论文：高 QPS 长上下文下吞吐 +38.9%
 - 大部分公开数据来自高并发 + 异构 workload。低并发 / 同构 workload 收益不明显或为负。

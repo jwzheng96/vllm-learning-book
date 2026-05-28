@@ -24,6 +24,7 @@ decode 阶段瓶颈是 **大模型的访存**：每生成 1 token，要把整个
 如果能让大模型**一次 forward 验证 N 个候选 token**，且大部分被接受，那么生成 N 个 token 只花了 1 次 forward 的成本。
 
 类比：
+
 - 朴素：你打字，每个字按一下 Enter 确认（慢）
 - 投机：输入法预测整句，你看一眼按 Enter 整句确认（快）
 
@@ -68,6 +69,7 @@ flowchart TD
 
 理论上限：当 q ≡ p 时接受率 = 1。
 实际：
+
 - N-gram draft：30-50%
 - 小 LM draft（如 Llama-7B drafts Llama-70B）：50-70%
 - EAGLE：~ 80%
@@ -104,12 +106,14 @@ def _get_num_new_tokens_for_req(self, req, token_budget):
 ```
 
 然后 Worker 跑 forward 时：
+
 1. draft 阶段：跑 draft 模型生成 N 个候选
 2. target 阶段：把 N 候选喂给 target 一次 forward，得 N+1 个 logits
 3. 接受/拒绝采样
 4. 返回 1 到 N+1 个 token
 
 KV cache 处理：
+
 - target 一次性写入 N+1 个 KV
 - 如果只接受了 k 个，最后 N+1-k 个 KV 要 "rollback"（实际是把 block table 长度截短）
 
@@ -132,6 +136,7 @@ vLLM 通过 `vllm/v1/spec_decode/eagle.py` 等实现。
 ## 7. MTP：DeepSeek-V3 的做法
 
 DeepSeek-V3 训练时就让模型预测多个未来 token（Multi-Token Predict）。推理时：
+
 - 主 forward 出 token T+1
 - MTP head 额外出 token T+2、T+3
 - target 一次 forward 验证 T+1、T+2、T+3
@@ -143,6 +148,7 @@ DeepSeek-V3 训练时就让模型预测多个未来 token（Multi-Token Predict�
 ## 8. 投机解码的负面情况
 
 不是所有场景都赚：
+
 1. **接受率低**（< 20%）：拒绝时浪费 draft 算力 + target 多算 N 个 token，反而慢
 2. **大 batch**：batch 大时 target 本来就 compute-bound，多算 N 个 token 接近线性增成本，投机收益小
 3. **draft 模型本身慢**：draft 时间不可忽略
@@ -164,6 +170,7 @@ vllm/v1/spec_decode/
 ```
 
 集成点：
+
 - Scheduler：`num_lookahead_tokens`
 - ModelRunner：`vllm/v1/worker/gpu_model_runner.py` 内的 spec 分支
 - 采样：`vllm/v1/sample/` 中的 rejection sampler
@@ -239,6 +246,7 @@ class NgramProposer:
 **全部接受时 bonus token 的来源**：
 
 target 一次 forward 跑了 `N+1` 个 token 的 logits：
+
 - 前 N 个 logits 用于 verify draft 的 N 个提议
 - 第 **N+1 个 logits** 是 "假设前 N 个都对的话, 第 N+1 个 token 的分布"——这个分布**已经在 forward 里算出来了**
 

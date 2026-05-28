@@ -17,6 +17,7 @@
 ## 1. 为什么 MoE 一定要 EP？
 
 DeepSeek-V3 这种 MoE 模型有 256 个 expert，每层 router 只激活 8 个（top-k=8）。如果用纯 TP 把模型切到 8 卡：
+
 - 每张卡都加载全部 256 expert 的 1/8（按权重切）
 - 每个 token 路由到 8 个 expert，**每张卡都被涉及**
 - TP-style AllReduce 频繁，且**算力浪费在不被激活的 expert 切片上**
@@ -160,6 +161,7 @@ NVLink-only 单机 8 卡 → AgRs 够用，编译简单
 ## 6. Expert 负载不均：原因与监控
 
 理论上 router 均匀分配，但实际：
+
 - 训练数据有偏，某些 expert 被偏好（"hot experts"）
 - 长尾分布：5-10 个 expert 吃掉 30-50% 的 token
 - 不均会让"忙 expert 所在 rank"成为瓶颈，闲 rank 空转
@@ -176,6 +178,7 @@ NVLink-only 单机 8 卡 → AgRs 够用，编译简单
 启用：`enable_eplb=True`（`FusedMoEParallelConfig.enable_eplb`）。
 
 EPLB 的思路：
+
 - 热 expert **复制到多 rank**（一个 expert 多个 owner）
 - 冷 expert 多个**合并到同 rank**
 - 物理 expert 数 > 逻辑 expert 数
@@ -183,6 +186,7 @@ EPLB 的思路：
 DeepSeek-V3 论文给的方案：256 logical → 288 physical（多 32 个副本）。
 
 代价：
+
 - 显存（多副本占 GPU）
 - 路由复杂度上升
 - 副本同步问题（推理时一般 stateless，影响小）
@@ -212,6 +216,7 @@ prefix caching 在 attention 层做（不在 MoE 层）。EP 只影响 MoE 层�
 理论可叠加：prefill 集群和 decode 集群各自做 EP 部署。`nixl_ep` backend 就是为此设计。
 
 实践细节：
+
 - prefill 集群 expert 分布 vs decode 集群可以不同（不同 workload 偏好不同 expert）
 - KV transfer 量与 EP 无关（KV 仍按 token + layer 维度切）
 
@@ -294,6 +299,7 @@ logical_expert_id  →  [physical_replica_0, physical_replica_1, ...]
 ```
 
 具体 dispatch：
+
 - 副本数为 1 的 expert：必定打到唯一 rank
 - 副本数 > 1 的 expert：按负载均衡策略选副本（round-robin / 按本步 owner rank 当前 load / 随机）
 
@@ -324,12 +330,14 @@ def use_deepep_ll_kernels(self):
 **为什么 `dp_size = 1` 不启用？**
 
 当 `dp_size = 1` 时：
+
 - 整个 EP 退化为"单 DP 实例内部的 EP"——即 ep_size = TP（仅靠 TP 维度切 expert）
 - 这种场景下 expert 切分粒度有限（TP 通常 ≤ 8），AllToAll 也只在 TP 组内进行
 - **完全可以用 TP 组的常规 NCCL collective 处理**——AllReduce / AllGather 等
 - 走 DeepEP 这种"跨 DP rank 通信"的专用 kernel 是 overkill，反而引入 setup 开销
 
 只有当 `dp_size > 1`（典型 wide-EP 配置：TP=8, DP=4, EP=32）时：
+
 - expert 跨 DP 维度分布，需要真正的"非 TP 组的 AllToAll"
 - DeepEP / FlashInfer NVLink kernel 才有用武之地
 

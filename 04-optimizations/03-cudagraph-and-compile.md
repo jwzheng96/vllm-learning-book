@@ -49,6 +49,7 @@ g.replay()                      # 一次性提交
 - InputBatch 用持久化 buffer + 索引切片实现"固定地址"
 
 参数：
+
 - `--enforce-eager`：禁用 CUDA Graph（启动快但跑慢）
 - `--cudagraph-capture-sizes`：自定义要 capture 的尺寸
 - 启动日志可见 "Capturing CUDA Graphs..."
@@ -64,17 +65,20 @@ PyTorch eager mode 每个 op 是独立 Python 调用。即使 GPU 计算被 stre
 
 ### 2.2 解决
 `torch.compile` 用 Inductor 后端：
+
 1. 用 Dynamo 把 PyTorch 代码 trace 成 FX graph
 2. Inductor 把 graph 转成 Triton kernel（融合多个 op 到一个 GPU kernel）
 3. 缓存编译结果
 
 效果：
+
 - 减少 Python overhead
 - op fusion（RMSNorm + linear、SiLU + multiply 等）
 - 比 eager 快 10-30%
 
 ### 2.3 vLLM 的集成
 vLLM 编译范围可配：
+
 - 完整模型 compile（最激进）
 - 只 compile 每个 layer（默认）
 - 只 compile 选定 op（保守）
@@ -84,11 +88,13 @@ vLLM 编译范围可配：
 代码：`vllm/compilation/`
 
 参数：
+
 - `--compilation-config`：JSON 字符串配置
 - `--enforce-eager`：完全关闭 compile + CUDA Graph
 
 ### 2.4 与 CUDA Graph 的关系
 两者可以叠加：
+
 - torch.compile 先把 op 融合成更少更大的 kernel
 - 再 CUDA Graph capture 把这些 kernel 录制成静态图
 - 双重收益
@@ -98,6 +104,7 @@ vLLM 编译范围可配：
 ## 3. 启动慢的代价
 
 启动时 vLLM 要做：
+
 1. 加载权重（几秒到几分钟）
 2. Profile run（测显存，~10 秒）
 3. torch.compile（每个 size 一次，几十秒到几分钟）
@@ -106,6 +113,7 @@ vLLM 编译范围可配：
 总共可能 1-5 分钟。Production 服务部署时这是个问题。
 
 加速方法：
+
 - 使用 `--enforce-eager` 跳过 CG + compile（debug 用）
 - 使用 `--compilation-config={"level": 0}` 关 compile（保留 CG）
 - 缓存 compile 结果到磁盘（`VLLM_TORCH_COMPILE_CACHE_DIR`）
@@ -116,11 +124,13 @@ vLLM 编译范围可配：
 ## 4. 调试 CUDA Graph 问题
 
 CUDA Graph 出错通常表现为：
+
 - 启动时 "RuntimeError during graph capture"
 - 运行结果错误但不报错（最难查）
 - OOM during capture
 
 排查：
+
 1. `--enforce-eager` 先确认是不是 CG 问题
 2. 看 vllm 的 capture_model 日志
 3. 检查是否 add 了不支持 CG 的 op（dynamic shape、host-device sync 等）

@@ -266,6 +266,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 ## 写好 runbook 的 5 条原则
 
 每个 runbook 应该有：
+
 1. **明确的 symptom**：用户 / 监控看到什么
 2. **可机械执行的检查命令**：复制粘贴就能跑
 3. **二分诊断**：每一步缩小怀疑范围
@@ -273,6 +274,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 5. **跟代码 / 配置位置关联**：vLLM 源码、Pod yaml、Helm values
 
 例子骨架：
+
 ```
 ## TTFT 飙升 Runbook
 
@@ -340,6 +342,7 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 ## 总章节小结
 
 整个 `08-production-deployment/` 7 章覆盖：
+
 1. 参考架构（llm-d / AIBrix / vLLM Production Stack）
 2. 智能路由（cache-aware / load-aware / LoRA-aware）
 3. Gateway / Service Mesh（Istio + ExtProc + EPP）

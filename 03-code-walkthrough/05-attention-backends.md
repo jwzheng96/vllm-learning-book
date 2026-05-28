@@ -67,6 +67,7 @@ class AttentionBackend(abc.ABC):
 ```
 
 三件套：
+
 - **Backend**：静态信息（名字、KV shape、能力声明）
 - **Impl**：实际跑 attention 的 forward
 - **MetadataBuilder**：每步 build attention 需要的元数据
@@ -188,6 +189,7 @@ def forward(self, layer, query, key, value, kv_cache, attn_metadata, output):
 ```
 
 注意几个点：
+
 1. **K/V 写入 cache 是 attention kernel 顺手做的**——不是单独一次 op。`slot_mapping` 决定写哪。
 2. **block_table 是 paged 寻址的核心**：kernel 内部按 `block_table[req][i]` 找到第 i 个 block 的物理位置。
 3. **FlashAttention 的 varlen 模式**让我们传打平的 1D 输入 + `cu_seqlens_q`，无需 padding。
@@ -197,6 +199,7 @@ def forward(self, layer, query, key, value, kv_cache, attn_metadata, output):
 ## 6. 后端怎么自动选择？
 
 `vllm/v1/attention/selector.py` 根据：
+
 - 当前硬件（compute capability）
 - 模型 head_size / KV dtype / sliding window
 - 用户参数 `--attention-backend`
@@ -240,6 +243,7 @@ CPU          : CPU_ATTN
 ## 8. Cascade Attention（高级优化）
 
 `FlashAttentionMetadata.use_cascade`、`common_prefix_len` 等字段实现一个加速：
+
 - 一组请求共享前缀时（prefix caching 多请求场景）
 - 不重复对前缀做 attention，而是**先算 prefix 一次**，再各请求算 suffix
 - 数学等价，但访存减少（共享前缀的 K/V 只读一次）
@@ -323,6 +327,7 @@ iteration N（本步）：
 KV cache 形状：`[2, num_blocks, block_size, num_kv_heads, head_dim]`（第 0 维：K vs V）。
 
 每个本步 query token i 的 K/V 写入位置：
+
 ```
 slot_id = slot_mapping[i]        # 由 metadata builder 提前算好
 block_idx = slot_id // block_size
@@ -333,6 +338,7 @@ V_cache[block_idx, intra_block_offset, :, :] = value[i, :, :]
 ```
 
 `slot_mapping[i]` 怎么算：
+
 ```
 req_id = sequence_id_of(i)
 new_token_idx = num_cached_tokens_for(req_id) + (i - query_start_loc[req_id])
@@ -395,6 +401,7 @@ slot_id = physical_block_id * block_size + (new_token_idx % block_size)
 MLA KV cache shape：`[num_blocks, block_size, kv_lora_rank + qk_rope_head_dim]`（注意没有 `[2, ...]` 的二元维度）
 
 具体数字（DeepSeek-V3）：
+
 - `kv_lora_rank = 512`（latent 维度）
 - `qk_rope_head_dim = 64`（位置编码部分单独存）
 - 单 token KV ≈ (512 + 64) × 2 byte = **1152 字节**

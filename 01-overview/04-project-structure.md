@@ -235,6 +235,7 @@ v1/
 ### 3.10 `v1/kv_offload/`、`v1/simple_kv_offload/`：KV 卸载
 
 KV 从 GPU HBM offload 到 CPU 内存 / NVMe 的实现：
+
 - `kv_offload/cpu/` —— CPU memory offload
 - `kv_offload/cpu/policies/` —— LRU / LFU 等
 - `kv_offload/tiering/` —— 多层（GPU → CPU → 远端）
@@ -374,6 +375,7 @@ model_executor/
 | 工具 | `adapters.py` / `__init__.py`（家族注册） |
 
 每个模型文件结构相似：
+
 ```python
 class XxxAttention(nn.Module): ...      # 用 vLLM Attention + 量化 Linear
 class XxxMLP(nn.Module): ...
@@ -751,6 +753,7 @@ csrc/
 ## 19. `tests/`：测试
 
 按 vllm 子模块对应：
+
 - `tests/engine/` / `tests/spec_decode/` / `tests/samplers/` / `tests/lora/` / `tests/multimodal/` / `tests/models/` / `tests/kernels/` / `tests/distributed/` ...
 - `basic_correctness/` —— 端到端正确性
 - `evals/` —— 模型评估

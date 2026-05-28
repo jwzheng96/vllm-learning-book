@@ -471,6 +471,7 @@ step n:   CPU [sched 3ms]
 CPU schedule 完全藏在 GPU forward 内（3 ms < 30 ms）。**每步省 3 ms**，相对 33 ms = **9.1%**。
 
 收益与 schedule / forward 比值有关：
+
 - schedule 重（大 batch + 复杂调度，可能 5-10 ms）→ async 收益最大
 - schedule 轻（小 batch + FCFS，1 ms）→ async 几乎看不到收益
 

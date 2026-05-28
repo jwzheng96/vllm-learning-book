@@ -107,6 +107,7 @@ curl -X POST http://localhost:8000/stop_profile
 ### 3.3 看什么
 
 打开 chrome trace，关注：
+
 - **gap** 之间：CPU 在做什么？是 Python 调度还是真的 GPU 在跑
 - **每个 kernel 时长**：matmul（GEMM）vs attention vs softmax vs allreduce
 - **stream sync**：很多 `cudaStreamSynchronize` 意味着 CPU 等 GPU，可能 dispatcher 不畅
@@ -132,6 +133,7 @@ nsys profile \
 ```
 
 加载 `vllm-trace.nsys-rep` 到 Nsight Systems GUI。
+
 - CUDA HW row 看每张卡的 kernel
 - NVTX row 看 vLLM 标的 region（如果开了）
 - OS Runtime 看 syscall（识别 IPC / NCCL 阻塞）

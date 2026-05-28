@@ -179,6 +179,7 @@ flowchart TB
 ## 4. 现代实现：FlashAttention v3 + FlashInfer 接管
 
 如本课程前面提到的，vLLM 现在主用：
+
 - `vllm-flash-attn`（vllm 维护的 fork，FA2/FA3）
 - `flashinfer`
 
@@ -193,6 +194,7 @@ flowchart TB
 ### 5.1 layernorm_kernels.cu
 
 实现：
+
 - `rms_norm` —— 标准 RMSNorm
 - `fused_add_rms_norm` —— x + residual → RMSNorm，省一次 launch
 - `fused_rms_norm_quant` —— RMSNorm + 输出 FP8 量化
@@ -227,6 +229,7 @@ top-k / top-p sampling 的 GPU 实现。decode 的最后一步。
 ### 5.6 quantization/
 
 各种量化 GEMM kernel：
+
 - `fp8/` —— FP8 matmul
 - `gptq_marlin/` —— GPTQ INT4 W × FP16 A 的 Marlin kernel（INT4 推理性能秘诀）
 - `awq/` —— AWQ INT4
@@ -414,6 +417,7 @@ torch.ops.vllm_C.paged_attention_v1(
 ```
 
 vLLM 通常通过 `vllm/_custom_ops.py` 的 wrapper 调用：
+
 ```python
 # vllm/_custom_ops.py
 def paged_attention_v1(out, query, ...):
@@ -429,6 +433,7 @@ def paged_attention_v1(out, query, ...):
 入口：**`csrc/attention/attention_generic.cuh`** 或者 **`csrc/attention/attention_kernels.cuh`**——这里定义了 attention 的内层循环（遍历 token、算 softmax）。
 
 修改思路：
+
 1. 在 inner loop 加 mask：`if (token_idx < seq_len - window_size) continue;`——跳过滑窗外的 K/V
 2. 修 reduction：sliding window 模式下不需要全 seq softmax，只需要窗口内
 3. attention metadata 加 `window_size` 字段从 Python 传进来

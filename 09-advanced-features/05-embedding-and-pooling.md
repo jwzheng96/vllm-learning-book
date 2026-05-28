@@ -35,6 +35,7 @@ flowchart LR
 ```
 
 vLLM 的处理：
+
 - engine / scheduler / KV manager / attention backend 全部复用
 - 不走 sampling 路径，改走 pooling 路径
 - 每个请求只算一次 prefill（无 decode），latency 主要看 prefill
@@ -79,6 +80,7 @@ flowchart LR
 ```
 
 PoolerActivation（`activations.py:73`）后处理：
+
 - `PoolerIdentity`：原样输出
 - `PoolerNormalize`：L2 normalize（对 dot product / cosine 相似度必须做）
 - `PoolerClassify` / `PoolerMultiLabelClassify`：分类头
@@ -123,6 +125,7 @@ OpenAI API `/v1/embeddings` 请求转成 `PoolingParams`，进 EngineCore。
 `vllm/v1/pool/` 包含 pool task 的 metadata + 后处理。
 
 EngineCore 检测请求类型（generation vs pooling）：
+
 - generation：走 Sampler
 - pooling：走 Pooler
 
@@ -188,6 +191,7 @@ flowchart TD
 ## 8. BGE-M3：复合 pooler 范例
 
 BGE-M3 输出 3 种表示：
+
 - Dense（CLS pool + normalize）
 - Sparse（每 token 计算稀疏权重）
 - ColBERT（per-token embedding for late interaction）
@@ -225,11 +229,13 @@ $$\text{score}(q, d) = \sum_{i=1}^{L_q} \max_{j=1, \ldots, L_d} \, q_i \cdot d_j
 ## 10. 与 paged attention 的关系
 
 Embedding 模型大多是 **encoder-only**（BERT 风格）：
+
 - 无 causal mask
 - 一次 forward 完成
 - KV 用一次就丢
 
 vLLM 的 attention backend 支持 `attn_type = "ENCODER_ONLY"`：
+
 - 不写 KV cache
 - 双向 attention（非 causal）
 - 可以走 FlashAttention 的 bidirectional 模式
@@ -260,6 +266,7 @@ class DispatchPooler(Pooler):
 
 ### 11.4 Rerank 部署
 Reranker（cross-encoder）跟 embedding（bi-encoder）不一样：
+
 - bi-encoder：分别 encode query / doc → 算相似度
 - cross-encoder：拼接 `[CLS] query [SEP] doc` 一次 forward → 输出 score
 

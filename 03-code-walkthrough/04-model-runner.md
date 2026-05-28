@@ -281,6 +281,7 @@ def capture_model(self):
 ```
 
 runtime 时：
+
 ```python
 if total_num_scheduled_tokens in self.cudagraph_sizes:
     # 用对应 graph replay
@@ -380,6 +381,7 @@ A: ①避免每步重新分配 GPU tensor；②满足 CUDA Graph 对固定地址
 **为什么 varlen 需要 `query_start_loc`？**
 
 FlashAttention varlen kernel 把所有 query 拼成 1D `[total_query_tokens, num_heads, head_dim]` 张量。kernel 需要知道**第 i 个 token 属于哪个序列**才能：
+
 1. 用正确的 `block_table[seq_id]` 找它的历史 K/V
 2. 用正确的 `seq_lens[seq_id]` 算 attention mask
 
@@ -399,6 +401,7 @@ FlashAttention varlen kernel 把所有 query 拼成 1D `[total_query_tokens, num
 | `tests/v1/attention/test_<new_backend>.py` | 单测 + 与 FlashAttention 数值一致性测试 |
 
 可选：
+
 - `csrc/<new_backend>/`：如果需要新 CUDA kernel
 - `vllm/_custom_ops.py`：注册 PyTorch op
 
@@ -411,6 +414,7 @@ FlashAttention varlen kernel 把所有 query 拼成 1D `[total_query_tokens, num
 **CUDA Graph 录制时**："把 `kernel A(input_ids_ptr_0x1234)` 这条指令录下来"。input_ids 的**GPU 内存地址** `0x1234` 被编码到 graph 里。
 
 如果每步 `input_ids = torch.zeros(...)` 重新分配：
+
 - 新 tensor 地址是 `0x5678`，与 graph 录制的 `0x1234` 不符
 - replay graph 会读 `0x1234` 那块内存——里面是上一步的旧值（如果还没释放）或随机数据
 - **结果错误，不报错**——CUDA Graph 不验证地址内容，沉默崩坏最难查

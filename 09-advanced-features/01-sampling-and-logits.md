@@ -85,6 +85,7 @@ class SamplingParams:
 ```
 
 `SamplingType`（line 33）有三种：
+
 - `GREEDY`（temperature ≈ 0）
 - `RANDOM`（不传 seed）
 - `RANDOM_SEED`（带 seed）
@@ -167,6 +168,7 @@ def sample(self, logits, sampling_metadata, ...):
 ```
 
 `TopKTopPSampler`（`vllm/v1/sample/ops/topk_topp_sampler.py`）有两条路径：
+
 - **FlashInfer**：`flashinfer.sampling.top_k_top_p_sampling_from_probs`，最快
 - **Triton fallback**：`vllm/v1/sample/ops/topk_topp_triton.py`，自带 kernel
 
@@ -243,11 +245,13 @@ vLLM 把这个公式实现成 Triton kernel（`rejection_random_sample_kernel`�
 `vllm/v1/sample/ops/logprobs.py` + `Sampler.gather_logprobs`（line 298）。
 
 设计原则：
+
 - 不是每个 forward 都算 logprobs（贵）。仅当 `logprobs > 0` 或 `prompt_logprobs > 0` 时才算
 - 算时只对**采样 token + top-N**做 log_softmax + gather，不是 full vocab
 - 使用 fused Triton kernel `compute_token_logprobs`（line 1.4× sparse gather 性能）
 
 返回结构 `LogprobsTensors`：
+
 ```
 logprob_token_ids:  [num_tokens, num_logprobs + 1]   # +1 是 sampled token
 logprobs:           [num_tokens, num_logprobs + 1]   # 对应的 log p
@@ -284,11 +288,13 @@ SamplingMetadata fields:
 ## 9. 自定义 LogitsProcessor
 
 用户可以传 callable 改 logits。但有性能陷阱：
+
 - **每步**对 batch 内每个有 processor 的请求都要调一次
 - Python callable 不能融入 CUDA Graph
 - 实际生产建议：用结构化输出（xgrammar）替代手写 processor（见下一节）
 
 vLLM 把 processors 分两类：
+
 - `argmax_invariant`：只改非 argmax 位置的 logit（如 bad_words mask）
 - 非 invariant：可能改 argmax 结果（如 forced token）
 

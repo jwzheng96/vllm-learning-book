@@ -209,11 +209,13 @@ JSON Schema → DFA 可能要几十 ms。同步会卡 Scheduler。改 thread poo
 ## 8. 与 Function Calling / Tool Use 的关系
 
 OpenAI 的 `tools` API：
+
 - 用户传 function schema
 - 模型决定调用哪个 function + 输出 JSON 参数
 - 服务端解析 JSON 调实际工具
 
 vLLM 的实现路径（`vllm/entrypoints/openai/`）：
+
 - frontend 把 tools schema 转成 JSON Schema
 - 设 `structured_outputs={"type": "json_schema", ...}`
 - 用 `tool_choice` 控制是否强制调用
@@ -225,6 +227,7 @@ vLLM 的实现路径（`vllm/entrypoints/openai/`）：
 ## 9. 与投机解码的交互
 
 结构化输出 + spec decode 是个**复杂组合**：
+
 - target 模型采样后必须 accept_tokens 推进 grammar
 - spec 一次提议多个 token，需要 `validate_tokens` 批量验
 - 拒绝重采时要 `rollback` 回滚 grammar 状态
@@ -237,6 +240,7 @@ vLLM 的实现路径（`vllm/entrypoints/openai/`）：
 ## 10. Reasoning Models（DeepSeek-R1 / o1 风格）
 
 `structured_outputs_config.reasoning_parser` 处理 reasoning：
+
 - 模型先输出 `<think>...</think>` 然后正式答案
 - ReasoningParser 把 reasoning 段拆出来不参与 grammar 约束
 - 答案段恢复 grammar 约束

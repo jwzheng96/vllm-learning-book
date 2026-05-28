@@ -161,6 +161,7 @@ class PunicaWrapperBase:
 ```
 
 GPU 实现 `punica_gpu.py` 内部调 Triton kernel：
+
 - `bgmv_shrink`：batched grouped matmul vec（shrink 段）
 - `bgmv_expand`：批量 expand
 - 已融合到一个 kernel 减少 launch 数
@@ -253,6 +254,7 @@ flowchart TD
 - 否则触发 swap，cost 100ms~1s
 
 实现：
+
 - vLLM Pod 通过 `/metrics` 或 admin API 暴露 `lora:active_adapters`
 - llm-d / AIBrix EPP 把这作为路由打分的一个维度
 
@@ -265,6 +267,7 @@ GPU slot 数 = `max_loras`（启动参数）。每 slot 占 `rank × 2 × hidden
 
 ### 11.2 加载延迟
 首次激活一个新 adapter：从 disk/S3 拷 → GPU 显存。几百 MB 在 PCIe 上 1-2 秒。建议：
+
 - 热门 adapter 启动时**预加载**
 - LRU 别太激进（cache miss 痛）
 

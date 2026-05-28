@@ -143,6 +143,7 @@ vllm/v1/core/single_type_kv_cache_manager.py
 ```
 
 每种 manager 实现 KVCacheManager 的接口（allocate_slots / free / cache_blocks），但内部物理布局完全不同：
+
 - Full attention：paged blocks
 - Mamba：连续的 `[n_running, n_layers, ssm_state]` tensor，每个 slot 一行
 
@@ -193,6 +194,7 @@ vllm/model_executor/layers/fused_moe/
 ```
 
 CUDA 层：`csrc/moe/`，含：
+
 - `topk_softmax`：router 输出 top-k 选择
 - `moe_align_block_size`：把 token 按 expert 分组（核心 perf 关键）
 - `fused_moe_kernel`：批量 grouped matmul
@@ -221,6 +223,7 @@ flowchart TD
 ### 4.4 EPLB（Expert Parallel Load Balancer）
 
 `vllm/distributed/eplb/`：处理 expert 流量不均：
+
 - 监控每 expert 的活跃 token 数
 - 把热门 expert 复制到多 rank（rebalance）
 - 配合 AllToAll 路由表更新
@@ -229,6 +232,7 @@ flowchart TD
 
 ### 4.5 与 LoRA + MoE 的组合
 `vllm/lora/layers/fused_moe.py` 是 LoRA × MoE 的特殊版本：
+
 - 每个 expert 可以有自己的 LoRA delta
 - punica wrapper 在 expert 维度也分组
 
@@ -285,6 +289,7 @@ class DeepseekV3DecoderLayer(nn.Module):
 ```
 
 注意：
+
 - self_attn 内部走 MLA backend，KV 写 latent
 - mlp 在浅层 dense、深层 MoE（DeepSeek 特定配置）
 - 整体 forward 与 Llama 一致，只是子层不同
@@ -326,6 +331,7 @@ A: ①每 N step 统计 expert 命中频率；②热门 expert 复制到多 rank
 **1. W_dkv 为什么拆 rope / nope 两段？**
 
 MLA 的 K/V 实际是从 latent 维度 `c_KV` 投影出来的：
+
 ```
 c_KV = x · W_dkv               # [B, kv_lora_rank]，低秩 latent
 K = (c_KV) · W_uk_nope          # nope 部分
@@ -354,6 +360,7 @@ Jamba 是 hybrid 架构：部分层是 Mamba（SSM state），部分层是 Atten
 - `group_id=1`: MambaKVCacheManager → 管 Mamba 层的 SSM state
 
 一次 `allocate_new_blocks(request, num_new_tokens)` 调用：
+
 1. 遍历 `self.managers` (group_id 0 → 1)
 2. 每个 manager 单独算它管的那种 KV 需要多少 block
 3. 都成功才整体成功；任一失败回滚

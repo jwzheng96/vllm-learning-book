@@ -56,6 +56,7 @@ class LLM:
 ```
 
 `generate()` 流程：
+
 ```python
 def generate(self, prompts, sampling_params):
     for prompt in prompts:
@@ -84,6 +85,7 @@ def generate(self, prompts, sampling_params):
 - `/metrics`：Prometheus 监控
 
 每条请求路径：
+
 ```
 HTTP → FastAPI handler → AsyncLLMEngine.add_request()
                        → 异步 yield 流式 token
@@ -169,6 +171,7 @@ class EngineCore:
 | `abstract.py`            | 接口定义                        |
 
 接口大致是：
+
 ```python
 class Executor:
     def execute_model(self, scheduler_output) -> ModelRunnerOutput:
@@ -323,6 +326,7 @@ $ ps -ef --forest | grep vllm
 TP=4 时共 **6 个进程**：1 API + 1 EngineCore + 4 Worker。
 
 辨识方法：
+
 - API Server：`vllm serve` 命令名，跑 FastAPI/uvloop
 - EngineCore：进程名通常含 `EngineCore` 或 `_run_engine_core`，CPU 占用高
 - Worker：进程名含 `VllmWorker`，绑定某张 GPU（`nvidia-smi` 能看到 PID）

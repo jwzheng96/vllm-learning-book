@@ -19,6 +19,7 @@ LLM 推理的负载均衡跟传统微服务**完全不同**。round-robin 在这
 ## 1. 为什么 round-robin / least-conn 在 LLM 下失灵？
 
 传统服务负载均衡假设：
+
 - 每个请求处理时间相近
 - 每个实例性能相近
 - 实例之间无状态
@@ -33,6 +34,7 @@ LLM 推理打破**全部**这些假设：
 | 一来一回          | 流式输出（SSE）持续几十秒，连接长存                                      |
 
 如果用 round-robin：
+
 - prefix cache 命中率从 80% 跌到 10%
 - 长尾长请求恰好都落同一实例 → 那实例 KV 爆 / 频繁 preempt
 - decode 阶段大 batch 实例和 idle 实例并存，浪费
@@ -71,6 +73,7 @@ flowchart TB
 
 ### 思想
 同一个 conversation_id 永远路由到同一个 Pod。
+
 - 第一轮：cold start，TTFT 高
 - 后续轮：完整 prefix cache 命中，TTFT 极低
 
@@ -93,6 +96,7 @@ Envoy 的 `Maglev` 或 `Ring Hash` 是事实标准。
 
 ### 4.1 思想
 Smart Router 维护一份"每 Pod 当前有什么 cached prefix"的近实时视图。新请求来时：
+
 1. 算 prompt 的 block hashes
 2. 查每个 Pod 的 cache index，找命中长度最大的
 3. 路由过去
@@ -113,6 +117,7 @@ Router 自己用 prompt + 已知 Pod 历史路由做 trie 估计 cache 状态。
 
 ### 4.3 效果
 llm-d 公开数据：
+
 - Throughput +38.9%（vs round-robin）
 - TTFT p95 -97%（chat workload，prefix 重复多）
 
@@ -188,6 +193,7 @@ flowchart LR
 ```
 
 启动：
+
 ```bash
 helm install vllm-stack vllm/vllm-stack \
   --set router.enabled=true \
@@ -238,6 +244,7 @@ flowchart TD
 ## 9. 多 LLM 网关：LiteLLM 的位置
 
 LiteLLM（litellm.ai）通常作为**最外层**网关：
+
 - 统一 OpenAI 协议
 - 路由到多个后端：vLLM、TRT-LLM、OpenAI API、Anthropic、Bedrock……
 - API key 管理、quota、cost track
@@ -267,11 +274,13 @@ AIBrix v0.6 的 `remote tokenizer` 就是为了这个：Gateway 统一 tokenize 
 
 ### 10.2 流式 + Smart Router
 SSE 的 first byte 已经出去后，不能换 Pod。
+
 - 路由决策必须在 first byte 前完成
 - 之后哪怕该 Pod 出问题也只能让请求失败（不能中途切）
 
 ### 10.3 长上下文请求的"特殊通道"
 100k+ token 请求会显著影响 batch。建议：
+
 - 单独一组 Pod 服务长上下文（高 KV 容量）
 - 路由层识别 prompt 长度 → 走专门后端
 
@@ -327,6 +336,7 @@ A: 会。需要确保：①ExtProc 服务本身可扩缩 ②路由决策 < 1ms �
 > Router 负责**把同 prefix 的请求路由到同一 vLLM pod**，让 vLLM 内部的 prefix caching **真正命中**（而不是分散到 N 个 pod 各自重算）。
 
 两者**互补，缺一不可**：
+
 - 没 vLLM prefix caching：即使路由对了，pod 内部也不复用 KV
 - 没 cache-aware router：N 个 pod 各自有自己的 cache，命中率 ÷ N
 

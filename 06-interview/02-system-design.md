@@ -41,6 +41,7 @@ flowchart TD
 
 ### 阶段 1：Clarify
 反问面试官：
+
 - 模型多大？（假设 Llama-3 70B）
 - 输入长度 / 输出长度分布？（假设 prompt 1k、output 500 tokens）
 - TTFT 目标？（假设 < 500ms）
@@ -90,6 +91,7 @@ flowchart TD
 - chunked prefill 默认开（长 prompt 不卡 decode）
 
 并行：
+
 - TP=8 单实例（一台 8 卡 H100）
 - 模型实例间 DP（每实例独立模型副本）
 
@@ -104,6 +106,7 @@ flowchart TD
 
 ### 阶段 6：监控
 关键面板：
+
 - TTFT p50/p99
 - TPOT p50/p99
 - `vllm:gpu_cache_usage_perc`
@@ -212,6 +215,7 @@ flowchart TD
 ## 自己练习的方式
 
 设计 3 个不同 workload，每个写一份 1-2 页的设计：
+
 - "服务 1k 并发的客服 chatbot"
 - "服务 100 个 50k-token RAG 请求"
 - "批量处理 10M 条文档摘要"

@@ -49,6 +49,7 @@ LLM 应用中存在大量"前缀重复"：
 ## 3. 启用方式
 
 V1 中 prefix caching **默认开启**。命令行：
+
 ```
 vllm serve <model> [--no-enable-prefix-caching]   # 关闭
 ```
@@ -141,6 +142,7 @@ V1 提供两种 cbor-encoded hash（`vllm/utils/hashing.py`）：
 ### 5.1 block 边界对齐
 
 hash 是按 block 算的。如果 system prompt 是 1003 token（block_size=16），那么：
+
 - block 0..61：完全相同 → 命中
 - block 62：第 62 个 block 有 11 个 prompt token + 5 个 user 输入 → **不命中**（user 输入不同）
 
@@ -153,6 +155,7 @@ hash 只包含 token_ids 和上下文，不包含 temperature / top_p。这是�
 ### 5.3 hybrid KV cache 的两套 block_size
 
 V1 引入了 Mamba / 滑窗等混合 KV cache，scheduler 和 hash 用的 block_size 可能不同（`resolve_kv_cache_block_sizes()`，line 571）：
+
 - `scheduler_block_size`：调度对齐的粒度（受 DCP/PCP 影响）
 - `hash_block_size`：prefix caching 用的粒度（多组时取各组 GCD）
 
@@ -165,6 +168,7 @@ V1 引入了 Mamba / 滑窗等混合 KV cache，scheduler 和 hash 用的 block_
 prefix cache 命中后，剩余未命中的 token 还需要 prefill。如果剩余很长，会被 chunked prefill 进一步切。
 
 逻辑顺序（在 KVCacheManager 里）：
+
 ```
 1. 算请求 prompt 每个 block 的 hash（链式，O(num_blocks)）
 2. 顺序匹配 cached_hash，找到第一个 miss 的位置 K
@@ -181,6 +185,7 @@ prefix cache 命中后，剩余未命中的 token 还需要 prefill。如果剩�
 ### 7.1 TP 内部
 
 每张 TP rank 各自维护自己的 KV cache 和 BlockPool，但：
+
 - **hash 计算在 driver rank（rank 0）完成**：因为 hash 只依赖 token + extra_keys，不依赖 KV 数值
 - **结果广播给所有 rank**：scheduler 把"哪些 block 命中、用哪些物理 block id"塞进 `SchedulerOutput`
 - 所有 rank 拿到相同的 block table，独立从自己的 KV cache 取数据
@@ -204,6 +209,7 @@ vLLM 通过 KV connector 接口（`vllm/distributed/kv_transfer/`、`vllm/v1/kv_
 | L3 | NVMe / RDMA / Object Store | ms 级 | 无限（按成本）|
 
 实际项目：
+
 - **LMCache**：开源 L2/L3 prefix cache 库，与 vLLM 通过 connector 集成
 - **NIXL**：NVIDIA 的高性能 KV 传输库，P/D 分离常用（见 [`05-distributed/02-disaggregated.md`](../05-distributed/02-disaggregated.md)）
 
@@ -214,6 +220,7 @@ vLLM 通过 KV connector 接口（`vllm/distributed/kv_transfer/`、`vllm/v1/kv_
 ## 8. 容量与逐出策略
 
 prefix cache 不是无限的。当 BlockPool 用尽时：
+
 - 现有的某个 `ref_cnt=0` 的 block 会被覆盖
 - 从 free queue **头部**取（LRU，最久未用）
 - 一旦被覆盖，这个 hash 在 `cached_block_hash_to_block` 表中删除
@@ -253,6 +260,7 @@ A: 能。`cached_block_hash_to_block` 是个普通 dict——拿到当前 block 
 
 **Q: 怎么测 prefix caching 的效果？**
 A:
+
 1. 跑 `benchmarks/benchmark_prefix_caching.py`
 2. 自定义 workload：同 system prompt + 不同 user query，对比开关 prefix caching 的 TTFT / throughput
 3. 看 Prometheus 的 `vllm:prefix_cache_hit_rate` 和 `vllm:prefix_cache_queries_total`

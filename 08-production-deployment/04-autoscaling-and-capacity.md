@@ -19,6 +19,7 @@ LLM 推理的 autoscaling 跟普通微服务不在一个量级：冷启动 1-10 
 ## 1. 为什么 CPU/Memory 维度的 HPA 在 LLM 下没意义
 
 K8s HPA 默认基于 CPU/memory。LLM Pod：
+
 - CPU 利用率几乎恒定（Python 调度 + 收发请求），无论 1 RPS 还是 1000 RPS 都差不多
 - Memory 不会涨（vLLM 启动就吃满 90% 显存做 KV cache）
 
@@ -133,6 +134,7 @@ flowchart LR
 ## 5. 缩容更难：流式连接怎么 drain？
 
 普通服务 K8s 缩容靠 `preStop` + `terminationGracePeriodSeconds`，几秒就行。LLM：
+
 - 一个 SSE 可能跑 5 分钟
 - 强行 SIGTERM 会丢用户上下文，体验灾难
 
@@ -148,6 +150,7 @@ flowchart LR
 ```
 
 K8s 配置：
+
 ```yaml
 spec:
   terminationGracePeriodSeconds: 600  # 给够时间（10 分钟）
@@ -172,6 +175,7 @@ spec:
 $$\text{Pods} = \left\lceil \frac{\text{RPS}_{\text{peak}} \times \overline{\text{duration}}}{\text{capacity\_per\_pod} \times u_{\text{target}}} \right\rceil$$
 
 其中：
+
 - $\overline{\text{duration}} \approx \text{TTFT} + \overline{\text{output\_tokens}} \times \text{TPOT}$
 - $\text{capacity\_per\_pod} \approx \dfrac{\text{kv\_capacity\_tokens}}{\overline{\text{total\_tokens\_per\_request}}}$
 - $u_{\text{target}} \in [0.6, 0.7]$（留缓冲应对峰值）
@@ -189,6 +193,7 @@ $$\text{Pods} = \left\lceil \frac{\text{RPS}_{\text{peak}} \times \overline{\tex
 
 ### Benchmark 验证
 公式估算只是起点。生产前必须做 load test：
+
 ```bash
 python benchmarks/benchmark_serving.py \
     --num-prompts 1000 \
@@ -202,15 +207,18 @@ python benchmarks/benchmark_serving.py \
 ## 7. 多模型混部的容量规划
 
 如果一个集群跑多个模型：
+
 - 模型 A (Llama-7B)：少量并发，低延迟要求
 - 模型 B (Llama-70B)：高并发，吞吐优先
 - 模型 C (Whisper)：脉冲流量
 
 策略：
+
 - **分池**：每个模型独立 Pod pool，独立扩缩
 - **共池 + 动态加载**：vLLM 支持 LoRA 多租户，但完全不同的 base model 必须独立 Pod
 
 资源调度上：
+
 - 用 K8s `PriorityClass` 让关键模型优先抢资源
 - GPU 节点池可以专用（如 H100 跑 70B、A100 跑 7B）
 - Spot / Preemptible 实例只跑批量 workload，不放 in-flight
@@ -361,6 +369,7 @@ spec:
 **TTFT = queue_wait + prefill_time**
 
 假设单 pod prefill 时长平均 100ms（取决于 prompt 长度，估值），那么：
+
 - TTFT p95 = 500ms = queue_wait + prefill
 - queue_wait < 400ms（留 100ms 给 prefill）
 

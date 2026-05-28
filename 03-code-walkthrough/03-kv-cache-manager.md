@@ -59,6 +59,7 @@ class KVCacheBlock:
 ```
 
 不变式：
+
 - `ref_cnt == 0` ⟺ 在 free queue 里
 - `ref_cnt > 0` ⟺ 至少一个 Request 的 block_table 引用了它
 - `_block_hash != None` ⟺ block 已写满且参与 prefix caching
@@ -112,6 +113,7 @@ def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
 ```
 
 注意两件事：
+
 - 从 free queue **头部**取（LRU 中最早 free 的）→ 配合 prefix caching，最旧的 cached block 才会被覆盖。
 - 若取出的 block 仍带 hash（曾被 cache 过），先把它从 `cached_block_hash_to_block` 里移除（`_maybe_evict_cached_block`），才能给新请求用。
 
@@ -215,6 +217,7 @@ def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
 ```
 
 关键点：
+
 - **最后一个 token 必须重算**：因为 vLLM 需要它的 logits 来采样下一个 token；如果命中了它，反而没有 logits 可用。
 - `find_longest_cache_hit` 按 `block_hashes` 链式查找——**第一个 miss 后停下**（前缀性质，文档里讲过）。
 
@@ -379,6 +382,7 @@ flowchart TD
 5. （可选）`vllm/v1/core/kv_cache_coordinator.py`：多 group 协调
 
 读完你应该能：
+
 - 在白板上画 BlockPool 的内部数据结构
 - 解释为什么 free 时要 reverse
 - 描述一个请求 prefix 命中后 KV manager 内部发生的 5 个动作

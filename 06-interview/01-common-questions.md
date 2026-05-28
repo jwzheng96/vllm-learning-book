@@ -185,11 +185,13 @@
 **1. 自测 Q1-Q30：合格线 25/30。**
 
 自我评估方法：盖住答案，给自己 1-2 分钟讲清楚每道题。**"讲清楚"标准**：
+
 - 能讲完核心概念（如 PagedAttention 借鉴 OS 分页）
 - 能引一个具体文件或数字（如 `vllm/v1/core/sched/scheduler.py` 或 "命中率 96%+"）
 - 能在听众反问时不卡顿（说明真懂）
 
 不到 25：先重读对应章节，再自测。常见盲点：
+
 - **架构题**（Q3-Q5）：去读 [`01-overview/02-architecture.md`](../01-overview/02-architecture.md)
 - **算法题**（Q12-Q15）：去读 [`02-core-concepts/`](../02-core-concepts/) 全部
 - **分布式题**（Q19-Q22）：去读 [`05-distributed/`](../05-distributed/) 全部
@@ -290,6 +292,7 @@ sequenceDiagram
 > 每层 forward 的 2 次 AllReduce（attention + MLP 末尾）都在这两个 `RowParallelLinear` 的 forward 里。"
 
 → **关键技巧**：
+
 - 用 grep 找：`grep -rn "tensor_model_parallel_all_reduce" vllm/`
 - 不要凭印象写行号，直接 `grep -n` 查
 - 哪怕只能引到文件名（不带行号）也比泛泛而谈强
@@ -306,6 +309,7 @@ sequenceDiagram
 ### 章节到题目的对照
 
 不能就回头读相应章节。
+
 - Q1-Q4：`01-overview/`
 - Q5-Q9：`02-core-concepts/03,04`
 - Q10-Q13：`02-core-concepts/02,05` + `03-code-walkthrough/02`

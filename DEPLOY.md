@@ -37,6 +37,7 @@ open _site/index.html
 ```
 
 特性：
+
 - **Editorial book style**：米白纸质背景 + 酒红强调 + Apple system fonts（对标 hermes 教程）
 - Sidebar 按 **Part I–IX** 分组，当前章高亮
 - 每页右上角显示**预计阅读时间**（300 字/分钟估算）
@@ -58,6 +59,7 @@ python3 build_pdf_epub.py
 ```
 
 需要 `pandoc + xelatex`。脚本会：
+
 1. 按 README → 01-overview → ... → 09-advanced-features 顺序拼接全部 .md
 2. 剔除跨文件相对链接（保留文字）
 3. 加 YAML 元数据（title / author / lang / documentclass）

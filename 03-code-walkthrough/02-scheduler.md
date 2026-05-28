@@ -238,6 +238,7 @@ V1 默认 recompute，前面解释过。
 `vllm/v1/core/sched/async_scheduler.py`：让 `schedule()` 跟上一步的 forward overlap。
 
 实现思路：
+
 - 普通 Scheduler 是 "schedule → forward → update → schedule → ..."
 - AsyncScheduler 拆成两个 task：
   - schedule_task：每次给 worker 发任务时，**先发任务**，再 await 上次的输出
@@ -313,6 +314,7 @@ step 17: decode 第一个新 token
 → **16 个 step 跑完 prefill**，第 17 步开始 decode。
 
 如果同时有 N 个 running decode 请求争 budget：
+
 - 每步先扣 N（每 running 1 token）
 - 剩余 2048-N 给 prefill chunk
 - 总 step 数 = ⌈32768 / (2048-N)⌉
@@ -356,6 +358,7 @@ if detokenized.contains_any(request.sampling_params.stop):
 ```
 
 完整代码位置：
+
 - EOS：通常在 `_check_stop()` 或 `_check_finish()` 内，对照 `eos_token_id` / `stop_token_ids`
 - max_tokens：对照 `num_output_tokens >= max_tokens`
 - stop strings：往往在 detokenizer 端做（`vllm/v1/engine/detokenizer.py`），因为需要解码完整字符串才能匹配

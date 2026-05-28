@@ -17,6 +17,7 @@
 ## 1. 问题：长 prefill 会"占据"整个 step
 
 朴素 continuous batching 的 step：
+
 ```
 running: [A decode 1tok][B decode 1tok][C prefill 8192tok]   ← 一步算 8194 token
 ```
@@ -58,11 +59,13 @@ step 4: [A decode][B decode][C prefill chunk 6144..8192][C decode 第1个 token]
 ```
 
 好处：
+
 1. 单 step 时长平稳 → TPOT 抖动小
 2. decode 和 prefill **同框** → GPU 利用率高
 3. 长 prompt 不再阻塞所有人
 
 代价：
+
 1. C 的 TTFT 略增（多了几次 step 的 schedule overhead）
 2. attention 计算要支持 chunk（注意 mask）
 
@@ -73,10 +76,12 @@ step 4: [A decode][B decode][C prefill chunk 6144..8192][C decode 第1个 token]
 prefill 的 attention 是 **causal mask**（位置 i 只能看 0..i）。
 
 切 chunk 后，第 N 个 chunk 的 attention 必须同时：
+
 - 看到所有**前面 chunk 的 K/V**（已经在 KV cache 里）
 - 看到**当前 chunk 内** token 的 causal mask
 
 实现上：
+
 - prefill chunk 调用的 attention 把 query 限定为当前 chunk 的 token
 - 把 key/value 视野扩展到 KV cache 中已有的所有 token（包括之前 chunk 写入的）
 - mask：当前 chunk 内 causal + 跨 chunk 全可见
@@ -110,15 +115,18 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 
 ### 5.1 Prefill-first
 优先把 budget 给新进的 prefill 请求。
+
 - 优点：TTFT 低
 - 缺点：决定到达的请求被服务前，老请求 TPOT 增大
 
 ### 5.2 Decode-first（V1 默认）
 优先保证 running 请求 decode 1 个 token，剩余 budget 给 prefill。
+
 - 优点：TPOT 稳定
 - 缺点：TTFT 可能变长
 
 实际 V1 是 **混合策略**：
+
 1. 先给所有 running 请求各 1 个 decode token（占 |running| 个 budget）
 2. 剩余 budget = B - |running|，用于 prefill（新请求或 chunked 续接）
 3. 单步的总 prefill 不能超过 `--max-num-batched-tokens`
@@ -134,6 +142,7 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 | `--long-prefill-token-threshold` | 超过此长度强制 chunk            | 与上面相关         |
 
 调优经验：
+
 - 追求低 TTFT → 大 `max-num-batched-tokens`（弱化 chunk）
 - 追求低 TPOT → 小 `max-num-batched-tokens`（强 chunk）
 - 默认 8192 是 90 分通用值
@@ -149,6 +158,7 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 | Agent 工具调用（多轮短交互） | 4096 | 平衡新轮次 TTFT 与老轮次 TPOT |
 
 调参流程：
+
 1. 先按上表选初值，跑 `benchmarks/benchmark_serving.py` 测当前 SLO（TTFT/TPOT p99）。
 2. TPOT p99 高于目标 → 把值减半。
 3. TTFT p99 高于目标且 GPU 利用率没到 90% → 把值加 2×，直到 GPU 利用率打满或 TPOT 退化。

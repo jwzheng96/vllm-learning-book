@@ -61,6 +61,7 @@ TTLT = TTFT + (输出 token 数 - 1) × TPOT。
 
 ### 为什么死磕 p99？
 LLM 推理延迟是经典 "tail at scale" 问题：
+
 - 大部分请求都不错
 - 但 1% 的请求碰上 GC、preempt、KV 不够等，延迟可能 10×
 - 用户对 worst case 体验最敏感
@@ -243,6 +244,7 @@ LLM Pod 的 INFO log 量大（每步可能几 KB）。生产建议：
 
 ### 9.2 OTel trace 采样
 高 QPS 下全量采样不现实。采样策略：
+
 - 头部采样：random 1%
 - 尾部采样：先采全，最后看是否慢/错决定丢不丢
 - 关键路径采样：error / 慢请求 100% 留下，正常 1%
@@ -300,6 +302,7 @@ LLM 还有一类质量指标，传统服务没有：
 
 ### 案例 1：TTFT p99 突增到 5s
 看 trace：
+
 - `queue_wait` 一直 > 2s ← 队列长
 - 同时 `num_preemptions_total` 上涨 ← KV 压力
 **结论**：流量上来了，KV 不够，请求排队。
@@ -307,6 +310,7 @@ LLM 还有一类质量指标，传统服务没有：
 
 ### 案例 2：TPOT 抖动严重
 看 metric：
+
 - `iteration_tokens_total` 单 step 偶发尖峰
 **结论**：长 prefill 没切片，混进 decode。
 **动作**：调小 `max_num_batched_tokens`，确认 chunked prefill 开。

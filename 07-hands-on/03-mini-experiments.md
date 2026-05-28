@@ -198,6 +198,7 @@ asyncio.run(run())
 ```
 
 同时另开终端：
+
 ```bash
 watch -n 0.5 'curl -s localhost:8000/metrics | grep -E "vllm:num_preemptions|vllm:num_running|vllm:num_waiting"'
 ```

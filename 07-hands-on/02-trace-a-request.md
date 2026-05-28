@@ -25,6 +25,7 @@ VLLM_LOGGING_LEVEL=DEBUG .venv/bin/python hello_vllm.py 2>&1 | tee vllm.log
 ```
 
 或代码内：
+
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -49,6 +50,7 @@ llm = LLM(
 或 server：`vllm serve ... --no-disable-log-stats`
 
 你会看到周期性的日志：
+
 ```
 Engine: Avg prompt throughput: ... tokens/s
         Avg generation throughput: ... tokens/s
@@ -77,12 +79,14 @@ def schedule(self) -> SchedulerOutput:
 ```
 
 跑：
+
 ```python
 llm = LLM("facebook/opt-125m", enforce_eager=True)
 llm.generate(["A"*100, "B"*200, "C"*50], SamplingParams(max_tokens=30))
 ```
 
 观察 print，你能看出：
+
 - 第一个 step 是 prefill（total_tokens 等于所有 prompt 长度之和或 chunk）
 - 后续 step 是 decode（total_tokens ≈ n_running）
 - 短请求先 finish，长请求继续
@@ -101,6 +105,7 @@ print(f"[KV] req={request.request_id} "
 ```
 
 跑同样 demo，观察：
+
 - 第一次 allocate 是大头（prompt 长度对应的所有 block）
 - 后续 decode 大部分时候 block_table_len 不变（block 没满）
 - 偶尔跨 block 边界时 block_table_len += 1
@@ -115,10 +120,12 @@ prompts = ["System: be concise. User: hi"] * 3
 ```
 
 如果 prefix caching 工作正常，从第 2 个请求开始：
+
 - profile run 阶段：`block_table_len` 立即 = prompt 的 block 数
 - 但 `allocate_slots` 内部应该命中了 cache，free_blocks 几乎没减
 
 可以在 `block_pool.py` 的 hash 命中分支加 print：
+
 ```python
 print(f"[CACHE HIT] hash={block_hash} block_id={existing_block.block_id}")
 ```
@@ -136,6 +143,7 @@ curl http://localhost:8000/metrics | grep -E 'vllm_(num_|prefix_|gpu_)' | head -
 ```
 
 关键指标（面试可引用）：
+
 - `vllm:num_requests_waiting`
 - `vllm:num_requests_running`
 - `vllm:num_preemptions_total`
@@ -158,6 +166,7 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 ```
 
 你会看到每个 CUDA kernel 的时间。预期看到：
+
 - prefill 阶段：matmul（QKV、MLP）占大头
 - decode 阶段：attention 和访存类 kernel 占比上升
 
@@ -203,6 +212,7 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 - 只需要 alloc decode 累积的少量 block
 
 → **第 2 次的 `free_blocks` 比第 1 次少减约 N-1 个**。具体来说：
+
 - 第 1 次结束 `free_blocks` = `initial - (N + decode_blocks)`
 - 第 2 次 prefill 启动：`free_blocks` 减 1 或 2（最后一个非对齐 block + decode 第一个 block）
 

@@ -31,6 +31,7 @@ vLLM 启动时不会用 `torch.cuda.memory_allocated()` 估算 KV 可用空间�
 代码：`vllm/v1/worker/gpu_worker.py : determine_available_memory()`
 
 参数：
+
 - `--gpu-memory-utilization`：默认 0.9（用 90% 显存）
 - `--kv-cache-dtype`：默认与模型 dtype 一致；可设 fp8 减半
 
@@ -55,6 +56,7 @@ class BlockPool:
 ```
 
 核心方法：
+
 - `get_new_blocks(num_blocks)`：从 free queue 头部取
 - `free_blocks(blocks)`：ref_cnt -= 1，归零则放回 free queue 尾部
 - `touch(blocks)`：把命中的 block 从 free queue 拿出（被复用了）
@@ -76,6 +78,7 @@ class KVCacheBlock:
 ```
 
 关键不变式：
+
 - `ref_cnt == 0` ⟺ block 在 free queue 里
 - `ref_cnt > 0` ⟺ block 被至少一个请求引用
 - `block_hash != None` ⟺ block 已写满且参与 prefix caching
@@ -127,6 +130,7 @@ T=N+1: 生成 EOS
 
 ### 5.1 Hash 的输入
 对每个 block，hash 包含：
+
 - block 内的所有 token_ids
 - 前一个 block 的 hash（chain，保证位置敏感）
 - 额外的"上下文"：LoRA 适配器、多模态 placeholder 等
@@ -137,6 +141,7 @@ T=N+1: 生成 EOS
 因为 token "你好" 在不同前缀下产生的 KV 不同（取决于前面）。chain hash 保证：相同前缀且相同当前 block 才命中。
 
 伪代码：
+
 ```python
 def block_hash(token_ids, prev_hash, extra_keys):
     return hash((prev_hash, tuple(token_ids), extra_keys))
@@ -242,6 +247,7 @@ FP8 量化 KV 在 attention 算之前 dequantize，引入精度损失。实测 p
 ## 9. 多 KV 类型：Mamba / Linear Attention
 
 vLLM 的 KVCacheManager 已经被扩展为**多类型并存**：
+
 - 普通 Transformer 层：上面讲的 paged KV
 - Mamba SSM 层：固定大小的 state（不是 KV）
 - Linear / sparse / sliding window：不同 block 结构
@@ -318,6 +324,7 @@ def hash_block_tokens(hash_function, prev_hash, tokens, extra_keys=None):
 **不 chain prev_hash 的 bug**：
 
 假设两个请求：
+
 - A: tokens [1,2,3,4,...,16, 99,100,...]  (block 0 = [1..16], block 1 = [99,100,...])
 - B: tokens [5,6,7,8,...,20, 99,100,...]  (block 0 = [5..20], block 1 = [99,100,...])
 

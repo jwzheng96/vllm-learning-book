@@ -471,11 +471,13 @@ LLM 推理服务的"性能"不只是一个数字。至少 4 个：
 
 ### TTFT — Time To First Token
 从请求发出到**第一个 token 返回**的时间。用户感受"卡不卡"主要看这个。
+
 - 主要被 prefill 时长决定
 - 服务于"我点了发送按钮，多久看到第一个字"
 
 ### TPOT — Time Per Output Token
 首 token 出来后，**每个后续 token** 的平均间隔。决定"打字速度感"。
+
 - 主要被 decode 时长决定
 - 也叫 ITL（Inter-Token Latency）
 

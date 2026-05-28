@@ -53,6 +53,7 @@ GPU 几乎从不空转。
 直觉上你可能觉得：每一步都重新组 batch、重建 tensor，开销不大吗？
 
 vLLM 的回答是：
+
 1. **PagedAttention 让 KV 不必连续**。请求加入/退出 batch 不需要搬数据。
 2. **InputBatch 持久化**（V1 优化）：每步只更新 diff，不重建。
 3. **Token-level**而非 sequence-level 调度：一次调度的单位是"算多少 token"，不是"跑哪些请求到底"，所以新请求中途插入完全可以。
@@ -75,6 +76,7 @@ waiting 请求 D (prefill, prompt=512):  512 token
 ```
 
 如果超了 budget：
+
 - 长 prefill 会被 **chunk**（拆成多步跑，详见 `05-chunked-prefill.md`）
 - 新请求暂时不让进
 
@@ -85,11 +87,13 @@ waiting 请求 D (prefill, prompt=512):  512 token
 ## 4. Static vs Continuous 数学直觉
 
 设有 N 个请求，长度服从某分布。Static batching：
+
 ```
 total_time = N × max(L_i)   # 所有请求等最长的那个
 ```
 
 Continuous batching（忽略调度开销）：
+
 ```
 total_time = sum(L_i) / batch_capacity   # 紧凑利用
 ```
@@ -120,6 +124,7 @@ Continuous batching 不是"先来后到"，vLLM 支持多种调度策略：
 3. **stop_token / stop_string 匹配** → FINISHED
 
 完成的请求：
+
 - 从 running 队列移除
 - 它的所有 KV block ref_cnt -= 1
 - 通知 API server 流式返回（带 finish_reason）
@@ -151,6 +156,7 @@ vLLM 的策略：
 好处：算力不浪费
 
 V1 默认 recompute，因为：
+
 1. PCIe 反而经常比重算还慢
 2. 代码更简单
 3. 配合 prefix caching，重算时前面的部分还能命中 cache
@@ -182,6 +188,7 @@ A: ①调度是纯 CPU 操作，跟 GPU 前向 overlap（V1 的 AsyncScheduler �
 
 **Q: 怎么平衡 throughput 和 latency？**
 A: 关键旋钮是 `max_num_batched_tokens`：
+
 - 大 → 大 batch，throughput 高，但 step 时长长，latency 抖动大
 - 小 → 反之
 生产场景一般 4096-8192，配合 chunked prefill 限制单步 prefill 量。
@@ -228,6 +235,7 @@ Continuous batching（每 step 重组）：
 **2. `max_num_batched_tokens=8192`，16 个 decode + 1 个 prompt=12000 的 prefill，怎么排？**
 
 V1 默认混合策略（[`05-chunked-prefill.md`](05-chunked-prefill.md) §5）：
+
 1. 先给 16 个 decode 各 1 token → 占 budget 16
 2. 剩余 budget = 8192 - 16 = 8176
 3. 给那个 prefill 请求**切第一个 chunk = 8176 token**（不是 12000）

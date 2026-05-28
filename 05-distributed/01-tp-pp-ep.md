@@ -586,6 +586,7 @@ AllToAll 数据量比 AllReduce 大得多（每对 rank 都要传数据）。Lla
 ### 4.5 Load imbalance：hot expert 与 EPLB
 
 理论上 router 均匀分配，实际**5-10 个 hot expert 吃掉 30-50% token**。表现：
+
 - `nvidia-smi`：某些 GPU 100%，另一些 30-50%
 - `vllm:iteration_tokens_total` 方差大
 
@@ -703,6 +704,7 @@ flowchart TB
 `--data-parallel-external-lb`：每个 DP rank 一个独立 K8s pod，**前面靠外部 LB（Istio/Envoy）分发请求**，不依赖 vLLM 内置 Coordinator。
 
 适合 wide-EP 场景：
+
 - 一 pod 一 rank → 扩缩容粒度细
 - pod 间通过 IB/RoCE 跑 EP AllToAll
 - 外部 LB 做 cache-aware / lora-aware routing
@@ -736,6 +738,7 @@ DCP（decode context parallel）复用 TP GPU，不增 world_size。
 | 跨机 TP=8, DP=2 | 16 | 16 | 中 | 极高 | wide-EP，2 机各一副本 |
 
 启用参数对应：
+
 ```
 --tensor-parallel-size 8
 --pipeline-parallel-size 2
@@ -935,6 +938,7 @@ flowchart TB
 ```
 
 进程数关系：
+
 - 单机 TP=N：**2 + N** 进程（API + EngineCore + N Worker）
 - DP=D：每个 DP rank 一组上述结构，总 **D × (2 + N) + 1** 进程（多一个 Coordinator）
 - PP=P：每 PP rank 一个 Worker（同机），跨机时每机一组上述结构
@@ -980,6 +984,7 @@ world_group = ...                           # 所有 rank
 ### 9.4 跨机器：Ray Distributed Executor
 
 `vllm/v1/executor/ray_executor_v2.py` 用 Ray 替代 multiprocessing。差异：
+
 - Worker 是 Ray actor（跨机器调度由 Ray 管）
 - 跨机器 IPC 走 Ray object store（gRPC），不再是 shared memory
 - Ray 自带健康监控，但 vLLM 还是要 LeaderWorkerSet 整组重启的逻辑
@@ -993,6 +998,7 @@ world_group = ...                           # 所有 rank
 ### 10.1 单机内 NVLink 拓扑
 
 H100 8 卡机典型拓扑（NVLink 4 + NVSwitch）：
+
 ```
         ┌─── NVSwitch ────┐
         │                 │
@@ -1106,6 +1112,7 @@ A: KV head 按 TP rank 切（每卡负责 `num_kv_heads / TP` 个 head）。每�
 
 **Q: 怎么算一个模型的最优 TP/PP/EP？**
 A: 启发式 5 步：
+
 1. 显存够不够：模型 / 8 + KV 估算
 2. 同机优先 TP（NVLink 带宽好）
 3. 跨机用 PP（通信少）
@@ -1114,6 +1121,7 @@ A: 启发式 5 步：
 
 **Q: DP=8（独立 8 实例）vs TP=8（单实例）哪个吞吐高？**
 A: 多数 dense 场景 DP=8 高（线性扩展，无通信开销）。但有两个例外：
+
 1. **prefix cache 命中率高**的 workload：TP=8 集中 cache，命中率显著高于 DP=8；可能反超
 2. **单 query 延迟敏感**：DP 单 query 在一卡上跑 = 慢；TP 单 query 8 卡并行 = 快
 
@@ -1122,6 +1130,7 @@ A: 数据量类似（理论 `2(N-1)/N × |tensor|`），但 **AllToAll 拓扑全
 
 **Q: PCP 和 chunked prefill 是不是互替关系？**
 A: 互补，不互替。
+
 - chunked prefill：**时间维度**切（一次 forward 跑一段，多次完成）
 - PCP：**空间维度**切（一次 forward 多卡并行，每卡一段）
 - 超长上下文 prefill 塞不下时上 PCP；正常场景 chunked prefill 即可
@@ -1178,6 +1187,7 @@ A: NCCL collective 阻塞 → forward hang → liveness probe 失败 → K8s Lea
 bubble ratio = `(P-1) / (M + P-1)` = `3 / 7` ≈ **42.86%**。
 
 要 < 5%：
+
 ```
 3 / (M + 3) < 0.05
 M + 3 > 60
@@ -1248,6 +1258,7 @@ Mixtral：8 expert，top-2，dense hidden ≈ 4096。
 **实测**：Mixtral 在 4×H100 上 **TP=2 + EP=4（带 DP=2 平衡）通常更优**——因为 dense 部分 TP=2 通信少，MoE 部分 EP=4 让 expert 切得更细，单 expert 跑得更快。
 
 但具体取决于：
+
 - NVLink 拓扑（4-card hyper cube vs ring）
 - 是否启用 DeepEP / FlashInfer 加速 backend
 - workload 是 prefill-heavy 还是 decode-heavy

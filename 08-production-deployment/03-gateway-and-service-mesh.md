@@ -89,6 +89,7 @@ flowchart TD
 ### 3.2 关键 CRD
 
 Gateway API Inference Extension 引入：
+
 - `InferenceModel`：声明一个模型（名字、版本、目标 InferencePool）
 - `InferencePool`：一组 vLLM Pod + EPP 配置
 - 复用 `HTTPRoute` 把请求路由到 InferencePool
@@ -137,6 +138,7 @@ LLM API 的 99% 流量是 **Server-Sent Events**：long-lived HTTP/2 连接，to
 Envoy 默认有 response buffering。开启后 token 会被攒在 buffer 里一起送，TTFT 看起来还行但用户看到的是"卡半天再一整段刷出来"。
 
 修复：
+
 ```yaml
 # EnvoyFilter
 spec:
@@ -179,6 +181,7 @@ LLM 需要的维度：
 | Concurrent streams | 防 SSE 连接泄漏                |
 
 实现：
+
 - Envoy `local_ratelimit`（单实例）
 - `global_ratelimit` + Redis（跨 Pod 一致）
 - 或自研：Envoy ExtAuthz → 自定义 quota 服务
@@ -457,6 +460,7 @@ metadata:
 ```
 
 排查命令：
+
 ```bash
 # 看 NCCL 在等什么
 NCCL_DEBUG=INFO  → 查 log

@@ -433,6 +433,7 @@ flowchart LR
 总共 **6 个进程**：1 API Server + 1 EngineCore + 4 Worker。
 
 加分点：
+
 - 若 `--api-server-count N`，API Server 进程会有 N 个
 - 若 `--data-parallel-size D`，EngineCore + Workers 整组 ×D
 - 若用 Ray executor，Worker 是 Ray actor 而非本地子进程

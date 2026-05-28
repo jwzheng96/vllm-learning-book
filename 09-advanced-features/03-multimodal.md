@@ -75,6 +75,7 @@ PlaceholderRange(offset=10, length=16, is_embed=None)
 ```
 
 这个 range 决定了：
+
 - `_gather_mm_embeddings` 把 image_embeds 放到哪
 - prefix caching 的 hash 怎么算（图片 hash 替代 placeholder token）
 
@@ -100,6 +101,7 @@ class EncoderCacheManager:
 ```
 
 关键方法：
+
 - `check_and_update_cache(req, input_id)`：命中则 ref_cnt++
 - `can_allocate(req, input_id)`：还有空间放新的吗
 - `allocate(req, input_id)`：占用 slot

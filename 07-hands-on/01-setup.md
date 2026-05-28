@@ -79,11 +79,13 @@ for o in outputs:
 ```
 
 运行：
+
 ```bash
 .venv/bin/python hello_vllm.py
 ```
 
 观察启动日志：你会看到这些关键行（理解每行对应代码里哪个动作）：
+
 - `Loading model weights took X GB` → `gpu_worker.py:load_model`
 - `# GPU blocks: NNNN` → profile run + KV 计算
 - `Capturing CUDA Graphs` → 如果没有 `enforce_eager`，会 capture 多个 batch_size

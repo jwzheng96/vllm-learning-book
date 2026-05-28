@@ -17,6 +17,7 @@
 ## 1. 为什么需要 Context Parallel
 
 TP 把权重切到多卡，每张卡 hidden_dim 减少；但**每张卡仍要处理完整的 seq_len**。Llama-70B prompt=128K tokens：
+
 - attention 中间矩阵 `Q @ K^T` 形状 `[batch, num_heads, seq_len, seq_len]`
 - seq_len² = 128K² = 16 G 元素，半精度 32 GB——远超单卡
 
@@ -114,10 +115,12 @@ then store next interleave_size tokens on total_cp_rank i+1.
 ```
 
 例：`interleave_size=1`、`total_cp_world_size=4`：
+
 - token 0 → rank 0, token 1 → rank 1, token 2 → rank 2, token 3 → rank 3
 - token 4 → rank 0, token 5 → rank 1, ...（轮询）
 
 `interleave_size=16`、`total_cp_world_size=4`：
+
 - token 0..15 → rank 0, token 16..31 → rank 1, ...
 
 **为什么不只用 1 或 chunk-of-block_size？**
@@ -195,11 +198,13 @@ flowchart TD
 ## 9. 监控与调试
 
 CP 不像 TP/PP 有专门 metric，主要观察：
+
 - `vllm:kv_cache_usage_perc`：DCP 开启后整体 cache 利用率应更均匀
 - `vllm:time_to_first_token_seconds` p99：PCP 开启长 prefill 应更平稳
 - `nvidia-smi`：DCP 不增 GPU 数，但每张卡负载应平衡（之前 head 0 那卡的活分给 dcp_size 张）
 
 常见错误：
+
 - `ValueError: dcp_comm_backend='a2a' requires decode_context_parallel_size > 1` — 没开 DCP 却选了 a2a
 - `RuntimeError: Hybrid KV cache groups ... do not support context parallelism` — Mamba 模型不能用 CP
 
@@ -245,6 +250,7 @@ TP-8 + DCP-2：
 **2. MLA 模型 DCP-4, `a2a` 比 `ag_rs` 省多少 NCCL 调用（80 层）？**
 
 每层 attention 的 DCP 通信：
+
 - **`ag_rs`**：3 次 NCCL —— AllGather K, AllGather V, ReduceScatter output
 - **`a2a`**：2 次 NCCL —— AllToAll (partial output + LSE), Triton kernel 合并 (本地)
 

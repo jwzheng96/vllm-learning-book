@@ -64,6 +64,7 @@ flowchart TD
 仓库：`llm-d/llm-d`（GitHub）。由 Red Hat、Google Cloud、IBM、CoreWeave、NVIDIA 联合发起，2025 年 CNCF 孵化。
 
 三大支柱：
+
 1. **vLLM-aware Inference Scheduler**：基于 prefix-cache 命中和负载选 Pod
 2. **Disaggregated Serving**：Prefill / Decode 物理隔离
 3. **Multi-tier KV Cache**：L1 GPU、L2 CPU/SSD、L3 远端
@@ -131,6 +132,7 @@ LLM 推理对网络极度敏感，比一般微服务苛刻：
 | API 入口          | HTTP/2 + SSE         | gRPC LB 不一定流式正常，要测 SSE 长连接                       |
 
 K8s 配置要点：
+
 - `hostNetwork: true` 或 SR-IOV/Multus 让 RDMA 直通
 - 跨 Pod 走 `RoCE` 时用 `k8s-rdma-shared-dev-plugin`
 - Service Mesh sidecar 不要拦 NCCL / RDMA 端口（坑过很多人）
@@ -162,6 +164,7 @@ flowchart TB
 ```
 
 要点：
+
 - 用 `nvidia.com/gpu` device plugin 报告卡数
 - 设置 `nvidia.com/mig-config` 或 `topology-aware-scheduling` 保证 NVLink 拓扑
 - 一台机器**通常只跑一种模型**——切多个模型时 NCCL group 容易踩坑
@@ -278,6 +281,7 @@ LLM 镜像有几个坑：
 4. **CNI 网络（如 Cilium）的 conn track timeout**：流量小时 conn 被 GC
 
 排查命令：
+
 ```bash
 # 检查 idle 配置
 kubectl get gateway -o yaml | grep -i timeout
