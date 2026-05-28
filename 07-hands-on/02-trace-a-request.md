@@ -305,6 +305,7 @@ gpu_cache_usage > 0.95 AND preempt_rate > 1 → critical (扩容)
 特点：**memory-bound**——每 token 1 个 query，算力闲着，主要读 weight 和 KV。kernel 时长几乎与 batch_size 无关（只要还在 memory-bound 区）。
 
 **关键差异**：
+
 | 维度 | prefill | decode |
 | --- | --- | --- |
 | attention kernel | flash_attn_varlen (大 Q × 长 K) | paged_attention (Q=1 × 长 K) |

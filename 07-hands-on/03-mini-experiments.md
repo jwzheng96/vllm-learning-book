@@ -402,6 +402,7 @@ ratio = 100 / 50 = 2.0  ← 理论值
 **为什么 batch_size 大时收益下降？**
 
 batch_size 与 GPU 状态的关系：
+
 | batch_size | GPU 状态 | spec decode 收益 |
 | --- | --- | --- |
 | 1-4 | memory-bound（算力闲）| **高** —— 多算 N 个 token 几乎免费 |
