@@ -40,6 +40,7 @@ vLLM 把 CP 分成了两个独立的并行维度，源码：`vllm/config/paralle
 - Decode 每步只产 1 个新 token，算力不大，但 **KV cache 沿 seq 维堆得越来越长**——DCP 把 KV 切到多个 attention head 组（实质 reuse TP），不需要额外 GPU。
 
 source: `decode_context_parallel_size` 注释明确写：
+
 > "the world size does not change by dcp, it simply reuse the GPUs of TP group, and tp_size needs to be divisible by dcp_size"
 
 ---

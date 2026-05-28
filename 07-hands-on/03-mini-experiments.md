@@ -259,6 +259,7 @@ python benchmarks/benchmark_throughput.py \
 ```
 
 例如：
+
 > **实验 1：Prefix Caching 对 TTFT 的影响**
 > 观察：开启后第 2-10 次请求平均 TTFT 从 320ms 降到 45ms。
 > 结论：chatbot 场景 system prompt 占 80%+ 计算，prefix caching 是必开。

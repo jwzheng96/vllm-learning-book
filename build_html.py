@@ -1064,26 +1064,95 @@ def add_three_line_class(html: str) -> str:
 
 
 _table_sep_re = re.compile(r'^\s*\|[\s\-:|]+\|?\s*$')
+_ordered_list_re = re.compile(r"^\d+\.\s+\S")
+_unordered_list_re = re.compile(r"^[-*+]\s+\S")
+_heading_re = re.compile(r"^#{1,6}\s")
 
 
-def normalize_table_blank_lines(text: str) -> str:
-    """python-markdown 的 TableExtension 要求表格上方必须有空行，否则当作段落。
-    很多作者会忘——这里自动在『非空非 pipe 行 → 表头 → 分隔行』的模式中
-    插入一个空行，让表格被正确识别。"""
+def _prev_is_block_friendly(prev: str) -> bool:
+    """判断前一行是否已是 block 元素（不需要再插空行）。"""
+    if prev.strip() == "":
+        return True
+    ps = prev.lstrip()
+    if ps.startswith(("-", "*", "+", "|", ">", "#", "```")):
+        return True
+    if _ordered_list_re.match(ps):
+        return True
+    return False
+
+
+def normalize_block_boundaries(text: str) -> str:
+    """python-markdown 对"段落直接接 block 元素"的容忍度因上下文而异，
+    会导致 list / blockquote / table / heading 被吞进段落。
+
+    这里在 build 阶段统一在每个 block 元素前插入空行（如果原本没有），
+    覆盖 5 类：
+      - 表格（必须有空行才能被 TableExtension 识别）
+      - 列表（被 H3 + 段落 + - 模式坑过）
+      - blockquote
+      - fenced code
+      - heading
+
+    跳过 fenced code 内部，避免误伤伪代码注释里的 `#`、`-` 等。
+    """
     lines = text.split("\n")
     out: list[str] = []
     in_fence = False
     for i, line in enumerate(lines):
         stripped = line.lstrip()
-        # 跳过 fenced code 块，避免误伤
+
+        # 进出代码 fence
         if stripped.startswith("```"):
+            # fence 开始时要检查前面，结束时不需要
+            opening_fence = not in_fence
+            if opening_fence and i > 0:
+                prev = lines[i-1]
+                if not _prev_is_block_friendly(prev):
+                    out.append("")
+            out.append(line)
             in_fence = not in_fence
-        if not in_fence and stripped.startswith("|") and i + 1 < len(lines) and _table_sep_re.match(lines[i+1]):
-            prev = lines[i-1] if i > 0 else ""
-            if prev.strip() != "" and not prev.lstrip().startswith("|"):
-                out.append("")  # 注入空行
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+
+        if i == 0:
+            out.append(line)
+            continue
+        prev = lines[i-1]
+
+        # 已是 block-friendly 上下文，无需插
+        if _prev_is_block_friendly(prev):
+            out.append(line)
+            continue
+
+        # 检测当前行是否启动了新 block
+        needs_blank = False
+        # 表格：当前 pipe 行 + 下一行分隔
+        if (stripped.startswith("|") and i + 1 < len(lines)
+                and _table_sep_re.match(lines[i+1])):
+            needs_blank = True
+        # 列表（无序）
+        elif _unordered_list_re.match(stripped):
+            needs_blank = True
+        # 列表（有序）
+        elif _ordered_list_re.match(stripped):
+            needs_blank = True
+        # blockquote
+        elif stripped.startswith(">"):
+            needs_blank = True
+        # heading
+        elif _heading_re.match(stripped):
+            needs_blank = True
+
+        if needs_blank:
+            out.append("")
         out.append(line)
     return "\n".join(out)
+
+
+# Backward-compat alias if any external caller imports the old name.
+normalize_table_blank_lines = normalize_block_boundaries
 
 
 # Mermaid extraction (before markdown processing, to preserve raw text)
@@ -1155,7 +1224,7 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
     raw = path.read_text(encoding="utf-8")
     raw_no_mermaid, mermaid_blocks = extract_mermaid_blocks(raw)
     raw_no_math, math_blocks = extract_math_blocks(raw_no_mermaid)
-    raw_normalized = normalize_table_blank_lines(raw_no_math)
+    raw_normalized = normalize_block_boundaries(raw_no_math)
 
     md = markdown.Markdown(
         extensions=[
