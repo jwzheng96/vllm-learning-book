@@ -148,7 +148,7 @@ flowchart LR
 - [`03-mini-experiments.md`](07-hands-on/03-mini-experiments.md) — 5 个动手实验（block_size / prefix hit / batching / 量化等）。
 - [`04-profiling-and-debugging.md`](07-hands-on/04-profiling-and-debugging.md) — torch.profiler / NVTX / py-spy / 显存泄漏。
 
-### 8. 生产部署 · `08-production-deployment/` — 8 章
+### 8. 生产部署 · `08-production-deployment/` — 9 章
 
 - [`01-deployment-architectures.md`](08-production-deployment/01-deployment-architectures.md) — vLLM Production Stack / llm-d / AIBrix 三套参考栈对比。
 - [`02-smart-routing-and-load-balancing.md`](08-production-deployment/02-smart-routing-and-load-balancing.md) — prefix-cache aware / session sticky / 负载打分。
@@ -158,6 +158,7 @@ flowchart LR
 - [`06-reliability-and-failure-modes.md`](08-production-deployment/06-reliability-and-failure-modes.md) — 8 个失效模式与防护。
 - [`07-incident-playbook.md`](08-production-deployment/07-incident-playbook.md) — 8 个真实故障 runbook。
 - [`08-monitoring-cookbook.md`](08-production-deployment/08-monitoring-cookbook.md) — 可直接抄走的 PromQL / 告警规则 YAML / Grafana dashboard 骨架。
+- [`09-vllm-doctor-skill.md`](08-production-deployment/09-vllm-doctor-skill.md) — 把 06-07-08 章人工流程编成 agent 自动跑：7 阶段工作流 + 决策树 + 三级整改 + 离线 dry-run。
 
 ### 9. 应用特性 · `09-advanced-features/` — 5 章
 
@@ -245,6 +246,28 @@ python3 build_pdf_epub.py  # → ../vllm-learning-html/vllm-learning.pdf + .epub
 ```
 
 如果你想把材料放别处，设环境变量 `VLLM_LEARNING_SRC` / `VLLM_LEARNING_DST` 即可。
+
+---
+
+## 自动排障 Skill：`vllm-doctor`
+
+仓库内置了一个 Claude Code skill `vllm-doctor`，把第 06-07-08 章里散落的 incident playbook 编成 agent 可以自动跑的 7 阶段流程：环境探测 → 拉 Golden 3 指标 → 决策树路由 → 深度诊断 → 分级整改（L1/L2 自动跑，L3 弹确认）→ 恢复验证 → 输出报告。
+
+**安装到本地 Claude Code**：
+
+```bash
+cp -r .claude/skills/vllm-doctor ~/.claude/skills/
+```
+
+**触发**：在 Claude Code 里输入 `/vllm-doctor`（前置必须 export `VLLM_NAMESPACE` / `PROM_URL` / `KUBECONFIG`）。
+
+**不连集群也想验证逻辑**：
+
+```bash
+export VLLM_DOCTOR_FIXTURE=/path/to/golden3.json   # 跳过 Prometheus，直接喂 mock 数据
+```
+
+覆盖的 8 类事故：KV 抢占级联、NCCL hang、GPU OOM、客户端重试雪崩、prefix cache 命中率塌方、冷启动、输出质量异常、LoRA 适配器抖动。完整说明见 [`.claude/skills/vllm-doctor/SKILL.md`](.claude/skills/vllm-doctor/SKILL.md)。
 
 ---
 
