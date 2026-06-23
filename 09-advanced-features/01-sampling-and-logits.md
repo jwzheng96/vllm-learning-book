@@ -303,7 +303,7 @@ argmax_invariant 的可以在 greedy 路径里跳过执行（line 271-272），�
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: temperature 怎么影响输出多样性？**
 A: `logits / temp` 然后 softmax。temp → 0 时分布趋向 one-hot（接近 argmax）；temp = 1 是原始分布；temp > 1 平滑分布、多样性↑。vLLM 在 temp < ε 时走 greedy 快路径。

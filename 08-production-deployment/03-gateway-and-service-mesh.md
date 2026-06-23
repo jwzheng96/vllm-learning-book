@@ -343,7 +343,7 @@ spec:
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: 为什么不直接用 K8s Service + Ingress？**
 A: 几个原因：①K8s Service LB 只能基于 IP/conn-hash，不感知 LLM 语义；②Ingress 不支持 ExtProc 类型的扩展；③缺少跨 Pod 治理（mTLS、ratelimit、observability）。生产规模必走 Gateway API + Mesh。
@@ -372,7 +372,7 @@ A: Istio multi-cluster（mesh federation）或者 Cilium ClusterMesh。但**跨 
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. SSE 场景下 Envoy/Istio 必须改默认值的至少 3 个参数。**
 

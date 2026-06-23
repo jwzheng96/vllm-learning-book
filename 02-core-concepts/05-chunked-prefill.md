@@ -177,7 +177,7 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 
 ---
 
-## 8. 面试常见追问
+## 8. 工程自检问答
 
 **Q: chunked prefill 为什么要默认开？老的实现不开也能跑啊？**
 A: 不开的话长 prompt 会阻塞 decode，生产场景必然遇到长 prompt（document QA、长上下文 chat），TPOT 抖动用户体验不可接受。V0 时代 opt-in 是因为正确性还在验证、attention kernel 还不全支持。V1 已经全栈支持，自然 default on。

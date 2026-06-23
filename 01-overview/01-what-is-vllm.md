@@ -1,6 +1,6 @@
 # 01. vLLM 是什么？为什么快？
 
-> **谁该读这一篇？** 想用三句话讲清"vLLM 是干嘛的、解决什么瓶颈、相比 HF/TGI/TRT-LLM 凭什么快"的同学；面试前要把 vLLM 的定位与三大武器装进脑子的候选人。
+> **谁该读这一篇？** 想用三句话讲清"vLLM 是干嘛的、解决什么瓶颈、相比 HF/TGI/TRT-LLM 凭什么快"的读者。
 >
 > **前置阅读：** [`00-prerequisites.md`](00-prerequisites.md)（至少 §4 KV cache、§7 roofline、§8 batching 这三节）。
 >
@@ -9,7 +9,7 @@
 > **学完能：**
 > 1. 用一句话说出 vLLM 的定位，并复述 PagedAttention 论文里 KV 利用率 20-38% → 96% 的关键数字。
 > 2. 列出 vLLM 的三大武器（PagedAttention / Continuous Batching / Prefix Caching + Chunked Prefill）并对应它们解决的具体瓶颈。
-> 3. 在面试中区分 vLLM 与 TGI / TensorRT-LLM / SGLang / LMDeploy 的定位差异。
+> 3. 区分 vLLM 与 TGI / TensorRT-LLM / SGLang / LMDeploy 的定位差异。
 > 4. 指出哪些场景**不**适合用 vLLM，避免"为了 vLLM 而 vLLM"。
 
 ---
@@ -134,7 +134,7 @@ flowchart LR
 
 ---
 
-## 5. 性能数据（面试可引用）
+## 5. 性能数据（理解吞吐时可引用）
 
 > 数据来自 PagedAttention 论文与官方 README，不同硬件/模型会有差异。
 
@@ -151,7 +151,7 @@ flowchart LR
 
 ## 6. 不适合 vLLM 的场景
 
-面试常被反问，提前准备：
+这里经常容易混淆，建议提前分清：
 
 - **极低延迟（< 10 ms TTFT）的单请求场景**：vLLM 为吞吐设计，单请求会被 batching overhead 拖累。这种场景用 TensorRT-LLM + CUDA Graph 重度优化更合适。
 - **超大模型 + 极少并发**：405B 模型只服务 2 个用户，PagedAttention 的内存收益体现不出来。
@@ -161,7 +161,7 @@ flowchart LR
 
 ## 7. vLLM 与生态
 
-面试可能问到的"近邻"：
+容易混淆的"近邻"：
 
 | 系统 | 定位 | 对比 vLLM |
 | --- | --- | --- |
@@ -183,7 +183,7 @@ flowchart LR
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 不查资料说出 PagedAttention 借鉴的 OS 概念、3 条对应关系（页 / 页表 / COW）。**
 
@@ -193,7 +193,7 @@ flowchart LR
 | **页表（Page Table）** | Block Table（每个请求一张）| 把"逻辑连续"的视图映射到"物理离散"的存储；indirection 一层换灵活性 |
 | **COW（写时复制）** | Beam search / prefix caching 的 block 共享 | 多请求共享只读 block（ref_cnt++），分歧时才复制 |
 
-加分点：还能讲**LRU 淘汰**（OS swap 选 victim ↔ Prefix cache evict 冷 block）、**虚拟地址翻译开销** ↔ block_table 间接寻址带来约 20% attention 慢，但整体吞吐 24× 净赚。
+补充细节：还能讲**LRU 淘汰**（OS swap 选 victim ↔ Prefix cache evict 冷 block）、**虚拟地址翻译开销** ↔ block_table 间接寻址带来约 20% attention 慢，但整体吞吐 24× 净赚。
 
 ---
 
@@ -235,7 +235,7 @@ flowchart LR
 
 两者通过 `kv_cache_manager.py` 衔接：scheduler 说"这个请求要 K 个新 block"，kv_cache_manager 调 block_pool 分配。**没有 block_pool，scheduler 无法做内存决策；没有 scheduler，block_pool 只是个空闲块池。**
 
-加分：再讲清 `kv_cache_utils.py:hash_block_tokens` 是 **prefix caching** 的入口（链式 hash，详见 `02-core-concepts/04-prefix-caching.md`）。这是第四件"次要武器"，跟 block_pool 配合做跨请求 KV 复用。
+补充：再讲清 `kv_cache_utils.py:hash_block_tokens` 是 **prefix caching** 的入口（链式 hash，详见 `02-core-concepts/04-prefix-caching.md`）。这是第四件"次要武器"，跟 block_pool 配合做跨请求 KV 复用。
 
 ## 下一步
 

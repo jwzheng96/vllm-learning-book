@@ -238,7 +238,7 @@ encoder cache 默认 per-Pod。要跨 Pod 复用：通过 KV connector 把 mm_ha
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: vLLM 怎么把图片"翻译"成 LLM 输入？**
 A: 三步：①Processor 把字符 placeholder 换成 N 个特殊 token id；②ViT 算 image_embeds；③在 input_embeds 里把 N 个 placeholder 位置替换为 image_embeds。LLM forward 吃 inputs_embeds（不传 input_ids）。

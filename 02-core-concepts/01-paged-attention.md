@@ -1,6 +1,6 @@
 # 01. PagedAttention 详解
 
-> **谁该读这一篇？** 想用一个概念把 vLLM 的核心创新讲透的同学；面试前必须把 PagedAttention 与 OS 虚拟内存类比建得起来的候选人。
+> **谁该读这一篇？** 想用一个概念把 vLLM 的核心创新讲透，并把 PagedAttention 与 OS 虚拟内存类比建立起来的读者。
 >
 > **前置阅读：** [`01-overview/00-prerequisites.md`](../01-overview/00-prerequisites.md) §4 KV cache、§6 GPU 内存层级；以及 [`01-overview/01-what-is-vllm.md`](../01-overview/01-what-is-vllm.md)（三大瓶颈的第一条）。
 >
@@ -10,9 +10,9 @@
 > 1. 在白板画出"OS 虚拟内存 ↔ PagedAttention"对照表（页 / 页表 / COW / 缺页）。
 > 2. 算清 `block_size=16` 的取舍，并能解释为什么不取 1 或 128。
 > 3. 描述一个请求从 prefill 到 decode 在 BlockPool / BlockTable 上的 KV 分配序列。
-> 4. 给面试官讲清"PagedAttention 跟 FlashAttention 是什么关系" / "PagedAttention vs RadixAttention 的区别"。
+> 4. 讲清"PagedAttention 跟 FlashAttention 是什么关系" / "PagedAttention vs RadixAttention 的区别"。
 
-vLLM 的心脏。如果只能讲清一个概念，必须是它。面试 90% 的概率会被问到。
+vLLM 的心脏。如果只能讲清一个概念，必须是它。
 
 ---
 
@@ -245,7 +245,7 @@ flowchart LR
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: PagedAttention 会不会比连续 KV 慢？**
 A: 会，但很少。每个 block 一次 indirect lookup，`block_size=16` 摊薄了开销。论文实测 attention 慢 ~20%，但整体吞吐提升 24×，总账净赚。
@@ -271,7 +271,7 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. OS 虚拟内存 vs PagedAttention 6 行对照表。**
 
@@ -285,7 +285,7 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 | 释放 / swap | 请求完成 / preempt 时 ref_cnt 归零 → 回 free queue | `_free_request_blocks` / preempt 流程 |
 | COW（写时复制）| Beam search / prefix 共享 → 分歧时 copy | block ref_cnt > 1 时 split |
 
-加分：再讲清 **LRU 淘汰**（OS swap victim ↔ prefix cache evict 冷 block）。
+补充：再讲清 **LRU 淘汰**（OS swap victim ↔ prefix cache evict 冷 block）。
 
 ---
 
@@ -356,7 +356,7 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 >
 > 现在的 vLLM：**默认走 FlashAttention 或 FlashInfer 的 paged 版本**，自家 `paged_attention_v1/v2.cu` 只是在某些 GPU 不支持 FlashAttention 时 fallback。MLA 模型走 FlashMLA（DeepSeek 自家 kernel），Mamba 模型走专门的 state-space kernel。
 >
-> 所以面试讲 PagedAttention 时，**思想引用论文，实现要说 FlashAttention paged 版本**——不然会显得知识停留在 2023。"
+> 所以讲 PagedAttention 时，**思想引用论文，实现要说 FlashAttention paged 版本**——不然知识会停留在 2023。"
 
 ## 下一步
 

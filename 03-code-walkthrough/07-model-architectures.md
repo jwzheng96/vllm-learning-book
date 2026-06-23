@@ -298,7 +298,7 @@ V3 还有 MTP head（multi-token predict），是投机解码的 in-built 实现
 
 ---
 
-## 7. 面试常见追问
+## 7. 工程自检问答
 
 **Q: MLA 为什么能比 GQA 省那么多 KV？**
 A: 把 K、V 投影到一个 `latent_dim` 远小于 `n_kv_heads × head_dim` 的空间存储；attention 时按需升维。Llama-70B 每 token 320 byte → DeepSeek-V3 ~40 byte，约 1/8。代价是 attention 计算多两次 matmul（升维）。
@@ -326,7 +326,7 @@ A: ①每 N step 统计 expert 命中频率；②热门 expert 复制到多 rank
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. W_dkv 为什么拆 rope / nope 两段？**
 
@@ -441,7 +441,7 @@ DeepSeek-V3 前 `first_k_dense_replace = 3` 层是普通 DeepseekV3MLP（dense F
 
 **没坑**：vLLM 的 forward 主要看每层的 `forward()` 调用，不论是 Dense 还是 MoE 都是 `nn.Module`——继承自同一 `DecoderLayer`，对调度透明。
 
-加分点：DeepSeek 这个设计的动机是**前几层学的是低层 lexical 特征，不需要 expert routing**（学习率不稳定）；MoE 从中层开始介入后效率更高。这是模型架构选择，不是 vLLM 限制。
+补充细节：DeepSeek 这个设计的动机是**前几层学的是低层 lexical 特征，不需要 expert routing**（学习率不稳定）；MoE 从中层开始介入后效率更高。这是模型架构选择，不是 vLLM 限制。
 
 ## 下一步
 

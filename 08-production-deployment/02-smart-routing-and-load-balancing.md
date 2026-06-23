@@ -150,7 +150,7 @@ score(pod) = α * cache_hit_length(pod, prompt)         # 越高越好
            - β * pod.num_running                        # 越低越好
            - γ * pod.queue_depth                        # 越低越好
            - δ * pod.kv_usage                           # 越低越好
-           + ε * (1 if pod has needed LoRA else 0)      # LoRA 命中加分
+           + ε * (1 if pod has needed LoRA else 0)      # LoRA 命中加权
 
 route_to = argmax(score)
 ```
@@ -300,7 +300,7 @@ flowchart LR
 
 ---
 
-## 11. 面试常见追问
+## 11. 工程自检问答
 
 **Q: 既然 vLLM 内部有 prefix caching，为什么还要 Router 层做 cache-aware？**
 A: vLLM 内部 cache 只在**同一 Pod 内**生效。多 Pod 部署下，同一会话路由到不同 Pod 就完全 miss。Router 层 cache-aware 保证同前缀请求落到同一 Pod，让 Pod 内 cache 真的生效。
@@ -329,7 +329,7 @@ A: 会。需要确保：①ExtProc 服务本身可扩缩 ②路由决策 < 1ms �
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. Cache-aware Router 跟 vLLM 内部 prefix caching 的协同关系？**
 
@@ -340,7 +340,7 @@ A: 会。需要确保：①ExtProc 服务本身可扩缩 ②路由决策 < 1ms �
 - 没 vLLM prefix caching：即使路由对了，pod 内部也不复用 KV
 - 没 cache-aware router：N 个 pod 各自有自己的 cache，命中率 ÷ N
 
-加分：Router 维护的是"prompt hash → pod" 映射；vLLM 维护的是"block hash → 物理 KV block"。两层 hash 协同——前者解决路由，后者解决物理存储。
+补充：Router 维护的是"prompt hash → pod" 映射；vLLM 维护的是"block hash → 物理 KV block"。两层 hash 协同——前者解决路由，后者解决物理存储。
 
 ---
 
@@ -374,7 +374,7 @@ def should_admit(request) -> bool:
 
 **拒绝时返回**：HTTP 429 + `Retry-After: <估算重试时长>` header，让客户端 backoff。
 
-加分：还可以加 `vllm:num_preemptions_total` rate 作为第三维度——如果 preempt 已经在发生，证明系统极限到了，必须拒新请求。
+补充：还可以加 `vllm:num_preemptions_total` rate 作为第三维度——如果 preempt 已经在发生，证明系统极限到了，必须拒新请求。
 
 ---
 

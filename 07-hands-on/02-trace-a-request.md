@@ -142,7 +142,7 @@ vllm serve facebook/opt-125m --port 8000 --enforce-eager
 curl http://localhost:8000/metrics | grep -E 'vllm_(num_|prefix_|gpu_)' | head -20
 ```
 
-关键指标（面试可引用）：
+关键指标（排查时可引用）：
 
 - `vllm:num_requests_waiting`
 - `vllm:num_requests_running`
@@ -182,7 +182,7 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 4. **enforce-eager 开关**：开和关分别跑，看 startup time 和 decode latency
 5. **加 fp8 KV**：`--kv-cache-dtype fp8`，看 `# GPU blocks` 是否翻倍
 
-每个实验记一条结论。这就是你的"实战材料"，面试时可以拿出来讲。
+每个实验记一条结论。这些记录后面做分享、排障复盘或方案评审时都能直接复用。
 
 ---
 
@@ -195,7 +195,7 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 同 prompt 跑 3 次（开 prefix caching），第 2 次 `free_blocks` 变化多少？为什么？**
 

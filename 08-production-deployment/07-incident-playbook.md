@@ -1,6 +1,6 @@
-# 07. 真实故障 Runbook：8 个面试可以讲的案例
+# 07. 真实故障 Runbook：8 个生产案例
 
-> **谁该读这一篇？** 一线 on-call SRE、面试推理岗位想"讲事故"的工程师、postmortem 文化的推动者。
+> **谁该读这一篇？** 一线 on-call SRE、负责推理服务稳定性的工程师、postmortem 文化的推动者。
 >
 > **前置阅读：** [`05-slo-and-observability.md`](./05-slo-and-observability.md)、[`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md)
 >
@@ -8,11 +8,11 @@
 >
 > **学完能：**
 > 1. 用"症状 → 排查 → 根因 → 修复 → 长期改进"的结构复盘任意 LLM 故障
-> 2. 在面试里把至少 4 个真实 case（NCCL hang / preempt cascade / cache 跌 / retry storm 等）讲清楚
+> 2. 把至少 4 个真实 case（NCCL hang / preempt cascade / cache 跌 / retry storm 等）复盘清楚
 > 3. 写出可机械执行的 runbook 与决策树
 > 4. 区分紧急止血动作与长期改进项
 
-"你处理过最复杂的生产故障是什么？" —— 这是中后期面试必问题。本节把 LLM 推理常见 8 种故障写成可读的 runbook，每个都按 **症状 → 排查 → 根因 → 修复 → 长期改进** 的结构。你能把这些讲清楚，面试官会觉得你"真做过事"。
+这一节把 LLM 推理常见 8 种故障写成可读的 runbook。每个案例都按 **症状 → 排查 → 根因 → 修复 → 长期改进** 展开，方便你在值班、复盘和团队培训时直接套用。
 
 ---
 
@@ -49,7 +49,7 @@ PromQL: sum(rate(vllm:request_success_total[1m])) → 比昨天同时段高 2×
 - Warm pool：常驻 20% 冗余
 - 客户端 SDK 调小默认 max_tokens
 
-### 面试讲法
+### 复盘要点
 > "我们碰到 TTFT 突增。我先看 vLLM 的金信号：发现 queue depth、KV usage、preempt 三件套全红。说明 KV 压力大、调度饥饿。临时手动扩容 + Gateway 限流稳住，长期改 HPA 阈值 + warm pool。"
 
 ---
@@ -83,7 +83,7 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 - DCGM 监控 NVLink CRC，预警硬件问题
 - 节点定期 nccl-tests 自检
 
-### 面试讲法
+### 复盘要点
 > "诊断 hang vs crash 的差别是关键。我们靠 throughput=0 而 running>0 的金信号识别。py-spy 看到栈卡在 NCCL，nvidia-smi 看 NVLink 错误。立刻重启 + 隔离节点。长期上 NCCL 超时配置 + DCGM 监控。"
 
 ---
@@ -111,7 +111,7 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 - 路由策略 metric exposed，发布前自动比对
 - 配置变更触发 SLO check pipeline
 
-### 面试讲法
+### 复盘要点
 > "Cache hit 突跌通常三件事之一：模型升级（tokenizer 变）、路由变（session 不 sticky）、流量模式变。我们靠最近变更回溯发现路由配置错误。"
 
 ---
@@ -142,7 +142,7 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 - Pod 优雅 drain，不要 hard kill 触发 retry
 - 跨 AZ 部署，单 AZ 挂不会全崩
 
-### 面试讲法
+### 复盘要点
 > "重启风暴是经典 cascade。流量曲线是关键证据。修复优先稳定（限流），再补 SDK 行为规范。长期上多 AZ + sane retry budget。"
 
 ---
@@ -172,7 +172,7 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 - Pre-production benchmark 强制要做
 - Calibration set 与 prod workload 对齐
 
-### 面试讲法
+### 复盘要点
 > "模型质量回归是 LLM 特有的故障类型。HTTP 200 不代表没事。我们靠 thumbs-down rate 和 format 合规率作为代理指标，配合自动回滚。"
 
 ---
@@ -202,7 +202,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 - 节点健康检查自动 cordon 有 ECC 历史的卡
 - 重要任务跑前 nccl-tests + memcheck
 
-### 面试讲法
+### 复盘要点
 > "ECC 错导致输出错是最'诡异'的故障之一——不 crash、不 OOM，但答案是错的。靠 DCGM 监控提前发现，否则只能靠业务投诉。"
 
 ---
@@ -229,7 +229,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 - CUDA Graph capture 错误 fail-fast 报警
 - 框架升级走金丝雀
 
-### 面试讲法
+### 复盘要点
 > "框架升级踩坑很常见。`--enforce-eager` 是 LLM 推理的 'safe mode'，临时禁掉 CUDA Graph 优化保持可用。"
 
 ---
@@ -258,7 +258,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 - Smart router 自动识别 prompt 长度路由
 - Gateway 在路由前 tokenize 预估长度
 
-### 面试讲法
+### 复盘要点
 > "长上下文请求是个流量隔离问题。我们建立两个独立 Pod 池，Gateway 按 prompt 长度路由。这是 vLLM/LLM 部署里很重要的'workload partitioning'思想。"
 
 ---
@@ -300,7 +300,7 @@ Root cause analysis: follow standard postmortem template
 
 ---
 
-## 面试常见追问
+## 工程自检问答
 
 **Q: 你最难处理的 LLM 故障是哪个？**
 A: 挑 NCCL hang 或 ECC 这种"症状诡异、调试难"的——故事性强。
@@ -318,7 +318,7 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 
 ## 小结
 
-- 8 个高频故障覆盖 LLM 推理的所有典型失效维度：容量/通信/路由/重试/质量/硬件/框架/隔离。
+- 8 个典型故障覆盖 LLM 推理的主要失效维度：容量/通信/路由/重试/质量/硬件/框架/隔离。
 - 任何故障都按 "Symptom → Triage (<5min) → Root cause → Emergency fix → Long-term" 五段写。
 - 紧急动作只追求"止血"，长期改进必须落地为监控、配置或自动化代码改动。
 - LLM 特有故障（NCCL hang、ECC bit flip、模型质量回归）单靠传统 5xx/latency 告警发现不了，必须额外加代理指标。
@@ -352,7 +352,7 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 7. 真实故障 runbook（本节）
 
 这套加在前面的 vLLM 内部原理之上，构成了"原理 + 工程"的完整图。
-面试官问到任何一个层面，都能展开讲，且能讲到代码级 / 工程级深度。
+后续定位任何一个层面的问题时，都能从这里展开到代码级 / 工程级细节。
 
 ---
 

@@ -1,6 +1,6 @@
 # 06. CUDA Kernels：从 paged_attention 到自定义算子
 
-> **谁该读这一篇？** 想看一眼 `csrc/` 真实 kernel、能在面试中聊一聊 CUDA 细节加分的工程师；以及未来打算改 / 写 vLLM 自定义算子的人。
+> **谁该读这一篇？** 想看一眼 `csrc/` 真实 kernel、理解 CUDA 细节的工程师；以及未来打算改 / 写 vLLM 自定义算子的人。
 >
 > **前置阅读：** [`05-attention-backends.md`](05-attention-backends.md)、[`01-paged-attention.md`](../02-core-concepts/01-paged-attention.md)、[`00-prerequisites.md`](../01-overview/00-prerequisites.md)
 >
@@ -13,7 +13,7 @@
 > 4. 说明 attention kernel 怎么用 `block_tables` 间接读 KV cache
 > 5. 说出 vLLM 现在主用 FlashAttention/FlashInfer、自家 kernel 作为 fallback 的工程取舍
 
-目录：`csrc/`。这是 vLLM 的 C++ / CUDA 部分。本节带你穿过最重要的几个文件，看 PagedAttention v1/v2 的真实 kernel 实现。面试不一定会问 CUDA 细节，但你能聊一聊会有加分。
+目录：`csrc/`。这是 vLLM 的 C++ / CUDA 部分。本节带你穿过最重要的几个文件，看 PagedAttention v1/v2 的真实 kernel 实现。CUDA 细节不是入门必需，但读过以后，很多性能问题会更容易定位。
 
 ---
 
@@ -263,7 +263,7 @@ Python 调用：`torch.ops._C.paged_attention_v1(out, query, ...)`
 
 ## 7. 自己改 CUDA kernel 的工作流
 
-万一面试官真问"如果让你优化某个 kernel 你会怎么做"，给个标准答案：
+如果要优化某个 kernel，我一般按这个顺序看：
 
 1. **profile**：用 Nsight Compute 看当前 kernel 的瓶颈
    - memory-bound? compute-bound? launch overhead?
@@ -291,7 +291,7 @@ vLLM 的 kernel 都是按这套优化的。
 
 ---
 
-## 9. 面试常见追问
+## 9. 工程自检问答
 
 **Q: PagedAttention 的 CUDA kernel 跟普通 attention 有什么区别？**
 A: 核心区别是 KV 读取走 `block_tables[seq_idx * max_blocks + b]` 间接寻址，物理 block 不连续。其他（softmax、reduction）一样。代价是多一层指针 chase，但 block_size=16 摊薄了开销。
@@ -300,7 +300,7 @@ A: 核心区别是 KV 读取走 `block_tables[seq_idx * max_blocks + b]` 间接�
 A: 把同一个 query 的 KV 序列拆成 P 段，P 个 CTA 各算部分 softmax(QK)·V，最后一个 merge kernel 用 LogSumExp 合并。在长 seq、小 batch 时让 CTA 数 ×P 填满 SM。
 
 **Q: 你看过 FlashAttention 的 kernel 吗？**
-A: 老实说"我读过 paged_attention_v1，比较通俗；FlashAttention 我读过论文但 kernel 没读，因为它用了 TMA 和 WGMMA 指令，门槛很高。"——这是诚实又有 hook 的答法。
+A: 更实际的说法是："我读过 paged_attention_v1，比较通俗；FlashAttention 我读过论文但 kernel 没完整读，因为它用了 TMA 和 WGMMA 指令，门槛很高。"
 
 **Q: vLLM 为什么放弃自己的 kernel 用 FlashAttention？**
 A: 性能。FlashAttention v2/v3 由 Tri Dao 团队持续优化，针对最新硬件（TMA、WGMMA、async copy）做了极致优化；vLLM 自己写跟不上。把精力放在调度和内存管理这些高 ROI 的层。
@@ -317,7 +317,7 @@ A: 性能。FlashAttention v2/v3 由 Tri Dao 团队持续优化，针对最新�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. v1 的 grid 维度 `(num_heads, num_seqs)` 为什么不反过来？**
 
@@ -331,7 +331,7 @@ A: 性能。FlashAttention v2/v3 由 Tri Dao 团队持续优化，针对最新�
 
 **反过来会怎样？** `dim3 grid(num_seqs, num_heads)` 行为上一致，但如果 `num_heads > 65535`（不太可能但理论上）就 launch 失败。属于工程防御性设计。
 
-加分点：grid 形状不影响 GPU 调度（GPU 实际是按 block id 线性派发，二维只是程序员视角）。重要的是**总 CTA 数 ≥ SM 数 × 每 SM 容量**才能填满 GPU。
+补充细节：grid 形状不影响 GPU 调度（GPU 实际是按 block id 线性派发，二维只是程序员视角）。重要的是**总 CTA 数 ≥ SM 数 × 每 SM 容量**才能填满 GPU。
 
 ---
 
@@ -452,7 +452,7 @@ def paged_attention_v1(out, query, ...):
 - sliding window 与 prefix caching 不太兼容（窗口滑过的部分被覆盖）——要么单独存窗口外的 KV，要么 Mistral 那种纯 sliding window 模型直接丢掉历史
 - 想看现成实现：FlashAttention 已有 `window_size` 参数，vLLM 的 `vllm/v1/attention/backends/flash_attn.py` 把它传下去就行——**别自己手写 CUDA**，直接复用 FlashAttention
 
-→ 这道题其实是个 trap：现代实现都不动自家 CUDA kernel，统一用 FlashAttention paged 版本。"先复用现有"是正确答案。
+→ 这里容易被误导：现代实现通常不动自家 CUDA kernel，而是统一用 FlashAttention paged 版本。"先复用现有"通常是正确选择。
 
 ## 下一步
 

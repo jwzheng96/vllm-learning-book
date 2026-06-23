@@ -1,6 +1,6 @@
 # 02. Speculative Decoding（投机解码）
 
-> **谁该读这一篇？** 想加速单请求 / 小 batch decode 的工程师；准备答清"投机为什么不改变分布、为什么大 batch 不赚"的面试同学；要给 DeepSeek-V3 这类自带 MTP 的模型做推理调优的人。
+> **谁该读这一篇？** 想加速单请求 / 小 batch decode 的工程师；想理解"投机为什么不改变分布、为什么大 batch 不赚"的读者；要给 DeepSeek-V3 这类自带 MTP 的模型做推理调优的人。
 >
 > **前置阅读：** [`02-scheduler.md`](../03-code-walkthrough/02-scheduler.md)、[`04-model-runner.md`](../03-code-walkthrough/04-model-runner.md)、[`01-quantization.md`](01-quantization.md)
 >
@@ -177,7 +177,7 @@ vllm/v1/spec_decode/
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: 投机解码会改变输出分布吗？**
 A: 不会。数学上等价于直接从 target 采样（Leviathan 2023 证明）。这是它的关键卖点——加速无精度损失。
@@ -202,7 +202,7 @@ A: 动态开关：bs < threshold 开 spec，bs > threshold 关。或者用 MTP �
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. eagle.py vs ngram_proposer.py 的 `propose` 签名差异。**
 
@@ -339,7 +339,7 @@ rate(vllm:spec_accepted_total[5m]) / rate(vllm:spec_proposed_total[5m])
 
 **生产解法**：动态开关——监控 `vllm:num_requests_running`，超过阈值（如 32）自动关 spec decode；或者改用 MTP（开销最小，可一直开）。
 
-加分：DeepSeek-V3 内置 MTP（Multi-Token Prediction）—— draft 头与 target 共享 backbone，几乎零开销，是 EAGLE 思路的"模型自带"版本。
+补充：DeepSeek-V3 内置 MTP（Multi-Token Prediction）—— draft 头与 target 共享 backbone，几乎零开销，是 EAGLE 思路的"模型自带"版本。
 
 ## 下一步
 

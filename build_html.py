@@ -56,7 +56,7 @@ SECTIONS_META: dict[str, tuple[str, str]] = {
     "03-code-walkthrough":      ("Part III",  "源码走读"),
     "04-optimizations":         ("Part IV",   "性能优化"),
     "05-distributed":           ("Part V",    "分布式"),
-    "06-interview":             ("Part VI",   "面试准备"),
+    "06-interview":             ("Part VI",   "工程问答"),
     "07-hands-on":              ("Part VII",  "实操实验"),
     "08-production-deployment": ("Part VIII", "生产部署"),
     "09-advanced-features":     ("Part IX",   "应用特性"),

@@ -10,7 +10,7 @@
 > 1. 复述一条请求从用户代码到 GPU forward 的完整文件级路径
 > 2. 区分 `LLMEngine`（门面）与 `EngineCore`（心脏）的职责
 > 3. 在源码里准确定位 9 个核心文件并知道每个文件的关键方法
-> 4. 在面试白板上画出 step() 一次调用的 mermaid 调用链
+> 4. 画出 step() 一次调用的 mermaid 调用链
 
 一个请求是怎么从用户代码（或 HTTP）走到 GPU 的？本节回答"我打开 vllm 仓库，从哪里开始读"。
 
@@ -267,11 +267,11 @@ flowchart TD
     class I,J,K,L gpu;
 ```
 
-把这条链路背下来，面试问"vLLM 怎么处理一个请求"就能按 9 步讲清，并随时指出对应文件路径。
+把这条链路走通之后，"vLLM 怎么处理一个请求"就能按 9 步讲清，并随时指出对应文件路径。
 
 ---
 
-## 10. 推荐阅读顺序（针对面试准备）
+## 10. 推荐阅读顺序（源码入门）
 
 按顺序读，每个文件挑核心方法看 + 加 print 跑一遍：
 
@@ -292,13 +292,13 @@ flowchart TD
 ## 小结
 
 - vLLM 的两个入口（`LLM` 离线类、`api_server` 在线服务）最终都汇聚到同一个 `LLMEngine`，再通过 ZMQ 把请求转给独立进程里的 `EngineCore`。
-- 一次 step 的核心三步是 `scheduler.schedule() → executor.execute_model() → scheduler.update_from_output()`，背下这三步就抓住了主流程。
+- 一次 step 的核心三步是 `scheduler.schedule() → executor.execute_model() → scheduler.update_from_output()`，记住这三步就抓住了主流程。
 - Worker 进程里 `GPUModelRunner.execute_model` 是 forward + 采样的实际本体，所有 GPU 上的活都在这里。
 - V1 的 `LLMEngine` 是个轻量门面（约 400 行），真活在 EngineCore 进程；这点跟 V0 不同，是 V1 性能与可维护性的关键设计。
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. `add_request` 和 `step` 各对应哪条 ZMQ 通道？发还是收？**
 
@@ -377,7 +377,7 @@ def step(self):
     return output
 ```
 
-加分点：vLLM 已经在 `vllm/v1/metrics/loggers.py` 把这个 metric 暴露成 Prometheus `vllm:iteration_tokens_total`（histogram），不需要手 log；要看就 `curl /metrics`。
+补充细节：vLLM 已经在 `vllm/v1/metrics/loggers.py` 把这个 metric 暴露成 Prometheus `vllm:iteration_tokens_total`（histogram），不需要手 log；要看就 `curl /metrics`。
 
 ## 下一步
 

@@ -246,7 +246,7 @@ prefix caching 在 attention 层做（不在 MoE 层）。EP 只影响 MoE 层�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 256 expert, top-k=8, TP-8 + DP-4, ep_size 和每卡几个 expert？**
 
@@ -261,7 +261,7 @@ ep_size = 8 × 4 × 1 = 32
 
 **实际部署**：DeepSeek-V3 256 expert + TP-8 + DP-4 = 32 卡集群，每卡 8 个 expert，每层 forward 跑 2 次 32-rank AllToAll。常配 IB/NVLink Switch System（GH200 NVL32 / GB200 NVL72）。
 
-加分点：如果 expert 数不整除 ep_size（如 250 个 expert + ep_size=32），需要 EPLB 加 padding（凑到 256 → 每卡 8）或者整除约束失败启动报错。
+补充细节：如果 expert 数不整除 ep_size（如 250 个 expert + ep_size=32），需要 EPLB 加 padding（凑到 256 → 每卡 8）或者整除约束失败启动报错。
 
 ---
 
@@ -348,6 +348,7 @@ def use_deepep_ll_kernels(self):
 ## 下一步
 
 - 下一节：[`04-context-parallel.md`](04-context-parallel.md)（PCP / DCP——长上下文场景下另一种切分维度）。
+- 规模化实战：[`05-large-scale-cluster-inference.md`](05-large-scale-cluster-inference.md)（EPLB / DP padding / 微批重叠在千卡万卡上怎么治 EP 同步长尾、AllToAll 怎么撞网络墙）。
 - 想看源码：`vllm/model_executor/layers/fused_moe/config.py:1007`（ParallelConfig）、`vllm/distributed/device_communicators/all2all.py`（6 个后端）、`vllm/model_executor/layers/fused_moe/expert_map_manager.py`（EPLB 核心）。
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（MoE 的容量规划要把 EP 维度算进去）。
 - 想看 DeepEP 论文与实现：DeepSeek GitHub deep-ep 仓库。

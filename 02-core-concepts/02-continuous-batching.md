@@ -1,6 +1,6 @@
 # 02. Continuous Batching（连续批处理）
 
-> **谁该读这一篇？** 想搞清"为什么 vLLM 比 HF Transformers 吞吐高一个量级"且能在面试时不靠 buzzword 讲清的同学；想自己实现一套 iteration-level 调度器的工程师。
+> **谁该读这一篇？** 想搞清"为什么 vLLM 比 HF Transformers 吞吐高一个量级"且不靠 buzzword 讲清的读者；想自己实现一套 iteration-level 调度器的工程师。
 >
 > **前置阅读：** [`01-paged-attention.md`](01-paged-attention.md)（PagedAttention 让 KV 不必连续，是 continuous batching 能跑起来的物理前提）；[`01-overview/00-prerequisites.md`](../01-overview/00-prerequisites.md) §8 batching。
 >
@@ -179,7 +179,7 @@ V1 默认 recompute，因为：
 
 ---
 
-## 9. 面试常见追问
+## 9. 工程自检问答
 
 **Q: continuous batching 一定比 static 快吗？**
 A: 不一定。如果所有请求长度高度一致（比如 benchmark 的固定长度），两者性能接近。但生产场景长度方差大，continuous 必赢。
@@ -209,7 +209,7 @@ A: TGI 是 sequence-level（请求级），仍然按"prefill 阶段→decode 阶
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. No / Static / Continuous 三种 batching 的 gantt + GPU 空闲位置。**
 
@@ -328,3 +328,4 @@ def schedule(self):
 - 想看源码：`vllm/v1/core/sched/scheduler.py`（schedule 主循环）、`vllm/v1/core/sched/async_scheduler.py`（async overlap）、`vllm/v1/worker/gpu_input_batch.py`（持久 InputBatch）。
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（调 `max_num_batched_tokens` 观察 TTFT/吞吐曲线）。
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（token budget 与 HPA、并发上限的关系）。
+- 想看背后的性能模型：[`04-optimizations/05-roofline-and-arithmetic-intensity.md`](../04-optimizations/05-roofline-and-arithmetic-intensity.md)（用存算比定量证明"为什么加 batch 几乎免费地拉吞吐"）。

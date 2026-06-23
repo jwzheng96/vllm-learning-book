@@ -1,6 +1,6 @@
 # 05. Attention Backends 源码深读
 
-> **谁该读这一篇？** 想搞懂 vLLM 怎么把 attention 抽象成可插拔后端、不同硬件/模型对应哪个 backend 的工程师；准备答清"FlashAttention vs FlashInfer vs MLA"等面试题的同学。
+> **谁该读这一篇？** 想搞懂 vLLM 怎么把 attention 抽象成可插拔后端、不同硬件/模型对应哪个 backend 的工程师。
 >
 > **前置阅读：** [`01-paged-attention.md`](../02-core-concepts/01-paged-attention.md)、[`04-model-runner.md`](04-model-runner.md)、[`03-kv-cache-manager.md`](03-kv-cache-manager.md)
 >
@@ -268,7 +268,7 @@ CPU          : CPU_ATTN
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: vLLM 的 attention 是自己写的吗？**
 A: 早期是（`csrc/attention/paged_attention_v1/v2.cu`），现在主用 FlashAttention v2/v3 和 FlashInfer 的 paged 版本——它们原生支持 `block_table`。vLLM 自己的 kernel 作为 fallback。
@@ -297,7 +297,7 @@ A: 多个请求共享同一前缀时，避免重复对前缀算 attention，节�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. N-1 与 N iteration 的关系（FlashAttentionMetadata 注释图复述）。**
 
@@ -375,7 +375,7 @@ slot_id = physical_block_id * block_size + (new_token_idx % block_size)
 
 **H100 + 普通 Llama-3 = FlashAttention v3**（最优路径）。
 
-加分点：FlashInfer 在某些场景（特别是 GQA + 极大 batch）比 FlashAttention v3 还快；可通过 `VLLM_ATTENTION_BACKEND=FLASHINFER` 强制覆盖默认选择。
+补充细节：FlashInfer 在某些场景（特别是 GQA + 极大 batch）比 FlashAttention v3 还快；可通过 `VLLM_ATTENTION_BACKEND=FLASHINFER` 强制覆盖默认选择。
 
 ---
 

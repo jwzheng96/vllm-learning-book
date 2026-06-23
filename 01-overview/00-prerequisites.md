@@ -89,7 +89,7 @@ LLM 99% 是 **decoder-only Transformer**（GPT 家族）。一层 Transformer �
 1. **Self-Attention**：让当前 token 看到序列里的其他 token，决定"应该参考谁"
 2. **MLP（前馈网络）**：对每个 token 单独做非线性变换
 
-### 2.1 Attention 公式（背下来）
+### 2.1 Attention 公式（先掌握）
 
 $$\text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{Q K^{\top}}{\sqrt{d_k}}\right) V$$
 
@@ -385,6 +385,8 @@ flowchart LR
 
 **在 vLLM 里**：这是 continuous batching 之所以能把吞吐拉 24× 的物理基础。
 
+> 这里是粗略版。想看**定量推导**（算出拐点、证明"Linear 层存算比 ≈ token 数"、用 Llama-70B 算 token/s 上限、以及"batching 摊薄权重却摊不薄 KV"这个生产关键点），见 [`04-optimizations/05-roofline-and-arithmetic-intensity.md`](../04-optimizations/05-roofline-and-arithmetic-intensity.md)。
+
 ---
 
 ## 8. Batching：把多个请求挤进一次 forward
@@ -612,7 +614,7 @@ vLLM 的回答：
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 画出"用户输入 → token → forward → 采样"这条循环，并标出哪一步会读 / 写 KV cache。**
 

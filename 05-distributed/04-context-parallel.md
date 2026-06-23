@@ -225,7 +225,7 @@ CP 不像 TP/PP 有专门 metric，主要观察：
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. TP-8 + DCP-2 用几张 GPU？为什么 DCP 不增 GPU？**
 
@@ -248,7 +248,7 @@ TP-8 + DCP-2：
 
 **等价于**：原 8 个 head（每卡 1 个）变成 4 个 head 组（每组 2 卡共享，按 seq 切）。world_size 不变，但 **KV cache 占用 / 卡 ≈ 减半**——长上下文场景可装下更多 token。
 
-加分点：DCP 实质是"用 head 维度换 seq 维度"的资源重分配；前提是 head 数足够多（tp_size 不被 head 数撑死）。
+补充细节：DCP 实质是"用 head 维度换 seq 维度"的资源重分配；前提是 head 数足够多（tp_size 不被 head 数撑死）。
 
 ---
 
@@ -330,7 +330,7 @@ TP-8 + DCP-2：
 - 长上下文是核心 KPI + 有 RDMA → 配置 B
 - 多数请求 ≤ 32K，只有 1% 是 200K → 配置 A 简单
 
-加分点：还可以混合用——长 prompt 走 PCP 集群，短 prompt 走 TP 集群，前端 router 按 prompt 长度路由。
+补充细节：还可以混合用——长 prompt 走 PCP 集群，短 prompt 走 TP 集群，前端 router 按 prompt 长度路由。
 
 ## 下一步
 

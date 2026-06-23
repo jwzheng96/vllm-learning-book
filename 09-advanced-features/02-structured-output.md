@@ -249,7 +249,7 @@ vLLM 的实现路径（`vllm/entrypoints/openai/`）：
 
 ---
 
-## 11. 面试常见追问
+## 11. 工程自检问答
 
 **Q: structured output 为什么比 prompt 工程可靠？**
 A: prompt 工程依赖模型自觉，温度高 / 长生成时易跑偏。结构化输出在 logits 层强制 mask，**数学上保证**只能产出合法 token，无法越界。

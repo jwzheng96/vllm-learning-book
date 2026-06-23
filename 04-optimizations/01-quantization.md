@@ -1,6 +1,6 @@
 # 01. 量化（Quantization）
 
-> **谁该读这一篇？** 准备给大模型做部署调优、需要在不同硬件上选 FP8 / AWQ / GPTQ / KV-cache 量化的工程师；以及面试想答清"量化收益、Marlin、KV FP8"等问题的同学。
+> **谁该读这一篇？** 准备给大模型做部署调优、需要在不同硬件上选 FP8 / AWQ / GPTQ / KV-cache 量化的工程师。
 >
 > **前置阅读：** [`00-prerequisites.md`](../01-overview/00-prerequisites.md)、[`04-model-runner.md`](../03-code-walkthrough/04-model-runner.md)、[`05-attention-backends.md`](../03-code-walkthrough/05-attention-backends.md)
 >
@@ -159,7 +159,7 @@ vllm serve meta-llama/Llama-3-70B \
 
 ---
 
-## 8. 面试常见追问
+## 8. 工程自检问答
 
 **Q: 量化哪里损失最大？**
 A: outlier（异常激活值）和 LM head（生成 logits 的最后一层，对精度敏感）。所以 vLLM 默认 LM head 不量化。
@@ -184,7 +184,7 @@ A: 反量化开销 > 算力节省时（小 batch、prefill 阶段 compute-bound�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. AWQ 与 GPTQ 入口 + 是否都调 Marlin？**
 
@@ -210,7 +210,7 @@ A: 反量化开销 > 算力节省时（小 batch、prefill 阶段 compute-bound�
 
 **实战推荐**：单机单 H100 跑 70B 必须 INT4（AWQ 或 GPTQ）。FP8 也能装但 KV 太小，几乎无并发能力。多机 / 多卡 TP=2 才能上 FP16/FP8 跑 70B。
 
-加分点：实际还有 CUDA Graph buffer / Marlin workspace 等 1-2 GB 占用。生产部署用 `--gpu-memory-utilization 0.9` 留 buffer。
+补充细节：实际还有 CUDA Graph buffer / Marlin workspace 等 1-2 GB 占用。生产部署用 `--gpu-memory-utilization 0.9` 留 buffer。
 
 ---
 

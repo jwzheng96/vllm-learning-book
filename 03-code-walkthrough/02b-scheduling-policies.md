@@ -219,7 +219,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. PRIORITY 模式 `num_preemptions` 持续走高，3 个 root cause + 验证方法。**
 

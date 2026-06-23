@@ -247,7 +247,7 @@ prefix cache 不是无限的。当 BlockPool 用尽时：
 
 ---
 
-## 10. 面试常见追问
+## 10. 工程自检问答
 
 **Q: 如果两个请求 prompt 完全相同，但 sampling 不同，会发生什么？**
 A: prefill KV 全部命中 → 跳过 prefill。decode 阶段各自独立采样（因为 sampling 有 RNG 状态）。两个请求生成可能完全不同的输出。

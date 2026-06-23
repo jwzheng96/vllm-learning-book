@@ -47,7 +47,7 @@ flowchart LR
     class R6 hw;
 ```
 
-下面挑高频且容易被忽视的几个详谈。
+下面挑常见且容易被忽视的几个详谈。
 
 ---
 
@@ -312,7 +312,7 @@ flowchart LR
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: 一个 vLLM Pod 突然不响应，怎么排查？**
 A: ①看 throughput（0 + running>0 = NCCL hang）；②看 GPU util；③`py-spy dump` Python 栈；④检查 mesh sidecar；⑤强制重启 Pod 看是否恢复。
@@ -341,7 +341,7 @@ A: ①shadow 流量对比新旧输出；②用户反馈 thumbs；③离线 eval�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. TP=8 Pod 组：8 个 Pod CPU 5%、GPU util 0%、`num_requests_running > 0` —— 第一反应？检测路径？**
 
@@ -475,6 +475,7 @@ watch kubectl get pods -l app=vllm
 ## 下一步
 
 - 下一节：[`07-incident-playbook.md`](./07-incident-playbook.md)（把这些理论转成可执行 runbook）
+- 规模化失效：[`05-distributed/05-large-scale-cluster-inference.md`](../05-distributed/05-large-scale-cluster-inference.md)（万卡的故障墙：NCCL fail-stop、blast radius、慢卡 straggler、弹性 EP）
 - 想看源码：`vllm/v1/core/sched/`（preempt 与调度）、`vllm/distributed/`（NCCL/通信）
 - 想动手：[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md) 主动制造 OOM/preempt 验证防护
 

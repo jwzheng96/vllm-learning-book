@@ -1,6 +1,6 @@
 # 04. Compilation Internals：CompilerManager / VllmBackend / 自定义 pass
 
-> **谁该读这一篇？** 想深入理解 vLLM 启动慢在哪、torch.compile 如何与 paged attention 共存的进阶读者；准备面试时被追问"为什么不直接用 torch.compile"的候选人。
+> **谁该读这一篇？** 想深入理解 vLLM 启动慢在哪、torch.compile 如何与 paged attention 共存的进阶读者。
 >
 > **前置阅读：** [`04-optimizations/03-cudagraph-and-compile.md`](03-cudagraph-and-compile.md)（CUDA Graph 与 torch.compile 入门），[`03-code-walkthrough/04-model-runner.md`](../03-code-walkthrough/04-model-runner.md)（capture_model 入口）。
 >
@@ -326,7 +326,7 @@ graph hash 偶尔不稳定（Python 对象 id、内存地址混入）→ 缓存�
 
 ---
 
-## 13. 面试常见追问
+## 13. 工程自检问答
 
 **Q: vLLM 为什么不直接 torch.compile(model)？**
 A: ①PagedAttention 是 custom op，Dynamo fallback eager；②dynamic shape 让整图编译爆炸；③CUDA Graph 要 static shape，整图不可能。vLLM 自己写 backend，按 attention 切 piecewise，每段单独优化。
@@ -354,7 +354,7 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 直接 `torch.compile(model)` 在 vLLM 下的 3 个问题 + 规避方法。**
 
@@ -364,7 +364,7 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 | **dynamic shape 反复重编译** | `num_tokens` 是 SymInt（symbolic），shape 一变 torch.compile 触发 recompile → 每次 5-30s | `vllm/compilation/backends.py` 内的 `VllmBackend` 给关键 axis 标记 dynamic，让编译产物对 shape 维度 generic；同时 capture 少数代表 size 做 CUDA Graph |
 | **整图编译太大无法分段优化** | 80 层 Llama 整图编译 + capture 占 5-10 分钟，且编译失败时整图 fallback | `split_graph()` 把 forward 切成 piecewise（按 attention op 边界），每段独立编译；某段失败也不影响其他段 |
 
-加分：还有第 4 个隐性问题——CUDA Graph 录制要求输入地址固定，Dynamo 默认会跨步重分配，vLLM 通过 `wrap_with_cudagraph` 在持久 buffer 上 capture。
+补充：还有第 4 个隐性问题——CUDA Graph 录制要求输入地址固定，Dynamo 默认会跨步重分配，vLLM 通过 `wrap_with_cudagraph` 在持久 buffer 上 capture。
 
 ---
 

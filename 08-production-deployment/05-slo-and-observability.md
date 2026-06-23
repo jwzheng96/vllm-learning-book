@@ -334,7 +334,7 @@ LLM 还有一类质量指标，传统服务没有：
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. SLO TTFT p99 < 500ms, PromQL 算 "过去 5 分钟落在 SLO 内比例"。**
 
@@ -459,6 +459,7 @@ TPOT p99 抖动
 ## 下一步
 
 - 下一节：[`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md)（把观测信号映射到具体故障模式）
+- 配套诊断：[`10-gpu-utilization-and-tail-latency.md`](./10-gpu-utilization-and-tail-latency.md)（定了 SLI 之后——为什么实测打不满、长尾怎么从这些 metric 反推根因）
 - 想看源码：`vllm/v1/metrics/`（metric 定义与 stat logger）、`vllm/tracing.py`
 - 想动手：[`07-hands-on/02-trace-a-request.md`](../07-hands-on/02-trace-a-request.md) 把 OTel collector 串到本地 vLLM
 

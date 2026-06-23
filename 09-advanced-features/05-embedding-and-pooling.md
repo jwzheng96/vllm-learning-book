@@ -274,7 +274,7 @@ vLLM 通过 `score` task + Classify head 做 reranker。
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: 为什么 BGE 在 vLLM 上比 sentence-transformers 快？**
 A: ①continuous batching 跨请求合并 prefill；②FlashAttention 比朴素 attention 快几倍；③varlen 不 pad；④量化（FP8/INT8）开箱即用。

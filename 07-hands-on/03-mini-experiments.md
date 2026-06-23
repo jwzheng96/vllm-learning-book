@@ -1,6 +1,6 @@
 # 03. 5 个 Mini 实验：把直觉变成数字
 
-> **谁该读这一篇？** 想在面试和技术分享里讲"我跑过 X，看到 Y"而不是只复述论文的工程师；带新人时希望给出可复现验证清单的 mentor。
+> **谁该读这一篇？** 想在技术分享里讲"我跑过 X，看到 Y"而不是只复述论文的工程师；带新人时希望给出可复现验证清单的 mentor。
 >
 > **前置阅读：** [`07-hands-on/01-setup.md`](01-setup.md)（环境已装好），[`07-hands-on/02-trace-a-request.md`](02-trace-a-request.md)（会用 stat logger 和 metric），[`02-core-concepts/04-prefix-caching.md`](../02-core-concepts/04-prefix-caching.md) + [`02-core-concepts/05-chunked-prefill.md`](../02-core-concepts/05-chunked-prefill.md)（理解实验背后概念）。
 >
@@ -13,7 +13,7 @@
 > 4. 故意制造 KV 压力观察 Scheduler 的 preempt 行为
 > 5. 测量 ngram 投机解码在不同 workload 下的吞吐收益
 
-读再多笔记不如自己测一次。下面 5 个实验都基于 `facebook/opt-125m` 或 `Qwen2.5-0.5B`（小模型省 GPU），但结论可以推广到大模型。跑完后，每个实验记一段 200 字以内的"我观察到 X，所以 Y"。这就是面试可拿出来讲的"实战证据"。
+读再多笔记不如自己测一次。下面 5 个实验都基于 `facebook/opt-125m` 或 `Qwen2.5-0.5B`（小模型省 GPU），但结论可以推广到大模型。跑完后，每个实验记一段 200 字以内的"我观察到 X，所以 Y"，后续做分享、复盘和方案评审都用得上。
 
 ---
 
@@ -266,7 +266,7 @@ python benchmarks/benchmark_throughput.py \
 > 结论：chatbot 场景 system prompt 占 80%+ 计算，prefix caching 是必开。
 > 踩坑：第一次没看到效果，发现是 `enable_prefix_caching` 写错；测试时还要排除 model load 时间。
 
-这些数据是面试时最大的差异化。**普通候选人讲概念，你讲数字**。
+这些数据会让理解变得非常扎实。**概念要讲，数字也要拿得出来**。
 
 ---
 
@@ -280,7 +280,7 @@ python benchmarks/benchmark_throughput.py \
 
 ### 目标
 
-用同一个模型、同一个 workload 跑 FP16 / FP8 / AWQ-INT4 / GPTQ-INT4 四组数据，给生产部署一份"量化选型 cheatsheet"。**特别要回答**：什么硬件该选什么量化、精度损失实际多少、是否走了 Marlin kernel。
+用同一个模型、同一个 workload 跑 FP16 / FP8 / AWQ-INT4 / GPTQ-INT4 四组数据，给生产部署整理一份量化选型表。**特别要回答**：什么硬件该选什么量化、精度损失实际多少、是否走了 Marlin kernel。
 
 ### 硬件 / 软件要求
 
@@ -443,7 +443,7 @@ done
 - **TPOT 跨 TP 几乎不变**——forward 算力÷N + 通信时间 ≈ 单卡 forward
 - **TTFT 显著下降**——prefill compute-bound，TP 切完算力真翻倍
 - 7B 模型 TP=2 最划算；13B 单机 TP=4 是甜点；70B 不得不 TP=8
-- **nsys timeline 直接看 NCCL kernel block 时间**——这是面试和博客最有杀伤力的素材
+- **nsys timeline 直接看 NCCL kernel block 时间**——这是定位通信瓶颈和写复盘最有说服力的证据
 
 ### 自测题
 
@@ -682,11 +682,11 @@ done
 - 5 个实验分别验证了 prefix caching、token budget、FP8 KV、preempt、投机解码这 5 个 vLLM 核心机制。
 - 实验脚本都用小模型（OPT-125m / Qwen-0.5B）就能跑，但结论对大模型一样适用。
 - "目标 / 预期 / 自测题"三段式让每个实验都有"可复现 + 可推理"的双重价值。
-- 实验报告模板（目标 / 观察 / 结论 / 踩坑）是面试自我介绍中最有效的素材结构。
+- 实验报告模板（目标 / 观察 / 结论 / 踩坑）是技术分享和复盘里最有效的素材结构。
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 实验 1 结论：prefix caching 在 chatbot 场景 TTFT 降低 X%。**
 
@@ -700,7 +700,7 @@ done
 - 命中率（连续请求间是否同 prefix）决定平均收益
 - 第一次请求 TTFT 不变（cache 还没建立）
 
-**面试可引申**：这是 RAG / chatbot 场景的主要优化路径，比 quantization / spec decode 收益还大。
+**工程上可引申**：这是 RAG / chatbot 场景的主要优化路径，比 quantization / spec decode 收益还大。
 
 ---
 
@@ -829,7 +829,7 @@ batch_size 与 GPU 状态的关系：
 - batch_size > 32 时自动关 spec decode（动态开关）
 - 或换成 MTP（DeepSeek-V3 内置）—— 几乎零额外开销，大 batch 也能开
 
-加分点：EAGLE 在小 batch 下加速比 2-3×，大 batch 下可能反而拖慢 20%。决策权在监控数据，不在文档建议。
+补充细节：EAGLE 在小 batch 下加速比 2-3×，大 batch 下可能反而拖慢 20%。决策权在监控数据，不在文档建议。
 
 ## 下一步
 

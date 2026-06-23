@@ -4,8 +4,8 @@
 [![Site](https://img.shields.io/badge/site-jwzheng96.github.io%2Fvllm--learning--book-8b1538)](https://jwzheng96.github.io/vllm-learning-book/)
 [![vLLM](https://img.shields.io/badge/vllm-27b85d2_(2026--05--15)-1a4d80)](https://github.com/vllm-project/vllm/tree/27b85d2084c48f9b12f8cfd6638a56fe9b257635)
 
-> 一份面向大模型推理岗的工程笔记。
-> **46 章 · 14K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
+> 一份写给大模型推理工程入门者的源码教程。
+> **49 章 · 15K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
 > 每章都对照 vLLM 源码（`file_path:line_number`），可以"读笔记 ↔ 跳源码"无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**
@@ -16,7 +16,7 @@
 
 如果你正在做下面这些事，这是为你写的：
 
-- **求职准备**：刷面试题前想真把 vLLM 啃一遍，不再背"PagedAttention 解决了什么"。
+- **系统补课**：想把 vLLM 的核心机制啃透，不再只记"PagedAttention 解决了什么"这种结论。
 - **业务接入**：要上线 LLM 推理服务，要选 v0/v1、调度策略、量化方案、部署架构。
 - **性能优化**：TTFT/TPOT 不达标，需要从架构层定位到内核层逐级排查。
 - **底层贡献**：想给 vLLM 提 PR，先得知道 scheduler / kv manager / attention backend 怎么咬合。
@@ -82,11 +82,11 @@ flowchart LR
 | 投入时间 | 推荐路径 |
 | --- | --- |
 | 零基础 | 先读 [`01-overview/00-prerequisites.md`](01-overview/00-prerequisites.md)（前置概念）再走任何一条路径 |
-| 1 天（~5h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-architecture`](01-overview/02-architecture.md) → [`01-paged-attention`](02-core-concepts/01-paged-attention.md) → [`06-interview/01-common-questions`](06-interview/01-common-questions.md) |
+| 1 天（~5h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-architecture`](01-overview/02-architecture.md) → [`01-paged-attention`](02-core-concepts/01-paged-attention.md) → [`工程问答速查`](06-interview/01-common-questions.md) |
 | 1 周（~15h） | 精读 `01-overview/` + `02-core-concepts/`，跑通 `vllm` repo 的 `examples/offline_inference/basic.py` |
 | 3-4 周（~35h） | 顺序读 01 → 09，每章配合源码对照（每章都标 `file_path:line_number`） |
-| 面试速成（~8h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-core-concepts/`](02-core-concepts/) 全部 → [`06-interview/`](06-interview/) 两篇 |
-| 生产部署速成（~10h） | [`01-overview/02-architecture`](01-overview/02-architecture.md) → [`08-production-deployment/`](08-production-deployment/) 全部 |
+| 核心机制快读（~8h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-core-concepts/`](02-core-concepts/) 全部 → [`06-interview/`](06-interview/) 两篇工程问答 |
+| 生产部署快读（~10h） | [`01-overview/02-architecture`](01-overview/02-architecture.md) → [`08-production-deployment/`](08-production-deployment/) 全部 |
 
 ---
 
@@ -122,24 +122,26 @@ flowchart LR
 - [`06-cuda-kernels.md`](03-code-walkthrough/06-cuda-kernels.md) — PagedAttention v1/v2、RoPE、RMSNorm CUDA 实现。
 - [`07-model-architectures.md`](03-code-walkthrough/07-model-architectures.md) — MLA / Mamba / MoE / GQA 在源码层的差异。
 
-### 4. 优化 · `04-optimizations/` — 4 章
+### 4. 优化 · `04-optimizations/` — 5 章
 
 - [`01-quantization.md`](04-optimizations/01-quantization.md) — FP8 / INT4 / AWQ / GPTQ / Marlin 的选型矩阵。
 - [`02-speculative-decoding.md`](04-optimizations/02-speculative-decoding.md) — n-gram / EAGLE / Medusa / MTP 的取舍。
 - [`03-cudagraph-and-compile.md`](04-optimizations/03-cudagraph-and-compile.md) — CUDA Graph + torch.compile 何时开 / 何时关 / 失败降级路径。
 - [`04-compilation-internals.md`](04-optimizations/04-compilation-internals.md) — CompilerManager / VllmBackend / 自定义 pass 深度。
+- [`05-roofline-and-arithmetic-intensity.md`](04-optimizations/05-roofline-and-arithmetic-intensity.md) — 🆕 存算比定量推导：prefill 为何 compute-bound、decode 为何 memory-bound，Llama-70B 算一遍，batching 摊薄权重却摊不薄 KV。
 
-### 5. 分布式 · `05-distributed/` — 4 章
+### 5. 分布式 · `05-distributed/` — 5 章
 
 - [`01-tp-pp-ep.md`](05-distributed/01-tp-pp-ep.md) — TP 切法 / PP 流水气泡 / EP expert 负载均衡。
 - [`02-disaggregated.md`](05-distributed/02-disaggregated.md) — Prefill/Decode 分离的数据流 + NIXL RDMA + 决策表。
 - [`03-expert-parallel-deep-dive.md`](05-distributed/03-expert-parallel-deep-dive.md) — MoE AllToAll 6 个后端、EPLB、宽 EP 部署模式。
 - [`04-context-parallel.md`](05-distributed/04-context-parallel.md) — PCP / DCP 双维度长上下文切分；MLA 模型 `a2a` backend 省 NCCL。
+- [`05-large-scale-cluster-inference.md`](05-distributed/05-large-scale-cluster-inference.md) — 🆕 千卡/万卡实战：通信墙/故障墙/长尾墙、EP 同步长尾、AllToAll 撞网络、blast radius、6 类规模化故障 runbook。
 
-### 6. 面试 · `06-interview/` — 2 章
+### 6. 工程问答 · `06-interview/` — 2 章
 
-- [`01-common-questions.md`](06-interview/01-common-questions.md) — 30 道高频题 + 答题要点。
-- [`02-system-design.md`](06-interview/02-system-design.md) — "设计一个推理服务"4 道题完整解题。
+- [`01-common-questions.md`](06-interview/01-common-questions.md) — 30 个核心问题，把概念、源码入口和工程取舍串起来。
+- [`02-system-design.md`](06-interview/02-system-design.md) — "设计一个推理服务"的容量估算、架构拆分与取舍推演。
 
 ### 7. 实操 · `07-hands-on/` — 4 章
 
@@ -148,7 +150,7 @@ flowchart LR
 - [`03-mini-experiments.md`](07-hands-on/03-mini-experiments.md) — 5 个动手实验（block_size / prefix hit / batching / 量化等）。
 - [`04-profiling-and-debugging.md`](07-hands-on/04-profiling-and-debugging.md) — torch.profiler / NVTX / py-spy / 显存泄漏。
 
-### 8. 生产部署 · `08-production-deployment/` — 9 章
+### 8. 生产部署 · `08-production-deployment/` — 10 章
 
 - [`01-deployment-architectures.md`](08-production-deployment/01-deployment-architectures.md) — vLLM Production Stack / llm-d / AIBrix 三套参考栈对比。
 - [`02-smart-routing-and-load-balancing.md`](08-production-deployment/02-smart-routing-and-load-balancing.md) — prefix-cache aware / session sticky / 负载打分。
@@ -159,6 +161,7 @@ flowchart LR
 - [`07-incident-playbook.md`](08-production-deployment/07-incident-playbook.md) — 8 个真实故障 runbook。
 - [`08-monitoring-cookbook.md`](08-production-deployment/08-monitoring-cookbook.md) — 可直接抄走的 PromQL / 告警规则 YAML / Grafana dashboard 骨架。
 - [`09-vllm-doctor-skill.md`](08-production-deployment/09-vllm-doctor-skill.md) — 把 06-07-08 章人工流程编成 agent 自动跑：7 阶段工作流 + 决策树 + 三级整改 + 离线 dry-run。
+- [`10-gpu-utilization-and-tail-latency.md`](08-production-deployment/10-gpu-utilization-and-tail-latency.md) — 🆕 全链路性能诊断：GPU-Util 为何是谎言、MBU/MFU、带宽/利用率为何打不满、长尾 8 类根因与处置。
 
 ### 9. 应用特性 · `09-advanced-features/` — 5 章
 
@@ -203,7 +206,7 @@ flowchart LR
 
 ---
 
-## 面试自检清单
+## 工程理解自检清单
 
 读完整套笔记后，下面每个问题应该能在 1-2 分钟内讲清，并指出对应源码位置：
 

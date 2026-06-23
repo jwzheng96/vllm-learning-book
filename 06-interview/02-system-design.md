@@ -1,24 +1,24 @@
-# 系统设计题：设计一个 LLM 推理服务
+# LLM 推理服务设计：工程推演
 
-> **谁该读这一篇？** 准备资深 / staff 级岗位面试、需要展示"从 0 设计大模型服务"能力的候选人；技术 leader 与架构师做 capacity planning 的参考。
+> **谁该读这一篇？** 需要从 0 到 1 设计大模型推理服务的工程师；也适合技术 leader 与架构师做 capacity planning 时当检查清单。
 >
-> **前置阅读：** [`06-interview/01-common-questions.md`](01-common-questions.md)（30 道基础题打底），[`05-distributed/01-tp-pp-ep.md`](../05-distributed/01-tp-pp-ep.md)（并行策略），[`05-distributed/02-disaggregated.md`](../05-distributed/02-disaggregated.md)（prefill/decode 拆分），[`02-core-concepts/04-prefix-caching.md`](../02-core-concepts/04-prefix-caching.md)（prefix cache 是高分点）。
+> **前置阅读：** [`06-interview/01-common-questions.md`](01-common-questions.md)（基础问答打底），[`05-distributed/01-tp-pp-ep.md`](../05-distributed/01-tp-pp-ep.md)（并行策略），[`05-distributed/02-disaggregated.md`](../05-distributed/02-disaggregated.md)（prefill/decode 拆分），[`02-core-concepts/04-prefix-caching.md`](../02-core-concepts/04-prefix-caching.md)（prefix cache 是关键工程变量）。
 >
 > **耗时：** 约 30 分钟。
 >
 > **学完能：**
-> 1. 背出 6 步通用答题框架，任何 LLM 推理设计题都能套
-> 2. 给出 4 类典型 workload（chatbot / 长上下文 RAG / agent / 突发流量）的标准答案
+> 1. 掌握 6 步通用设计框架，遇到新的 LLM 推理场景也能拆开分析
+> 2. 给出 4 类典型 workload（chatbot / 长上下文 RAG / agent / 突发流量）的参考方案
 > 3. 在 capacity estimation 阶段给出"模型大小 / KV per token / 并发上限"的口算
-> 4. 知道 7 个"加分点"和 5 个"减分雷区"
+> 4. 识别 7 个容易被忽略的工程细节和 5 个常见误区
 
-面试中后段必出"开放题"。本节给你框架 + 5 道典型题的标准答法。答题原则：**先问 requirements，再分层设计，最后讨论 tradeoff 与 metric**。
+这章不是给一个固定答案，而是给一套设计推演方法。原则很简单：**先确认 requirements，再做容量估算，接着分层设计，最后把 tradeoff 和 metric 说清楚**。
 
 ---
 
-## 通用答题框架（背下来）
+## 通用设计框架
 
-任何"设计一个 LLM 推理系统"的问题，按这 6 步答：
+任何"设计一个 LLM 推理系统"的问题，都可以按这 6 步推进：
 
 ```mermaid
 flowchart TD
@@ -40,7 +40,7 @@ flowchart TD
 ## 题 1：设计一个 ChatGPT-like 服务，10k 并发 in-flight 用户
 
 ### 阶段 1：Clarify
-反问面试官：
+先确认：
 
 - 模型多大？（假设 Llama-3 70B）
 - 输入长度 / 输出长度分布？（假设 prompt 1k、output 500 tokens）
@@ -189,9 +189,9 @@ flowchart TD
 
 ---
 
-## 一些"高分"加分点
+## 容易被忽略的工程细节
 
-面试中能引用以下细节会显得专业：
+这些细节能把设计从泛泛而谈拉回工程现场：
 
 1. **"基于 conversation_id sticky"** —— 不是随便 LB
 2. **"启动时 profile run 确定 num_blocks"** —— 知道 vLLM 内部
@@ -203,9 +203,9 @@ flowchart TD
 
 ---
 
-## 一些"减分"的雷区
+## 常见误区
 
-避免说：
+尽量避免：
 
 1. "我会自己实现 PagedAttention" —— 已是开源标准，重造没意义
 2. "我会用 HF Transformers 部署" —— 暴露不懂行
@@ -229,14 +229,14 @@ flowchart TD
 
 ## 小结
 
-- 6 步通用框架：Clarify → Capacity → Architecture → Engine 选择 → 可靠性 → 可观测，少一步都会被压分。
-- 4 类典型题各有套路：chatbot 重 prefix cache 与 sticky 路由、长上下文 RAG 必拆 prefill/decode、agent 强 structured output、突发流量靠准入控制 + HPA + 降级。
-- 高分关键：capacity estimation 出数字、引用 vLLM 内部细节（profile run / chunked prefill / NIXL）、用 Prometheus metric 名讨论监控。
-- 雷区清单：跳过 requirements、自造 PagedAttention、用 HF 部署、Redis 缓存 LLM 输出、不问 workload 就上架构。
+- 6 步通用框架：Clarify → Capacity → Architecture → Engine 选择 → 可靠性 → 可观测。少一步，设计就容易漂。
+- 4 类典型 workload 各有重点：chatbot 重 prefix cache 与 sticky 路由、长上下文 RAG 必须认真拆 prefill/decode、agent 强 structured output、突发流量靠准入控制 + HPA + 降级。
+- 关键是 capacity estimation 出数字、引用 vLLM 内部细节（profile run / chunked prefill / NIXL）、用 Prometheus metric 名讨论监控。
+- 常见误区：跳过 requirements、自造 PagedAttention、用 HF 部署生产服务、Redis 缓存 LLM 输出、不问 workload 就上架构。
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 10k 并发 chatbot + 200B 模型 + 2k 输入 / 1k 输出 + 单卡 80GB，capacity 怎么算？**
 
@@ -270,7 +270,7 @@ flowchart TD
 
 并行策略：**TP=8 + FP8 + EP（若 200B 是 MoE）**。
 
-→ 实战面试时给出**第一个数（1256 H100）+ 减法路径（FP8 → 320）**，比直接说"用 FP8 + TP=8"更显功力——展示你能算 capacity。
+→ 真正做容量评审时，先给出**第一个数（1256 H100）+ 减法路径（FP8 → 320）**，比直接说"用 FP8 + TP=8"更能说明你真的会算 capacity。
 
 ---
 
@@ -309,7 +309,7 @@ flowchart TD
 - 大图爆 token：限制图像分辨率（API 层 resize 到 1024×1024）
 - 文本长 prefill 卡死：开 chunked prefill
 
-→ 完整答案约 5 分钟，配 1 张架构图。
+→ 完整推演约 5 分钟，配 1 张架构图。
 
 ---
 
@@ -330,7 +330,7 @@ flowchart TD
 - **prefix cache 命中率 < 20% + 高 QPS + 强可用要求 → 多实例**（例：RAG 每问不同、batch 推理）
 - **平衡区**：多实例 + cache-aware routing（路由层做 prefix awareness 弥补命中率，又保留多实例的故障域优势）
 
-→ 看 `vllm:prefix_cache_hit_rate` 一个 metric 就能拍板。这是面试答这种"系统设计选型"题的杀手锏。
+→ 看 `vllm:prefix_cache_hit_rate` 一个 metric 就能缩小决策空间。这是做系统设计选型时很关键的证据。
 
 ---
 
@@ -389,11 +389,11 @@ flowchart TD
 3. **Prefix Cache 层级**：L1 GPU HBM（每 pod 本地）、L2 CPU DRAM（LMCache 跨 pod 共享）、L3 NVMe（超长冷 cache）
 4. **监控面板**：Prometheus scrape 所有 pod 的 `/metrics`，Grafana 显示 4 大金信号 + 告警规则触发 PagerDuty
 
-加分：图上额外标注 KV connector 走 RDMA（pod ↔ LMCache），HPA 按 `vllm:num_requests_running` 扩缩容。
+补充：图上额外标注 KV connector 走 RDMA（pod ↔ LMCache），HPA 按 `vllm:num_requests_running` 扩缩容。
 
 ## 下一步
 
-- 下一节：[`07-hands-on/01-setup.md`](../07-hands-on/01-setup.md)（把面试讲的概念真跑一遍，攒"我跑过 X"的实战素材）
+- 下一节：[`07-hands-on/01-setup.md`](../07-hands-on/01-setup.md)（把上面讲的概念真跑一遍，留下可复现的实验记录）
 - 想看源码：`vllm/v1/core/sched/scheduler.py`、`vllm/v1/core/kv_cache_manager.py`、`vllm/entrypoints/openai/api_server.py`
-- 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（5 个实验配出数字给设计题加分）
+- 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（5 个实验配出数字，反过来校准设计判断）
 - 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)、[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)、[`08-production-deployment/07-incident-playbook.md`](../08-production-deployment/07-incident-playbook.md)（突发流量与故障真实 case）

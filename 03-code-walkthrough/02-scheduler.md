@@ -1,6 +1,6 @@
 # 02. Scheduler 深读
 
-> **谁该读这一篇？** 已经知道 vLLM 大致进程拓扑，准备死磕 V1 Scheduler 这 2300 行核心代码的工程师；面试想答清 token budget、preempt、chunked prefill 的同学。
+> **谁该读这一篇？** 已经知道 vLLM 大致进程拓扑，准备死磕 V1 Scheduler 这 2300 行核心代码的工程师；想把 token budget、preempt、chunked prefill 讲清楚的读者。
 >
 > **前置阅读：** [`01-entry-points.md`](01-entry-points.md)、[`02-continuous-batching.md`](../02-core-concepts/02-continuous-batching.md)、[`05-chunked-prefill.md`](../02-core-concepts/05-chunked-prefill.md)
 >
@@ -225,7 +225,7 @@ V1 默认 recompute，前面解释过。
 
 ---
 
-## 8. 一些"高级"逻辑（速览，面试可不展开）
+## 8. 一些"高级"逻辑（速览，初读可先略过）
 
 - **结构化输出（structured output）**：JSON schema / grammar 约束 → 每步 logits 加 mask。Scheduler 会维护 grammar state machine 每步推进。
 - **投机解码（spec decoding）**：Scheduler 一次性给一个请求分配 `1 + num_lookahead_tokens` 个 token，Worker 返回的是 "提议 - 验证" 结果。
@@ -275,7 +275,7 @@ CPU/GPU overlap 节省 5-10%。
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. preempt victim 从队头还是队尾选？**
 

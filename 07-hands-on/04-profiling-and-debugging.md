@@ -359,13 +359,13 @@ Step 7: 改代码 + benchmark 验证
 ## 13. 小结
 
 - 工具分层使用：宏观看 stat logger + Prometheus，中观看 OTel trace，微观用 torch.profiler / nsys / py-spy。
-- 5 类典型问题（吞吐低、TPOT 慢、TTFT 高、偶发慢请求、结果错）都有标准排查 checklist，背下来 oncall 受益。
+- 5 类典型问题（吞吐低、TPOT 慢、TTFT 高、偶发慢请求、结果错）都有标准排查 checklist，熟悉后 on-call 很受益。
 - 6 个常用调试环境变量记牢：`VLLM_LOGGING_LEVEL`、`VLLM_LOG_STATS_INTERVAL`、`NCCL_DEBUG`、`NCCL_BLOCKING_WAIT`、`CUDA_LAUNCH_BLOCKING`、`VLLM_TORCH_COMPILE_CACHE_DIR`。
 - 调试结果异常先 `--enforce-eager`，再依次关 spec decode / 量化做二分排除——别从 kernel 层开始猜。
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. NCCL hang 的完整排查命令链。**
 
@@ -542,7 +542,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
   - > 0.9 + preempt 速率低 → 长上下文请求占用，但还能跑——监控但不急
   - < 0.7 但 TTFT 高 → 不是 KV 问题，看其他
 
-**加分指标（如果时间够）**：
+**补充指标（如果时间够）**：
 
 - `rate(vllm:request_success_total{finished_reason="abort"}[5m])` — 错误率
 - `rate(vllm:num_preemptions_total[5m])` — 抢占率

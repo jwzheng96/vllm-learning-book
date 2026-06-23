@@ -284,7 +284,7 @@ draft 模型有无 LoRA？通常 draft 是独立小模型，不用 LoRA。target
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: vLLM 怎么做到一个 batch 跨多个 LoRA 仍能高吞吐？**
 A: Punica kernel：base matmul 还是一次大 GEMM，LoRA 增量按 token 的 `lora_id` 路由到对应 `B_i, A_i`。每 batch 内部分段并行执行 LoRA 部分，是个 batched grouped GEMM。

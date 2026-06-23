@@ -1,6 +1,6 @@
 # 03. KV Cache 管理深入
 
-> **谁该读这一篇？** 想从"知道有 BlockPool"升级到"能 trace 出一个 block 的完整生命周期"的同学；面试要回答"vLLM 启动时怎么决定 num_blocks / 怎么 preempt / hash 怎么算"的候选人。
+> **谁该读这一篇？** 想从"知道有 BlockPool"升级到"能 trace 出一个 block 的完整生命周期"的读者；需要讲清"vLLM 启动时怎么决定 num_blocks / 怎么 preempt / hash 怎么算"的工程师。
 >
 > **前置阅读：** [`01-paged-attention.md`](01-paged-attention.md)（理念层）、[`02-continuous-batching.md`](02-continuous-batching.md)（schedule 与 preempt 的上层逻辑）。
 >
@@ -10,7 +10,7 @@
 > 1. 复述启动阶段 `profile run` 算 num_blocks 的 5 步公式，并解释为什么 `--gpu-memory-utilization` 默认 0.9。
 > 2. 写出 KVCacheBlock / FreeKVCacheBlockQueue / cached_block_hash_to_block 三个数据结构的不变式。
 > 3. 画出一个请求"WAITING → RUNNING → FINISHED"过程中 KV block 的分配 / 复用 / 释放序列。
-> 4. 给面试官讲清 chain hash 为什么必须 chain、prefix caching 的命中是"按顺序"的。
+> 4. 讲清 chain hash 为什么必须 chain、prefix caching 的命中是"按顺序"的。
 
 PagedAttention 是"理念"，本节是"工程实现"。看完这节，你才能讲清"vLLM 启动时怎么决定要分多少 block"。
 
@@ -126,7 +126,7 @@ T=N+1: 生成 EOS
 
 ## 5. Prefix Caching 的 hash 机制
 
-这是面试高频考点。
+这是理解 KV 管理时最容易漏掉的一点。
 
 ### 5.1 Hash 的输入
 对每个 block，hash 包含：
@@ -254,11 +254,11 @@ vLLM 的 KVCacheManager 已经被扩展为**多类型并存**：
 
 代码：`vllm/v1/core/single_type_kv_cache_manager.py` 和 `kv_cache_coordinator.py` 协调多种 manager。
 
-面试不会深问，但你应该知道 vLLM 已经不只是"Transformer paged KV"了。
+初读可以先略过，但你应该知道 vLLM 已经不只是"Transformer paged KV"了。
 
 ---
 
-## 10. 面试追问汇总
+## 10. 工程自检问答
 
 **Q: vLLM 启动慢，为什么？**
 A: profile run 阶段会跑 dummy forward + 可能 capture CUDA Graph 多个 batch_size + torch.compile，加起来几十秒到几分钟。可以用 `--enforce-eager` 关 CUDA Graph 加速启动（但跑慢）。
@@ -284,7 +284,7 @@ A: 用 Python `hash()` 或更安全的 SHA-1（vLLM 用过 xxhash）。冲突概
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. prompt=50, 生成 100 token, block_size=16, 画 KV block 一生。**
 

@@ -1,6 +1,6 @@
 # 01. 环境搭建与第一个 Demo
 
-> **谁该读这一篇？** 第一次跑 vLLM、想把"读过的概念"变成"亲手验证"的学习者；准备演示给团队 / 面试官的工程师。
+> **谁该读这一篇？** 第一次跑 vLLM、想把"读过的概念"变成"亲手验证"的学习者；准备给团队做演示的工程师。
 >
 > **前置阅读：** [`01-overview/00-prerequisites.md`](../01-overview/00-prerequisites.md)（环境与背景知识），[`01-overview/01-what-is-vllm.md`](../01-overview/01-what-is-vllm.md)（先知道 vLLM 是什么再装它）。
 >
@@ -194,7 +194,7 @@ python benchmarks/benchmark_serving.py \
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. "# GPU blocks: NNNN" 是哪个模块算的？受哪 3 个启动参数影响？**
 

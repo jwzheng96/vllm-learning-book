@@ -179,7 +179,7 @@ flowchart TD
 
 ---
 
-## 5. 面试常见追问
+## 5. 工程自检问答
 
 **Q: CUDA Graph 为什么不能完全替代 compile？**
 A: CG 只优化 launch overhead，不优化 op 本身。compile 做 op fusion 是另一维度。两者叠加最佳。

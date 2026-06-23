@@ -1,6 +1,6 @@
 # 02. Disaggregated Prefill / Decode
 
-> **谁该读这一篇？** 想理解"为什么大厂愿意花两倍机器把 prefill / decode 拆开"、"vLLM 通过哪个接口接 NIXL / LMCache / Mooncake"、"什么规模才划算"的读者。
+> **谁该读这一篇？** 想理解"为什么生产团队愿意花两倍机器把 prefill / decode 拆开"、"vLLM 通过哪个接口接 NIXL / LMCache / Mooncake"、"什么规模才划算"的读者。
 >
 > **前置阅读：** [`01-tp-pp-ep.md`](01-tp-pp-ep.md)（先掌握同机的多卡并行才能讲跨集群）；最好读过 [`02-core-concepts/05-chunked-prefill.md`](../02-core-concepts/05-chunked-prefill.md)（理解同卡上 prefill/decode 互相干扰的根源）。
 >
@@ -145,7 +145,7 @@ vLLM 通过 KV connector 的回调 + Scheduler 的 metadata 字段（`kv_connect
 
 ---
 
-## 9. 面试常见追问
+## 9. 工程自检问答
 
 **Q: 为什么 prefill 和 decode 适合的卡不同？**
 A: prefill 是 compute-bound，要 FLOPs；decode 是 memory-bound，要 HBM 带宽。理论上 prefill 可用算力强的小显存卡，decode 用大显存高带宽卡。实际多用同型号卡但跑不同配置。
@@ -193,7 +193,7 @@ A: 互补。chunked prefill 是同卡上把长 prefill 切片，缓解阻塞但�
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. KV connector 的 3 个核心方法 + 接入新 transport 要实现什么？**
 
@@ -304,3 +304,4 @@ class KVConnectorBase(ABC):
 - 想看智能路由怎么帮 disaggregated 降低 KV 传输：[`08-production-deployment/02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)。
 - 想理解部署平台怎么管两个集群（llm-d / Dynamo / AIBrix）：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)。
 - 想做生产化故障预案：[`08-production-deployment/06-reliability-and-failure-modes.md`](../08-production-deployment/06-reliability-and-failure-modes.md)。
+- 规模化实战：[`05-large-scale-cluster-inference.md`](05-large-scale-cluster-inference.md)（P/D 分离在千卡万卡上的 KV 路由、比例动态调整、故障墙）。

@@ -242,7 +242,7 @@ def allocate_slots(
 ) -> KVCacheBlocks | None:
 ```
 
-参数语义（**面试可能详细问**）：
+参数语义（**容易混淆，建议看代码时对齐**）：
 
 | 参数                       | 含义                                                                  |
 | ------------------------ | ------------------------------------------------------------------- |
@@ -401,7 +401,7 @@ flowchart TD
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. `block_pool.py` 里所有改 `ref_cnt` 的函数 + ++ 还是 --。**
 
@@ -415,7 +415,7 @@ flowchart TD
 | `free_blocks` 批量 | **--** | 同上，遍历多个 block |
 | `touch` / `_increment_ref_count` | **++** | beam search / parallel sampling 共享时 |
 
-加分点：`ref_cnt > 1` 意味着多请求共享，这 block 不能写（COW 保护）；某些代码路径会 `_split_block`（分裂出新 block 给 writer），原 block ref_cnt--。
+补充细节：`ref_cnt > 1` 意味着多请求共享，这 block 不能写（COW 保护）；某些代码路径会 `_split_block`（分裂出新 block 给 writer），原 block ref_cnt--。
 
 ---
 

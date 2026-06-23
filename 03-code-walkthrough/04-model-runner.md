@@ -311,7 +311,7 @@ else:
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: vLLM 一次 forward 为什么不用 padding？**
 A: 用 packed batch（打平）+ `query_start_loc` 描述每个请求的范围。FlashAttention varlen 模式直接吃这种输入。比 padding 节省算力（不算无效位置）。
@@ -337,7 +337,7 @@ A: ①避免每步重新分配 GPU tensor；②满足 CUDA Graph 对固定地址
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. 新请求加入 InputBatch 的 row 分配规则？是否复用 free row？**
 
@@ -366,7 +366,7 @@ A: ①避免每步重新分配 GPU tensor；②满足 CUDA Graph 对固定地址
 
 实现：`gpu_model_runner.py` 里 `_select_last_token_indices` / `_compute_logits_for_last_token`——只把每个序列的最后一个 token 的 hidden state 喂 lm_head。
 
-加分点：spec decode 例外——草稿 token 要 logits 验证，所以 prefill+decode 算多条 logits。
+补充细节：spec decode 例外——草稿 token 要 logits 验证，所以 prefill+decode 算多条 logits。
 
 ---
 
@@ -423,7 +423,7 @@ FlashAttention varlen kernel 把所有 query 拼成 1D `[total_query_tokens, num
 
 **InputBatch 持久化**：`self.input_ids_buf = torch.zeros(max_size, ...)` 在 init 时分配一次，每步往 buf[:n] copy 新内容。地址 `0x1234` 永远是这个 buf 的起始 → graph 录制有效。
 
-加分点：实际还要把 batch_size pad 到 capture 过的尺寸之一（如 [1,2,4,8,16,...,max_num_seqs]）。这就是为什么 vLLM 启动时要 capture 多个 graph（`cudagraph_capture_sizes`）。
+补充细节：实际还要把 batch_size pad 到 capture 过的尺寸之一（如 [1,2,4,8,16,...,max_num_seqs]）。这就是为什么 vLLM 启动时要 capture 多个 graph（`cudagraph_capture_sizes`）。
 
 ## 下一步
 

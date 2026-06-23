@@ -73,7 +73,7 @@ def combine_files(files: list[Path]) -> str:
     parts: list[str] = []
     parts.append("---\n")
     parts.append('title: "vLLM 学习手册"\n')
-    parts.append(f'subtitle: "面向大模型推理岗 · {chapter_count} 章 · 10K+ 行"\n')
+    parts.append(f'subtitle: "源码教程 · {chapter_count} 章 · 15K+ 行"\n')
     parts.append('author: "整理自 vllm-learning"\n')
     parts.append('lang: zh-CN\n')
     parts.append('documentclass: report\n')

@@ -1,6 +1,6 @@
 # 05. 进程模型与进程间通信内部机制
 
-> **谁该读这一篇？** 想读 vLLM 源码 / 做生产部署调优 / 面试被追问"vLLM 进程间怎么通信"时能讲到 socket 类型与零拷贝 trick 的同学。
+> **谁该读这一篇？** 想读 vLLM 源码 / 做生产部署调优，并把 vLLM 进程间通信讲到 socket 类型与零拷贝细节的读者。
 >
 > **前置阅读：** [`02-architecture.md`](02-architecture.md) §1-2（三层进程拓扑与核心数据契约）；最好顺手扫一眼 [`04-project-structure.md`](04-project-structure.md) §3.1 / §3.4，知道 `vllm/v1/engine/` 与 `vllm/v1/executor/` 各放什么。
 >
@@ -417,7 +417,7 @@ flowchart LR
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. `vllm serve <model> --tensor-parallel-size 4` 启动后有几个进程？父子关系？**
 
@@ -432,7 +432,7 @@ flowchart LR
 
 总共 **6 个进程**：1 API Server + 1 EngineCore + 4 Worker。
 
-加分点：
+补充细节：
 
 - 若 `--api-server-count N`，API Server 进程会有 N 个
 - 若 `--data-parallel-size D`，EngineCore + Workers 整组 ×D

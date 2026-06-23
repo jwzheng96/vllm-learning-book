@@ -1,6 +1,6 @@
 # 01. 分布式推理：TP / PP / EP / DP
 
-> **谁该读这一篇？** 即将部署 70B+ 大模型、MoE 模型，或需要在面试中清晰回答"8 卡怎么切 Llama-70B"的工程师。
+> **谁该读这一篇？** 即将部署 70B+ 大模型、MoE 模型，或需要清晰回答"8 卡怎么切 Llama-70B"的工程师。
 >
 > **前置阅读：** [`01-overview/02-architecture.md`](../01-overview/02-architecture.md)（vLLM 整体架构），[`02-core-concepts/03-kv-cache-management.md`](../02-core-concepts/03-kv-cache-management.md)（理解 KV 在 TP 下怎么切）。
 >
@@ -1110,7 +1110,7 @@ vLLM 已经支持 `--numa-bind` 参数自动绑核（V1+）。
 
 ---
 
-## 12. 面试常见追问
+## 12. 工程自检问答
 
 **Q: TP 通信比 PP 重，为什么不全用 PP？**
 A: PP 有 bubble，推理 batch 通常不够大（M < 32），bubble 占 30%+。TP 在 NVLink 内 AllReduce 仅 10 μs，单机 8 卡就是 TP 主场。跨机才是 PP 主场。
@@ -1172,7 +1172,7 @@ A: NCCL collective 阻塞 → forward hang → liveness probe 失败 → K8s Lea
 
 ## 自检
 
-> 答案不必照搬，能讲到关键点即可。
+> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
 **1. Llama-70B, TP=8, 一个 token 一次 forward 通信多少字节？PCIe vs NVLink 多慢？**
 
@@ -1209,7 +1209,7 @@ M > 57
 
 实际 vLLM 推理里 M = "本批 batch 中的不同请求 / chunk 个数"。要 M ≥ 58 意味着 `max_num_seqs ≥ 58`，且实际 running batch 经常满。生产 chatbot QPS 高时容易达到，agent 类低 QPS 场景达不到——所以 agent 不适合 PP。
 
-加分点：可以通过把 prefill chunk 切更细人为增大 M，但增加 schedule overhead。Megatron 训练时还有 1F1B / Interleaved schedule 进一步降 bubble，但推理只 forward 用不上。
+补充细节：可以通过把 prefill chunk 切更细人为增大 M，但增加 schedule overhead。Megatron 训练时还有 1F1B / Interleaved schedule 进一步降 bubble，但推理只 forward 用不上。
 
 ---
 
@@ -1286,3 +1286,4 @@ Mixtral：8 expert，top-2，dense hidden ≈ 4096。
 - 想看源码：`vllm/distributed/parallel_state.py`、`vllm/model_executor/layers/linear.py`、`vllm/v1/executor/multiproc_executor.py`、`vllm/distributed/eplb/`
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（实验 5 提到的 TP scaling 进阶实验）
 - 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)（多实例 vs 大实例的取舍）
+- 规模化实战：[`05-large-scale-cluster-inference.md`](05-large-scale-cluster-inference.md)（§11 的故障传染放到千卡万卡：blast radius、NCCL fail-stop、慢卡驱逐、弹性 EP）
