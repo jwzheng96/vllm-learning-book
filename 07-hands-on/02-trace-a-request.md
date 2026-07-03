@@ -139,7 +139,7 @@ print(f"[CACHE HIT] hash={block_hash} block_id={existing_block.block_id}")
 ```bash
 vllm serve facebook/opt-125m --port 8000 --enforce-eager
 # 另开窗口
-curl http://localhost:8000/metrics | grep -E 'vllm_(num_|prefix_|gpu_)' | head -20
+curl http://localhost:8000/metrics | grep -E 'vllm:(num_|prefix_|kv_)' | head -20
 ```
 
 关键指标（排查时可引用）：
@@ -147,11 +147,11 @@ curl http://localhost:8000/metrics | grep -E 'vllm_(num_|prefix_|gpu_)' | head -
 - `vllm:num_requests_waiting`
 - `vllm:num_requests_running`
 - `vllm:num_preemptions_total`
-- `vllm:prefix_cache_hit_rate`
-- `vllm:gpu_cache_usage_perc`
+- `vllm:prefix_cache_hits_total` / `vllm:prefix_cache_queries_total`
+- `vllm:kv_cache_usage_perc`
 - `vllm:iteration_tokens_total` (histogram)
 - `vllm:time_to_first_token_seconds` (histogram)
-- `vllm:time_per_output_token_seconds` (histogram)
+- `vllm:request_time_per_output_token_seconds` (histogram)
 
 ---
 
@@ -264,13 +264,13 @@ step 2: 全员 decode
 
 ---
 
-**3. `num_preemptions_total` 与 `gpu_cache_usage_perc` 因果关系。**
+**3. `num_preemptions_total` 与 `kv_cache_usage_perc` 因果关系。**
 
 **因果链**：
 
 ```
 请求并发 ↑
-  → KV 占用 ↑                    （vllm:gpu_cache_usage_perc 升高）
+  → KV 占用 ↑                    （vllm:kv_cache_usage_perc 升高）
     → 接近 100% 时 alloc 失败
       → 触发 preempt              （vllm:num_preemptions_total 累加）
         → 被踢请求 KV 释放
@@ -280,7 +280,7 @@ step 2: 全员 decode
 **典型曲线**：
 
 ```
-gpu_cache_usage:    ____......^^^^____...^^^^____
+kv_cache_usage:    ____......^^^^____...^^^^____
                                 ↑           ↑
 preemptions:        ____________╱___________╱___
                               一次 spike   再一次
@@ -292,13 +292,13 @@ preemptions:        ____________╱___________╱___
 
 ```promql
 # 容量预警
-vllm:gpu_cache_usage_perc > 0.9 for 5m → warning
+vllm:kv_cache_usage_perc > 0.9 for 5m → warning
 
 # 抢占速率
 rate(vllm:num_preemptions_total[5m]) > 0.5 → warning
 
 # 两者关联表明真饿 KV
-gpu_cache_usage > 0.95 AND preempt_rate > 1 → critical (扩容)
+kv_cache_usage > 0.95 AND preempt_rate > 1 → critical (扩容)
 ```
 
 详见 [`08-production-deployment/08-monitoring-cookbook.md`](../08-production-deployment/08-monitoring-cookbook.md)。

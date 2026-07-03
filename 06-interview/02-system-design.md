@@ -110,8 +110,8 @@ flowchart TD
 
 - TTFT p50/p99
 - TPOT p50/p99
-- `vllm:gpu_cache_usage_perc`
-- `vllm:prefix_cache_hit_rate`（目标 > 60%）
+- `vllm:kv_cache_usage_perc`
+- `vllm:prefix_cache_hits_total / vllm:prefix_cache_queries_total`（目标 > 60%）
 - `vllm:num_preemptions_total`（目标接近 0）
 - GPU util、NVLink 带宽
 
@@ -317,7 +317,7 @@ flowchart TD
 
 | 维度 | 单实例（大 TP）| 多实例（小 TP × N） |
 | --- | --- | --- |
-| **`vllm:prefix_cache_hit_rate`** | 高（cache 集中）| **低**（N 个独立 cache）| 单实例胜：高 system prompt 共享 workload |
+| **`prefix_cache_hits / prefix_cache_queries`** | 高（cache 集中）| **低**（N 个独立 cache）| 单实例胜：高 system prompt 共享 workload |
 | **延迟（TTFT）** | 单 query 低（大 TP 提速）| 单 query 中（小 TP）| 单实例胜：code completion / agent |
 | **吞吐峰值** | 受限（单卡 KV 容量）| 高（独立并发）| 多实例胜：高 QPS workload |
 | **故障域** | 大（一挂全挂）| 小（一实例挂只影响 1/N）| 多实例胜：高可用要求 |
@@ -330,7 +330,7 @@ flowchart TD
 - **prefix cache 命中率 < 20% + 高 QPS + 强可用要求 → 多实例**（例：RAG 每问不同、batch 推理）
 - **平衡区**：多实例 + cache-aware routing（路由层做 prefix awareness 弥补命中率，又保留多实例的故障域优势）
 
-→ 看 `vllm:prefix_cache_hit_rate` 一个 metric 就能缩小决策空间。这是做系统设计选型时很关键的证据。
+→ 看 `prefix_cache_hits / prefix_cache_queries` 一个指标就能缩小决策空间。这是做系统设计选型时很关键的证据。
 
 ---
 
@@ -341,7 +341,7 @@ flowchart TD
                          │     Prometheus + Grafana    │  ← 监控面板
                          │  - TTFT p99 / TPOT p99      │     · 4 大金信号
                          │  - kv_cache_usage_perc      │     · alert 规则
-                         │  - prefix_cache_hit_rate    │
+                         │  - prefix cache hit rate     │
                          └──────────────▲──────────────┘
                                         │ scrape /metrics
                                         │

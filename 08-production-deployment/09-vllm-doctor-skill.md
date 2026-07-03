@@ -279,7 +279,7 @@ python3 scripts/triage.py --verify verify-1.json verify-2.json verify-3.json
 RESOLVED （3 次重采样 Golden 3 全绿）
 
 ## 长期改进
-1. KEDA 加 gpu_cache_usage_perc > 0.8 触发扩容（不只看 queue）
+1. KEDA 加 kv_cache_usage_perc > 0.8 触发扩容（不只看 queue）
 2. 长上下文请求走单独 pod 池
    → reference/checklist-prelaunch.md 第 4、6 条
 ```

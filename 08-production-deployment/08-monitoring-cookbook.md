@@ -18,7 +18,7 @@
 
 ## 1. vLLM 暴露的 Prometheus 指标全表
 
-源码：`vllm/v1/metrics/loggers.py` 的 Gauge/Counter/Histogram 注册。**指标前缀**：`vllm:`
+源码：`vllm/vllm/v1/metrics/loggers.py` 的 Gauge/Counter/Histogram 注册。**指标前缀**：`vllm:`
 
 按用途分类：
 
@@ -77,13 +77,23 @@
 | `vllm:kv_block_reuse_gap_seconds` | 同一 hash block 两次复用间隔 |
 | `vllm:request_prefill_kv_computed_tokens` | prefill 实算（未命中）的 token |
 
-### 1.6 故障
+### 1.6 Perf / Roofline 估算
+
+源码：`vllm/vllm/v1/metrics/perf.py:1265` 的 `PerfMetricsProm`。这些指标不是硬件计数器，而是 vLLM 按模型结构、scheduled token 和阶段估算的每 GPU FLOPs / bytes，用来近似算 MFU / MBU（见 [`10-gpu-utilization-and-tail-latency.md`](10-gpu-utilization-and-tail-latency.md)）。
+
+| Metric | 含义 |
+| --- | --- |
+| `vllm:estimated_flops_per_gpu_total` (counter) | 每 GPU 估算累计 FLOPs |
+| `vllm:estimated_read_bytes_per_gpu_total` (counter) | 每 GPU 估算累计读取字节 |
+| `vllm:estimated_write_bytes_per_gpu_total` (counter) | 每 GPU 估算累计写入字节 |
+
+### 1.7 故障
 
 | Metric | 含义 |
 | --- | --- |
 | `vllm:corrupted_requests` (counter) | 因 KV / 状态损坏被 fail 的请求 |
 
-### 1.7 配置 / Info
+### 1.8 配置 / Info
 
 | Metric | 含义 |
 | --- | --- |
@@ -169,6 +179,37 @@ min(rate(vllm:request_success_total[1m])) by (model_name)
 vllm:kv_cache_usage_perc
 > on(model_name) (1.3 * quantile by(model_name)(0.5, vllm:kv_cache_usage_perc))
 ```
+
+### 2.5 近似 MFU / MBU
+
+把 H100 SXM 作为例子：BF16 峰值约 990 TFLOPS，HBM 带宽约 3350 GB/s。
+
+```promql
+# 每 GPU 估算 TFLOPS
+rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12
+
+# H100 BF16 近似 MFU
+rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
+
+# 每 GPU 估算带宽 GB/s
+(
+  rate(vllm:estimated_read_bytes_per_gpu_total[1m])
+  + rate(vllm:estimated_write_bytes_per_gpu_total[1m])
+) / 1e9
+
+# H100 近似 MBU
+(
+  rate(vllm:estimated_read_bytes_per_gpu_total[1m])
+  + rate(vllm:estimated_write_bytes_per_gpu_total[1m])
+) / 1e9 / 3350
+```
+
+读法：
+
+- decode 场景 MBU 低、running 也低：batch 太小或流量被打散。
+- decode 场景 MBU 低、running 不低：查 CUDA Graph / async scheduling / CPU bubble。
+- decode 场景 MBU 高、TPOT 仍高：多半是 KV 墙或通信墙。
+- prefill 场景 MFU 高、TTFT 仍高：prefill compute-bound 到顶，考虑量化、加 prefill 池或 P/D 分离。
 
 ---
 
@@ -286,7 +327,7 @@ groups:
 
 ---
 
-## 4. Grafana Dashboard 骨架（4 行 12 panel）
+## 4. Grafana Dashboard 骨架（5 行 15 panel）
 
 | 行 | Panel | PromQL |
 | --- | --- | --- |
@@ -302,6 +343,9 @@ groups:
 | **行 4 · Cache** | Prefix cache 命中率（block / token 两线） | §2.3 |
 |  | MM cache 命中率 | hits / queries |
 |  | KV block lifetime p50/p99 | `vllm:kv_block_lifetime_seconds_bucket` |
+| **行 5 · Roofline** | Estimated TFLOPS / GPU | `rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12` |
+|  | Estimated GB/s / GPU | `(rate(read) + rate(write)) / 1e9` |
+|  | Approx MFU / MBU | §2.5 |
 
 **关键设计原则：**
 
@@ -462,7 +506,7 @@ scrape_configs:
 ## 下一步
 
 - 想理解为什么这样定 SLO：[`05-slo-and-observability.md`](05-slo-and-observability.md)（理论层）。
-- 想理解 metric 怎么从代码注入：`vllm/v1/metrics/loggers.py`（Prometheus 注册）、`vllm/v1/metrics/stats.py`（统计聚合）。
+- 想理解 metric 怎么从代码注入：`vllm/vllm/v1/metrics/loggers.py`（Prometheus 注册）、`vllm/vllm/v1/metrics/stats.py`（统计聚合）。
 - 想做端到端 trace：`vllm/tracing.py` + OTel 全栈。
 - 想看真实故障 case 怎么用监控定位：[`07-incident-playbook.md`](07-incident-playbook.md)（8 个真实事故）。
 - 想做容量规划：[`04-autoscaling-and-capacity.md`](04-autoscaling-and-capacity.md)。

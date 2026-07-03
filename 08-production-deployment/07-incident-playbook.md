@@ -28,7 +28,7 @@
 # 1. 先看队列
 PromQL: sum(vllm:num_requests_waiting) → 持续 > 10？YES
 # 2. 再看 KV
-PromQL: avg(vllm:gpu_cache_usage_perc) → > 0.9？YES
+PromQL: avg(vllm:kv_cache_usage_perc) → > 0.9？YES
 # 3. 是否有 preempt
 PromQL: rate(vllm:num_preemptions_total[5m]) → > 0？YES
 # 4. 流量层面
@@ -93,7 +93,7 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 ### 症状
 - TTFT 整体上涨 50%
 - 后端 GPU util 高了 30%
-- `vllm:gpu_prefix_cache_hit_rate` 大跌
+- `vllm:prefix_cache_hits_total / vllm:prefix_cache_queries_total` 大跌
 
 ### 排查
 - 最近变更：tokenizer 升级了吗？路由策略改了吗？

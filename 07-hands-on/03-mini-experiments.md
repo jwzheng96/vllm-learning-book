@@ -321,7 +321,7 @@ for fmt in fp16 fp8 awq gptq; do
         --result-filename results_$fmt.json
 
     # 取关键 metric
-    curl -s :8000/metrics | grep -E "vllm:(gpu_cache_usage|num_requests_running)" \
+    curl -s :8000/metrics | grep -E "vllm:(kv_cache_usage|num_requests_running)" \
         > runtime_$fmt.txt
 
     kill $SERVER_PID && sleep 30

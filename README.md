@@ -5,7 +5,7 @@
 [![vLLM](https://img.shields.io/badge/vllm-27b85d2_(2026--05--15)-1a4d80)](https://github.com/vllm-project/vllm/tree/27b85d2084c48f9b12f8cfd6638a56fe9b257635)
 
 > 一份写给大模型推理工程入门者的源码教程。
-> **49 章 · 15K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
+> **49 章 · 21K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
 > 每章都对照 vLLM 源码（`file_path:line_number`），可以"读笔记 ↔ 跳源码"无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**

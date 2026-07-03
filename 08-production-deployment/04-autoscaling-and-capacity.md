@@ -34,10 +34,10 @@ vLLM 暴露的 Prometheus metric 里，下面这些适合驱动扩缩：
 | 指标                              | 含义              | 阈值参考          |
 | ------------------------------- | --------------- | ------------- |
 | `vllm:num_requests_waiting`     | 等待队列长度          | > 5 持续 → scale up |
-| `vllm:gpu_cache_usage_perc`     | KV 使用率          | > 0.85 → scale up |
+| `vllm:kv_cache_usage_perc`     | KV 使用率          | > 0.85 → scale up |
 | `vllm:num_preemptions_total` 增速 | 抢占速率            | > 0 → scale up    |
 | `vllm:time_to_first_token_seconds` p95 | TTFT SLO 代理 | > SLO → scale up |
-| `vllm:time_per_output_token_seconds` p95 | TPOT SLO 代理 | > SLO → scale up |
+| `vllm:request_time_per_output_token_seconds` p95 | TPOT SLO 代理 | > SLO → scale up |
 | `vllm:num_requests_running`     | batch 大小        | 很久 = 0 → scale down |
 
 **核心思路**：扩容信号要先于 SLO 违反触发。TPOT p95 已经超的时候才扩容就晚了。
@@ -72,7 +72,7 @@ spec:
   - type: prometheus
     metadata:
       query: |
-        avg(vllm:gpu_cache_usage_perc)
+        avg(vllm:kv_cache_usage_perc)
       threshold: '0.85'
 ```
 
@@ -254,7 +254,7 @@ LiteLLM 自带这个能力。
 
 把下面 checklist 印一份贴墙上：
 
-- [ ] HPA / KEDA 基于 `num_requests_waiting` + `gpu_cache_usage_perc`
+- [ ] HPA / KEDA 基于 `num_requests_waiting` + `kv_cache_usage_perc`
 - [ ] cooldown ≥ 5 分钟，避免抖动
 - [ ] preStop hook + terminationGracePeriod ≥ 600s
 - [ ] readinessProbe 在 model load 完成才报 ready
@@ -288,7 +288,7 @@ A: 不是 1:1 线性，因为 batching 收益。如果原来 batch 已大（GPU 
 
 ## 小结
 
-- HPA 用 CPU/Memory 在 LLM 下无效；正确信号是 `num_requests_waiting`、`gpu_cache_usage_perc`、TTFT/TPOT p95。
+- HPA 用 CPU/Memory 在 LLM 下无效；正确信号是 `num_requests_waiting`、`kv_cache_usage_perc`、TTFT/TPOT p95。
 - KEDA + Prometheus 是事实标准，记得 cooldown >= 5 分钟、minReplicas >= 2、避免 scale-to-zero。
 - 冷启动可分 6-7 个阶段，对应 6 类预热策略：镜像 DaemonSet、权重共享存储、compile cache、warm pool、predictive、scale-to-warm。
 - 优雅 drain 必须 preStop 调 /shutdown + readiness 转 false + terminationGracePeriod 给够 (600s)。
@@ -450,4 +450,3 @@ python benchmark_serving.py \
 - 想动手：[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md) 压测一台机器找出"每 Pod 并发上限"
 
 ---
-

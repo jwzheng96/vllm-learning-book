@@ -139,9 +139,9 @@ Gateway 从每 Pod 收集这些 metric：
 | ------------------------------------ | ------------------- |
 | `vllm:num_requests_running`         | 当前 batch 大小         |
 | `vllm:num_requests_waiting`         | 队列深度                |
-| `vllm:gpu_cache_usage_perc`         | KV 使用率（接近 100% 不能再进）|
+| `vllm:kv_cache_usage_perc`         | KV 使用率（接近 100% 不能再进）|
 | `vllm:num_preemptions_total` 增速     | 内存压力                 |
-| `time_per_output_token_seconds` p99 | 用户体验代理              |
+| `vllm:request_time_per_output_token_seconds` p99 | 用户体验代理              |
 
 ### 5.2 路由打分
 
@@ -344,12 +344,12 @@ A: 会。需要确保：①ExtProc 服务本身可扩缩 ②路由决策 < 1ms �
 
 ---
 
-**2. 用 `num_requests_waiting` + `gpu_cache_usage_perc` 设计 admission control 阈值。**
+**2. 用 `num_requests_waiting` + `kv_cache_usage_perc` 设计 admission control 阈值。**
 
 ```python
 def should_admit(request) -> bool:
     waiting = read_metric("vllm:num_requests_waiting")
-    kv_usage = read_metric("vllm:gpu_cache_usage_perc")
+    kv_usage = read_metric("vllm:kv_cache_usage_perc")
 
     # 硬阈值：KV 快满 → 拒绝（避免 preempt 风暴）
     if kv_usage > 0.95:

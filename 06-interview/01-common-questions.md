@@ -149,7 +149,7 @@
 
 1. 看 Prometheus：是 TTFT 高（prefill 阻塞）还是 TPOT 高（KV 压力 / decode batch 过大）
 2. `vllm:num_preemptions_total` 涨 → KV 不够，扩 cache 或降 max_num_seqs
-3. `vllm:prefix_cache_hit_rate` 跌 → workload 模式变了或 cache 太小
+3. `prefix_cache_hits / prefix_cache_queries` 跌 → workload 模式变了或 cache 太小
 4. `vllm:iteration_tokens_total` 单 step 飙升 → 来了大 prompt，开/调 chunked prefill
 5. GPU util 低 → 调度 overhead，开 async scheduler
 6. 单 GPU vs 多 GPU 对比，是否 AllReduce 慢

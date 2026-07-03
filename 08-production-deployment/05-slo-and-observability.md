@@ -81,7 +81,7 @@ p99 是你向产品 commitable 的数字。p50 没什么用。
 
 ### 3.1 Latency（延迟）
 - `vllm:time_to_first_token_seconds` (histogram) → TTFT
-- `vllm:time_per_output_token_seconds` (histogram) → TPOT
+- `vllm:request_time_per_output_token_seconds` (histogram) → TPOT
 - `vllm:e2e_request_latency_seconds` → TTLT
 - gateway 端的 HTTP request_duration_seconds（含网络）
 
@@ -97,8 +97,8 @@ p99 是你向产品 commitable 的数字。p50 没什么用。
 - `vllm:num_preemptions_total`（增速过快 = KV 压力）
 
 ### 3.4 Saturation（饱和度）
-- `vllm:gpu_cache_usage_perc`（最关键的饱和度信号）
-- `vllm:gpu_prefix_cache_hit_rate`
+- `vllm:kv_cache_usage_perc`（最关键的饱和度信号）
+- `vllm:prefix_cache_hits_total / vllm:prefix_cache_queries_total`
 - `DCGM_FI_DEV_GPU_UTIL`（GPU util）
 - `DCGM_FI_DEV_MEM_COPY_UTIL`（HBM 带宽利用）
 - `node_load1`（CPU）
@@ -112,7 +112,7 @@ p99 是你向产品 commitable 的数字。p50 没什么用。
 ```promql
 # === 业务层 SLI ===
 histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, model))
-histogram_quantile(0.99, sum(rate(vllm:time_per_output_token_seconds_bucket[5m])) by (le, model))
+histogram_quantile(0.99, sum(rate(vllm:request_time_per_output_token_seconds_bucket[5m])) by (le, model))
 histogram_quantile(0.99, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le))
 
 # === 吞吐 ===
@@ -121,8 +121,10 @@ sum(rate(vllm:generation_tokens_total[1m]))  # output tokens/s
 sum(rate(vllm:request_success_total[1m]))    # successful req/s
 
 # === 饱和度 ===
-avg(vllm:gpu_cache_usage_perc) by (instance)
-avg(vllm:gpu_prefix_cache_hit_rate) by (instance)
+avg(vllm:kv_cache_usage_perc) by (instance)
+sum(rate(vllm:prefix_cache_hits_total[5m])) by (instance)
+/
+sum(rate(vllm:prefix_cache_queries_total[5m])) by (instance)
 
 # === 调度健康 ===
 sum(vllm:num_requests_running) by (model)
@@ -226,7 +228,7 @@ LLM Pod 的 INFO log 量大（每步可能几 KB）。生产建议：
 | Pod restart 异常             | 任一 vLLM Pod 1h 内重启 > 3 次       | P1  |
 | Preempt 率突增              | rate(preemptions) > 0 持续 10 分钟  | P2  |
 | Prefix cache hit rate 跌     | < 50%（chat workload），持续 30 分钟 | P3  |
-| GPU memory util 不稳         | gpu_cache_usage_perc 抖动 > 0.5  | P3  |
+| GPU memory util 不稳         | kv_cache_usage_perc 抖动 > 0.5  | P3  |
 | Inference Pod 失联          | scrape failed > 30s             | P2  |
 | Queue depth 持续高          | num_requests_waiting > 10 持续 5m | P2  |
 
@@ -328,7 +330,7 @@ LLM 还有一类质量指标，传统服务没有：
 
 - LLM 的 SLI 至少 4 个：TTFT / TPOT / TTLT / Throughput，错误率和质量类指标也要进 SLO。
 - 业务对外承诺用 p99 / p99.9，不要承诺 p50；tail at scale 才是用户感知的真实体验。
-- vLLM 的 `gpu_cache_usage_perc`、`num_preemptions_total`、`prefix_cache_hit_rate` 是排障三件套。
+- vLLM 的 `kv_cache_usage_perc`、`num_preemptions_total`、`prefix_cache_hits_total / prefix_cache_queries_total` 是排障三件套。
 - Dashboard 最少 5 个面板：SLO 合规、流量构成、饱和度、cache 效果、稳定性。
 - OTel trace 把 gateway → EPP → engine → prefill → decode 串成时间线，是定位 TTFT/TPOT 异常的最快路径。
 
@@ -388,7 +390,8 @@ TPOT p99 抖动
 ├─ 4. vllm:request_queue_time_seconds   ← 排除 "队列积压拖累"
 │      不能直接影响 TPOT（在 batch 内的请求不在 queue），但能解释 TTFT 飙
 │
-├─ 5. vllm:prefix_cache_hit_rate         ← 排除 "cache 命中率下降"
+├─ 5. prefix_cache_hits / prefix_cache_queries
+│                                      ← 排除 "cache 命中率下降"
 │      命中率掉 = 等效更多 prefill 算力 = step 时长涨 = TPOT 抖
 │
 ├─ 6. nvidia-smi (实时 GPU 状态)         ← 排除 "硬件层异常"
