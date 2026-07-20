@@ -1,0 +1,11 @@
+[[review]]
+path = "01-overview/01-intro.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
