@@ -297,6 +297,14 @@ environments = ["no-gpu", "nvidia-gpu"]
 source_areas = ["vllm/entrypoints/openai/**", "vllm/profiler/**"]
 
 [[chapter]]
+path = "07-hands-on/05-serve-openai-api.md"
+title = "05. 从零启动 OpenAI-Compatible API 服务"
+level = "beginner"
+tracks = ["quickstart", "production", "interview"]
+environments = ["cpu", "nvidia-gpu", "no-gpu"]
+source_areas = ["vllm/entrypoints/cli/**", "vllm/entrypoints/openai/**", "vllm/entrypoints/serve/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
 path = "08-production-deployment/01-deployment-architectures.md"
 title = "01. 大规模 vLLM 部署参考架构（2026 视角）"
 level = "advanced"

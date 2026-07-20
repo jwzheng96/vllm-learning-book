@@ -398,51 +398,63 @@ notes = []
 
 [[review]]
 path = "07-hands-on/01-setup.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "07-hands-on/02-trace-a-request.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "07-hands-on/03-mini-experiments.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "07-hands-on/04-profiling-and-debugging.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/05-serve-openai-api.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "08-production-deployment/01-deployment-architectures.md"

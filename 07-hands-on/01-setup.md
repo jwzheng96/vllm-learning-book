@@ -13,11 +13,21 @@
 > 4. 用自带 benchmark 跑出第一组吞吐 / 延迟数字
 > 5. 遇到常见环境问题（OOM / NCCL / Compile 卡）能查表自救
 
+> **当前源码复核（`b23bd73`）：** 本地路线分 Linux NVIDIA GPU、当前受支持 CPU、源码 build、precompiled package 与 container；macOS 默认走远端 endpoint。所有 Python/安装命令都应在隔离的 uv 环境执行。先记录 `vllm --version`、平台/driver 与成功响应，再开始性能实验。
+
 光读不练假把式。本节让你跑通最小例子并加日志观察内部行为。
 
 ---
 
 ## 1. 系统要求
+
+| 路线 | 运行位置 | 成功证据 | 清理 |
+| --- | --- | --- | --- |
+| NVIDIA GPU | 受支持 Linux/CUDA 主机 | version、driver、最小 generate/API | 按 PID 停服务，保留实验记录 |
+| CPU | 当前支持的 Linux CPU 平台 | 对应 wheel/build + 最小功能请求 | 删除专用 uv 环境/临时证据目录 |
+| 源码开发 | vLLM checkout 的 uv `.venv` | editable install + targeted tests | 不混用系统 Python/pip |
+| Container | NVIDIA container runtime/受支持镜像 | image digest + health/models | 按容器名 stop/remove |
+| Remote endpoint | macOS/无本地受支持设备 | health/models + 授权请求 | 删除临时 key/本地输出 |
 
 - **硬件**：至少一张 NVIDIA GPU（建议 ≥ 16GB 显存。无显卡可用 CPU 后端但很慢）
 - **CUDA**：12.1+（H100/H200 用 12.4+）
@@ -135,17 +145,17 @@ print()
 
 ## 6. Benchmark：自带的性能测试
 
-vLLM 仓库 `benchmarks/` 自带几个工具：
+当前 vLLM 用统一的 `vllm bench` 入口；先以锁定 commit 的 `--help` 核对参数：
 
 ```bash
 # 吞吐 benchmark（离线）
-python benchmarks/benchmark_throughput.py \
+vllm bench throughput \
     --model facebook/opt-125m \
     --num-prompts 100 \
     --enforce-eager
 
 # 延迟 benchmark（单请求）
-python benchmarks/benchmark_latency.py \
+vllm bench latency \
     --model facebook/opt-125m \
     --batch-size 1 \
     --input-len 32 \
@@ -153,7 +163,7 @@ python benchmarks/benchmark_latency.py \
 
 # 在线服务 benchmark
 # 先启动 server，再：
-python benchmarks/benchmark_serving.py \
+vllm bench serve \
     --model facebook/opt-125m \
     --num-prompts 100 \
     --request-rate 10
@@ -204,9 +214,9 @@ python benchmarks/benchmark_serving.py \
 
 **影响 N 的 3 个启动参数**：
 
-1. **`--gpu-memory-utilization`**（默认 0.9）：可用显存上限 = total × util。util 调到 0.95 → 多 5GB → 多约 2000 个 block
+1. **`--gpu-memory-utilization`**（当前默认 0.92）：它是当前实例的 executor 预算，不是 `nvidia-smi` GPU-Util；可分配 block 还受权重、workspace、graph 和 profile 峰值影响
 2. **`--block-size`**（默认 16）：单 block 字节数 = block_size × num_kv_heads × head_dim × layers × 2 (K+V) × dtype_bytes。block_size 翻倍 → 单 block 翻倍 → num_blocks 减半
-3. **`--max-num-batched-tokens`**（默认 8192）：profile run 用的 dummy batch 大小，越大占用激活越多 → 留给 KV 的剩余显存越少 → num_blocks 减少
+3. **`--max-num-batched-tokens`**：默认按 usage context 与硬件生成（API server 常见 2048 或 8192）；值越大可能增加 profile/运行激活峰值，必须读取最终配置
 
 **其他间接影响**：`--dtype`（FP16/BF16/FP8）、`--kv-cache-dtype`（fp8 KV 让单 block 减半）、`--enforce-eager`（不开 CUDA Graph 多省 1-2 GB）。
 
@@ -220,9 +230,9 @@ python benchmarks/benchmark_serving.py \
 
 - `enforce_eager=True`：跳过 CUDA Graph capture，启动快约 **30-60 秒**
 - 去掉后：CUDA Graph 录制需要遍历 capture sizes（如 [1,2,4,8,16,32,...,256]），单个 capture 1-5 秒，总共增加 **30-120 秒**
-- 加上 torch.compile（默认开），首次编译再加 **30-300 秒**
+- compile/CUDA Graph 最终模式由能力解析；首次编译/capture 可能显著增加启动时间，具体值必须实测
 
-→ 启动总时长从 ~30s 涨到 1-5 分钟。生产部署用 `VLLM_TORCH_COMPILE_CACHE_DIR` + 持久 CG cache 减轻。
+→ 生产部署要记录 cold/warm 启动分布，并通过 `--compilation-config` 的 cache 配置与持久卷复用产物；不要依赖当前源码中不存在的旧环境变量。
 
 **TPOT 是否下降**：
 
@@ -309,6 +319,6 @@ torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate ...
 ## 下一步
 
 - 下一节：[`07-hands-on/02-trace-a-request.md`](02-trace-a-request.md)（给一个请求加日志看完整内部行为）
-- 想看源码：`vllm/entrypoints/llm.py`（LLM 类）、`vllm/entrypoints/openai/api_server.py`（serve 入口）、`benchmarks/benchmark_serving.py`
+- 想看源码：`vllm/entrypoints/llm.py`（LLM 类）、`vllm/entrypoints/openai/api_server.py`（serve 入口）、`vllm/benchmarks/serve.py`
 - 想动手：[`07-hands-on/03-mini-experiments.md`](03-mini-experiments.md)（5 个独立小实验把直觉变数字）
 - 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)（从单机 demo 到生产部署）

@@ -12,6 +12,8 @@
 > 3. 列出 6 个生产里最重要的调试环境变量
 > 4. 用"宏观 metric → trace → profiler → kernel"的标准流程定位 TPOT p99 抖动
 
+> **当前源码复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** 内建 profiling 由 `ProfilerConfig` / `--profiler-config` 配置，并通过 `/start_profile`、`/stop_profile` 控制。旧教程常见的 `VLLM_TORCH_PROFILER_DIR`、`VLLM_NVTX_LOGGING`、`VLLM_USE_V1` 不应再作为当前命令。`nsys`、`py-spy`、gdb 等工具还受平台、容器权限和安全策略约束。
+
 知道概念 + 看过代码还不够。出问题时怎么快速定位？本节列 6 套实战工具与场景：torch.profiler、Nsight Systems、py-spy、layerwise profiler、stat logger、benchmark 对比。
 
 ---
@@ -30,7 +32,7 @@
 
 ---
 
-## 2. 关键环境变量
+## 2. 关键调试开关
 
 来自 `vllm/envs.py`：
 
@@ -40,18 +42,16 @@ VLLM_LOG_STATS_INTERVAL=1         # stat logger 每 1s 打一次
 VLLM_LOG_BATCHSIZE_INTERVAL=1     # 单 step batch size 直方图
 VLLM_TRACE_FUNCTION=1             # 打开 Python function trace（极慢，仅 debug）
 VLLM_LOG_MODEL_INSPECTION=true    # 启动时打印模型结构
-VLLM_TORCH_COMPILE_CACHE_DIR=/data/vllm_cache  # 编译缓存目录
-VLLM_USE_V1=1                     # 强制 V1 引擎
-VLLM_ATTENTION_BACKEND=FLASH_ATTN # 强制 attention 后端
 
 # CUDA / NCCL
 NCCL_DEBUG=INFO
-NCCL_BLOCKING_WAIT=1              # NCCL 超时变 crash 而非 hang
-NCCL_TIMEOUT=60
+TORCH_NCCL_BLOCKING_WAIT=1        # 调试超时；先核对当前 PyTorch/NCCL 文档
 CUDA_LAUNCH_BLOCKING=1            # 同步执行，错误堆栈准确（极慢）
 PYTORCH_NO_CUDA_MEMORY_CACHING=1  # 关 PyTorch caching alloc（debug only）
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True  # 缓解碎片
 ```
+
+这些开关多数会改变时序或性能。一次只启用一个，记录开启前后的现象。验证 attention backend 假设时使用当前 CLI 的 `--attention-backend` / `--attention-config`，所选 backend 不受当前平台支持时应撤回而不是强行比较。
 
 ---
 
@@ -93,7 +93,12 @@ prof.export_chrome_trace("vllm_trace.json")
 vLLM API server 暴露 `/start_profile` / `/stop_profile` 端点：
 
 ```bash
-vllm serve <model> &
+export MODEL_ID='<model>'
+export PROFILE_DIR="$(pwd)/vllm-profile"
+mkdir -p "$PROFILE_DIR"
+vllm serve "$MODEL_ID" \
+  --profiler-config "{\"profiler\":\"torch\",\"torch_profiler_dir\":\"$PROFILE_DIR\"}" &
+SERVER_PID=$!
 
 # 触发 profile
 curl -X POST http://localhost:8000/start_profile
@@ -101,7 +106,10 @@ curl -X POST http://localhost:8000/start_profile
 ... your benchmark ...
 curl -X POST http://localhost:8000/stop_profile
 
-# trace 文件落在 VLLM_TORCH_PROFILER_DIR 指向的目录
+# trace 文件落在 PROFILE_DIR；停止服务时只操作刚记录的 PID
+find "$PROFILE_DIR" -maxdepth 2 -type f -print
+kill -TERM "$SERVER_PID"
+wait "$SERVER_PID" || true
 ```
 
 ### 3.3 看什么
@@ -140,8 +148,7 @@ nsys profile \
 
 ### 4.1 启动 vLLM 时加 NVTX 标记
 
-vLLM 内部已有些 NVTX，可以通过自定义 hook 加更多。
-开 `VLLM_NVTX_LOGGING=1`（如果可用版本）让 vLLM 自动标 step、prefill、decode 等区段。
+先在当前 trace 中确认是否已经出现 NVTX range；没有时，再用受控的自定义 hook 或 PyTorch `record_function` 给待验证区段加标记。报告必须区分“vLLM 自带标记”和“实验临时标记”，不要依赖未在当前 `envs.py` 注册的环境变量。
 
 ---
 
@@ -151,10 +158,13 @@ NCCL hang、Python 死锁、长 CPU 任务时，py-spy 不停进程也能拿 Pyt
 
 ```bash
 # 装
-pip install py-spy
+uv pip install --python .venv/bin/python py-spy
 
-# 单次 dump
-py-spy dump --pid $(pgrep -f "vllm serve")
+# 单次 dump：先由进程树确认目标，不从全机模糊匹配中盲选 PID
+ps -eo pid,ppid,cmd | grep -E 'PID|vllm serve|EngineCore'
+export TARGET_PID='<verified-vllm-pid>'
+ps -p "$TARGET_PID" -o pid,ppid,cmd
+py-spy dump --pid "$TARGET_PID"
 
 # 持续监控
 py-spy top --pid <pid>
@@ -186,16 +196,16 @@ Thread <main>:
 用法：
 
 ```python
-from vllm.profiler import LayerwiseProfiler
+from vllm.profiler.layerwise_profile import layerwise_profile
 
-prof = LayerwiseProfiler(model)
-prof.start()
-llm.generate(...)
-prof.stop()
-prof.report()  # 打印每层耗时
+with layerwise_profile(num_running_seqs=len(prompts)) as prof:
+    llm.generate(prompts, params)
+
+prof.results.print_model_table()
+prof.results.print_summary_table()
 ```
 
-输出大致：
+输出结构大致如下；数值只是格式占位，不是本教程实测：
 
 ```
 Layer 0  | attention 0.42ms  | mlp 0.31ms
@@ -211,14 +221,13 @@ Total: 25.6ms
 
 ## 7. vLLM 自带 stat logger
 
-启动时 `VLLM_LOG_STATS_INTERVAL=1`（秒），引擎周期性打印：
+启动时 `VLLM_LOG_STATS_INTERVAL=1`（秒），引擎周期性打印。下面数值只展示格式：
 
 ```
 Avg prompt throughput: 1234.5 tokens/s
 Avg generation throughput: 567.8 tokens/s
 Running: 12 reqs  Waiting: 0 reqs
 GPU KV cache usage: 67.3%
-CPU KV cache usage: 0.0%
 Prefix cache hit rate: 78.4%
 ```
 
@@ -245,13 +254,13 @@ vllm serve <model> --otlp-traces-endpoint http://localhost:4317
 
 ## 9. Benchmark 工具
 
-`benchmarks/` 下的 4 个主力：
+当前统一入口与仓库内专项 benchmark：
 
 | 脚本                                  | 用途                                  |
 | ----------------------------------- | ----------------------------------- |
-| `benchmark_throughput.py`           | 离线吞吐：固定输入输出长度，挑能跑多快        |
-| `benchmark_latency.py`              | 单请求延迟：batch=1，看 raw decode 速度    |
-| `benchmark_serving.py`              | 在线服务：发起并发请求，看 TTFT / TPOT / p99 |
+| `vllm bench throughput`             | 离线吞吐：固定输入输出长度，挑能跑多快        |
+| `vllm bench latency`                | 单请求延迟：batch=1，看 raw decode 速度    |
+| `vllm bench serve`                  | 在线服务：发起并发请求，看 TTFT / TPOT / p99 |
 | `benchmark_prefix_caching.py`       | prefix cache 效果对比                 |
 | `benchmark_serving_structured_output.py` | 结构化输出 benchmark            |
 | `benchmark_long_document_qa_throughput.py` | 长上下文 benchmark            |
@@ -266,7 +275,7 @@ vllm serve <model> --otlp-traces-endpoint http://localhost:4317
 vllm serve <model> --port 8000 --enforce-eager &
 
 # 2. 跑 benchmark
-python benchmarks/benchmark_serving.py \
+vllm bench serve \
     --backend vllm \
     --base-url http://localhost:8000 \
     --model <model> \
@@ -328,13 +337,13 @@ Step 6: py-spy 抓 Python 栈（hang 时）
 Step 7: 改代码 + benchmark 验证
 ```
 
-绝大多数问题在 1-3 步就能定位，深入 4-6 是少数情况。
+先从 1-3 步收集证据；是否深入 4-6 由已有证据决定。
 
 ---
 
 ## 12. 实战 case：定位"TPOT p99 突高"
 
-某次生产 TPOT p99 从 30ms 飙到 200ms。诊断：
+下面是**假设案例**，数字用于演示证据链，不代表通用阈值或真实事故：
 
 ```
 1. stat logger："Running: 60 reqs, KV usage: 92%, preempt rate: 0"
@@ -360,7 +369,7 @@ Step 7: 改代码 + benchmark 验证
 
 - 工具分层使用：宏观看 stat logger + Prometheus，中观看 OTel trace，微观用 torch.profiler / nsys / py-spy。
 - 5 类典型问题（吞吐低、TPOT 慢、TTFT 高、偶发慢请求、结果错）都有标准排查 checklist，熟悉后 on-call 很受益。
-- 6 个常用调试环境变量记牢：`VLLM_LOGGING_LEVEL`、`VLLM_LOG_STATS_INTERVAL`、`NCCL_DEBUG`、`NCCL_BLOCKING_WAIT`、`CUDA_LAUNCH_BLOCKING`、`VLLM_TORCH_COMPILE_CACHE_DIR`。
+- 常用调试开关按层记：vLLM 日志用 `VLLM_LOGGING_LEVEL` / `VLLM_LOG_STATS_INTERVAL` / `VLLM_TRACE_FUNCTION`，通信用 `NCCL_DEBUG` / `TORCH_NCCL_BLOCKING_WAIT`，CUDA 同步定位用 `CUDA_LAUNCH_BLOCKING`。
 - 调试结果异常先 `--enforce-eager`，再依次关 spec decode / 量化做二分排除——别从 kernel 层开始猜。
 
 ## 自检
@@ -384,7 +393,6 @@ sudo py-spy dump --pid <worker_1_pid>
 # Step 3: 启用 NCCL 详细日志（如果可重启）
 export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=ALL
-export NCCL_BLOCKING_WAIT=1          # 让 hang 转成 timeout error
 export TORCH_NCCL_BLOCKING_WAIT=1
 # 重启服务，观察 NCCL log 在哪一步卡
 
@@ -444,9 +452,9 @@ gdb -p <pid>                          # attach gdb，看 C++ 栈
 
 **实际工作流**：
 
-1. torch.profiler 先看 → 定位到"是 attention 占 60% 而不是 GEMM" → 知道方向
+1. torch.profiler 先看 → 用本次 profile 的占比判断 attention 还是 GEMM → 知道方向
 2. 用 nsys 再 profile 同样 workload → 看 attention kernel 内部
-3. nsys 显示"split-K merge 占 attention 80%" → 你知道要去看 `merge_attn_states.cu`
+3. nsys 若显示 split-K merge 占主要时间 → 再沿当前 kernel 实现定位，不预设固定占比或文件名
 
 ---
 
@@ -457,14 +465,14 @@ gdb -p <pid>                          # attach gdb，看 C++ 栈
 ```bash
 # Step 1: 启动 vLLM 带 OTel
 vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --gpu-memory-utilization 0.5 \      # 故意压缩 KV
-  --max-num-seqs 256 \                  # 鼓励更多并发
+  --gpu-memory-utilization 0.5 \
+  --max-num-seqs 256 \
   --otlp-traces-endpoint http://jaeger:4317
 
 # Step 2: 制造高并发触发 preempt
-benchmarks/benchmark_serving.py \
+vllm bench serve \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --request-rate 200 \                  # 远超容量
+  --request-rate 200 \
   --num-prompts 1000
 
 # Step 3: 在 Jaeger UI 查 trace
@@ -476,14 +484,14 @@ benchmarks/benchmark_serving.py \
 
 ```mermaid
 flowchart TD
-    R["engine_step<br/>850 ms ⚠️ 异常长（正常 30-50 ms）"]
-    R --> S["schedule<br/>5 ms ✓"]
-    R --> E["execute_model<br/>840 ms ⚠️"]
-    E --> F["forward<br/>200 ms ✓"]
-    E --> P["preempt_requests<br/>300 ms ⚠️"]
-    E --> U["update_from_output<br/>340 ms ⚠️ 触发 swap-in"]
-    P --> FB["free_blocks<br/>50 ms"]
-    P --> UB["update_block_table<br/>250 ms 🔥 热点"]
+    R["engine_step<br/>高于本环境基线阈值"]
+    R --> S["schedule<br/>填入本次 span"]
+    R --> E["execute_model<br/>填入本次 span"]
+    E --> F["forward<br/>填入本次 span"]
+    E --> P["preemption / recompute<br/>若 trace 中存在"]
+    E --> U["update_from_output<br/>填入本次 span"]
+    P --> FB["free blocks<br/>填入本次 span"]
+    P --> UB["KV bookkeeping<br/>按当前 trace 定位热点"]
 
     classDef ok fill:#dcfce7,stroke:#15803d,color:#1a1f29;
     classDef warn fill:#fef3c7,stroke:#b45309,color:#1a1f29;
@@ -495,9 +503,9 @@ flowchart TD
 
 **典型发现**：
 
-- `engine_step` p99 异常时，多半是 preempt 或 swap-in
-- 子 span 时长能直接指向 root cause（不是 forward 慢，是周边操作慢）
-- KV 压力大时 `update_block_table` / `allocate_slots` 的 span 会拖长
+- 先比较 schedule、execute、output 等子 span，证明时间花在哪一层。
+- V1 抢占采用 recompute，不应沿用旧 V0 的 swap-in 解释。
+- KV 压力与 bookkeeping 变慢是待验证假设，要和 preemption counter、KV gauge 及 trace 同时核对。
 
 **修复路径**：
 
@@ -520,7 +528,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
 
 **指标 1：`vllm:time_to_first_token_seconds` (histogram)**
 
-- 看 p99：如果 > SLO 阈值（如 800ms） → TTFT 出问题
+- 用 PromQL 从 histogram 计算 p99，并与本服务 SLO 阈值比较；阈值不能从教程复制。
 - **root cause 决策**：
   - p99 突涨 + 队列深 → 流量超容量
   - p99 渐涨 + cache 命中率掉 → workload 模式变了
@@ -528,7 +536,7 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
 
 **指标 2：`vllm:num_requests_waiting` (gauge)**
 
-- 看绝对值：如果 > 50 → 队列积压
+- 与按容量实验得到的队列基线比较；绝对阈值由实例容量和 SLO 决定。
 - **root cause 决策**：
   - 持续高 + GPU util 100% → 真的超容量，需要扩容
   - 周期性峰值 → 流量 spike，HPA 滞后
@@ -536,19 +544,19 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
 
 **指标 3：`vllm:kv_cache_usage_perc` (gauge)**
 
-- 看是否 > 0.9：
+- 看趋势并与 preemption、队列和 SLO 同图对齐，不使用脱离 workload 的固定阈值：
 - **root cause 决策**：
-  - > 0.9 + preempt 速率高 → KV 不够，扩 pod
-  - > 0.9 + preempt 速率低 → 长上下文请求占用，但还能跑——监控但不急
-  - < 0.7 但 TTFT 高 → 不是 KV 问题，看其他
+  - 高位 + preempt 速率高 → 验证 KV 是否是约束，再评估减上下文/并发、调参或扩容
+  - 高位 + preempt 速率低 → 结合 queue/SLO 判断是否仍有余量
+  - KV 平稳但 TTFT 高 → 把调查转向队列、prefill、输入处理或下游网络
 
 **补充指标（如果时间够）**：
 
 - `rate(vllm:request_success_total{finished_reason="abort"}[5m])` — 错误率
 - `rate(vllm:num_preemptions_total[5m])` — 抢占率
-- `vllm:prefix_cache_hits / vllm:prefix_cache_queries` — cache 命中率
+- `rate(vllm:prefix_cache_hits_total[5m]) / rate(vllm:prefix_cache_queries_total[5m])` — cache 命中率（处理分母为零）
 
-**口诀**：**"延迟、队列、KV"三件套**。看完这 3 个 metric 在 30 秒内能定位 80% 的生产事故。
+**口诀**：先看“延迟、队列、KV”三件套建立方向，再用日志/trace/profiler 完成归因；三项指标本身不能替代根因证据。
 
 完整 oncall 流程见 [`08-production-deployment/08-monitoring-cookbook.md`](../08-production-deployment/08-monitoring-cookbook.md) §5。
 
@@ -565,8 +573,8 @@ grep -E "^vllm:(time_to_first_token_seconds|num_requests_waiting|kv_cache_usage_
 
 - `vllm/profiler/layerwise_profile.py`、`wrapper.py`、`utils.py`
 - `vllm/envs.py`（环境变量列表）
-- `vllm/entrypoints/openai/api_server.py`（/start_profile / /stop_profile）
-- `benchmarks/`（benchmark_serving.py / benchmark_throughput.py / benchmark_latency.py / ...）
+- `vllm/entrypoints/serve/profile/api_router.py`（`/start_profile` / `/stop_profile`）
+- `vllm/benchmarks/` 与 `vllm/entrypoints/cli/benchmark/`（统一 benchmark 实现 / CLI）
 
 ---
 

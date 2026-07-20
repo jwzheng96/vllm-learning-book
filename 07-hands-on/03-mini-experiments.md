@@ -13,6 +13,8 @@
 > 4. 故意制造 KV 压力观察 Scheduler 的 preempt 行为
 > 5. 测量 ngram 投机解码在不同 workload 下的吞吐收益
 
+> **当前源码复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** 每次实验只改一个自变量；模型、commit、硬件、driver、输入/输出长度、并发和预热次数必须入报告。下面写的是待验证假设，不是通用性能承诺；所有数字都应来自你的原始结果。标有 NVIDIA/H100/A100 的实验不能拿无 GPU 的静态检查冒充实测。
+
 读再多笔记不如自己测一次。下面 5 个实验都基于 `facebook/opt-125m` 或 `Qwen2.5-0.5B`（小模型省 GPU），但结论可以推广到大模型。跑完后，每个实验记一段 200 字以内的"我观察到 X，所以 Y"，后续做分享、复盘和方案评审都用得上。
 
 ---
@@ -55,8 +57,8 @@ run(enable_prefix_caching=False)
 run(enable_prefix_caching=True)
 ```
 
-### 预期结果
-开启后第 2-10 次请求 TTFT 显著下降（70-90%）。
+### 待验证假设
+重复前缀跨越至少一个完整 cache block 时，开启 prefix caching 后续请求的 TTFT 应下降。下降幅度由前缀长度、block 对齐、并发和硬件决定；记录 p50/p95/p99 与 hit/query counter 增量，不预填百分比。
 
 ### 自测题
 - 如果改成 `temperature=0.7`（每次输出不同），prefix cache 还能命中吗？
@@ -122,9 +124,9 @@ asyncio.run(run(8001))   # 小 budget
 asyncio.run(run(8002))   # 大 budget
 ```
 
-### 预期结果
-- port 8001（小 budget）：短请求延迟均匀
-- port 8002（大 budget）：长请求那一步把短请求拖慢 100ms+
+### 待验证假设
+- 小 budget 会限制单步 prefill 工作量，可能降低短请求尾延迟，但会增加完成长 prompt 所需的 step 数。
+- 大 budget 可能提高吞吐，也可能让混合负载中的 decode 延迟更抖。用同一 workload 比较 TPOT p99，不能用单次端到端耗时替代 TPOT。
 
 ### 自测题
 - 哪种配置更适合 chatbot？哪种更适合批量推理？
@@ -142,9 +144,15 @@ asyncio.run(run(8002))   # 大 budget
 # baseline
 vllm serve Qwen/Qwen2.5-0.5B-Instruct \
     --enforce-eager \
-    --gpu-memory-utilization 0.5 2>&1 | grep -E "GPU blocks|KV cache" &
+    --gpu-memory-utilization 0.5 >baseline.log 2>&1 &
+BASELINE_PID=$!
 
-sleep 60 && pkill -f "vllm serve" && sleep 5
+# 等待 health ready 后保存日志；只终止刚刚记录的进程。
+curl --retry 60 --retry-delay 2 --retry-connrefused -fsS \
+    http://127.0.0.1:8000/health
+grep -E "GPU blocks|KV cache" baseline.log
+kill -TERM "$BASELINE_PID"
+wait "$BASELINE_PID" || true
 
 # fp8 KV
 vllm serve Qwen/Qwen2.5-0.5B-Instruct \
@@ -153,10 +161,8 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct \
     --kv-cache-dtype fp8 2>&1 | grep -E "GPU blocks|KV cache"
 ```
 
-### 预期结果
-fp8 模式 num_blocks **约为 baseline 的 2 倍**。
-
-不严格 2×，因为还有其他显存（activation buffer、CUDA graph workspace 等）固定。
+### 待验证假设
+在平台支持 FP8 KV 且其他参数相同的前提下，单 block 的 KV 字节数下降，可用 block 数通常增加，但并不承诺恰好 2 倍。把两次启动日志、有效 KV 容量和平台支持信息一并保存。
 
 ### 自测题
 - 显存利用率从 0.5 改成 0.9，num_blocks 是否线性放大？
@@ -200,12 +206,12 @@ asyncio.run(run())
 同时另开终端：
 
 ```bash
-watch -n 0.5 'curl -s localhost:8000/metrics | grep -E "vllm:num_preemptions|vllm:num_running|vllm:num_waiting"'
+watch -n 0.5 'curl -s localhost:8000/metrics | grep -E "vllm:(num_preemptions_total|num_requests_running|num_requests_waiting)"'
 ```
 
-### 预期结果
-- `vllm:num_preemptions_total` 持续上升
-- `num_running` 上下抖动（被 preempt 又 admit）
+### 待验证假设
+- KV 压力足够大时，`vllm:num_preemptions_total` 增长。
+- 同时保存 `num_requests_running`、`num_requests_waiting` 与 `kv_cache_usage_perc`；若没有抢占，先证明 workload 是否真的造成 KV 压力，不要把“没有复现”改写成成功。
 
 ### 自测题
 - 如果改成 `--scheduling-policy priority` 并给一半请求高 priority，会有什么变化？
@@ -221,7 +227,7 @@ watch -n 0.5 'curl -s localhost:8000/metrics | grep -E "vllm:num_preemptions|vll
 
 ```bash
 # baseline
-python benchmarks/benchmark_throughput.py \
+vllm bench throughput \
     --model Qwen/Qwen2.5-0.5B-Instruct \
     --num-prompts 100 \
     --input-len 256 \
@@ -229,7 +235,7 @@ python benchmarks/benchmark_throughput.py \
     --enforce-eager
 
 # 用 ngram spec
-python benchmarks/benchmark_throughput.py \
+vllm bench throughput \
     --model Qwen/Qwen2.5-0.5B-Instruct \
     --num-prompts 100 \
     --input-len 256 \
@@ -238,9 +244,9 @@ python benchmarks/benchmark_throughput.py \
     --speculative-config '{"method": "ngram", "num_speculative_tokens": 3, "prompt_lookup_max": 4}'
 ```
 
-### 预期结果
-- ngram 在 prompt 重复多的场景：吞吐 ×1.3-1.5
-- 普通 chat：收益较小（acceptance rate 低）
+### 待验证假设
+- ngram 在可从 prompt 匹配后续 token 的 workload 中可能提高吞吐。
+- 普通 chat 的接受率与收益取决于数据；必须同时报告 acceptance、output throughput、TTFT/TPOT 与基线，不能预填倍数。
 
 ### 自测题
 - 如果你换成 `{"method": "eagle", ...}` + 一个 EAGLE 模型，效果怎样？
@@ -259,11 +265,11 @@ python benchmarks/benchmark_throughput.py \
 踩坑：[过程中遇到的意外，怎么解决的]
 ```
 
-例如：
+下面只是**格式示例**，数字必须替换为你保存的原始结果，不能作为本章结论引用：
 
 > **实验 1：Prefix Caching 对 TTFT 的影响**
-> 观察：开启后第 2-10 次请求平均 TTFT 从 320ms 降到 45ms。
-> 结论：chatbot 场景 system prompt 占 80%+ 计算，prefix caching 是必开。
+> 观察：基线 TTFT p50/p99 为 `<实测>`，开启后为 `<实测>`；hit/query 增量为 `<实测>`。
+> 结论：在本次 `<模型、commit、硬件、workload>` 下，结果支持/不支持“重复前缀降低 TTFT”的假设。
 > 踩坑：第一次没看到效果，发现是 `enable_prefix_caching` 写错；测试时还要排除 model load 时间。
 
 这些数据会让理解变得非常扎实。**概念要讲，数字也要拿得出来**。
@@ -312,7 +318,7 @@ for fmt in fp16 fp8 awq gptq; do
     SERVER_PID=$!
     sleep 90   # 等 compile + warmup
 
-    python benchmarks/benchmark_serving.py \
+    vllm bench serve \
         --model $MODEL \
         --dataset-name sharegpt \
         --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json \
@@ -337,23 +343,21 @@ for fmt in fp16 fp8 awq gptq; do
 done
 ```
 
-### 预期结果（典型数据，硬件不同会浮动）
+### 结果记录（不得预填）
 
 | 格式 | 显存 | 吞吐 tok/s | TTFT p99 | TPOT p99 | WikiText PPL | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
-| FP16 (baseline) | 14 GB | 2400 | 180 ms | 28 ms | 5.47 | — |
-| **FP8 (dynamic)** | **7 GB** | **3800 (×1.6)** | 165 ms | 24 ms | **5.49 (+0.4%)** | H100 硬件原生 |
-| **AWQ-INT4 + Marlin** | **4 GB** | **5200 (×2.2)** | 210 ms | 22 ms | 5.62 (+2.7%) | INT4 性价比之王 |
-| GPTQ-INT4 + Marlin | 4 GB | 5100 (×2.1) | 215 ms | 22 ms | 5.59 (+2.2%) | 与 AWQ 几乎平 |
+| FP16/BF16 baseline | `<实测>` | `<实测>` | `<实测>` | `<实测>` | `<实测>` | 记录 dtype/backend |
+| FP8 | `<实测>` | `<实测>` | `<实测>` | `<实测>` | `<实测>` | 记录平台原生支持 |
+| AWQ-INT4 | `<实测>` | `<实测>` | `<实测>` | `<实测>` | `<实测>` | 记录实际 kernel |
+| GPTQ-INT4 | `<实测>` | `<实测>` | `<实测>` | `<实测>` | `<实测>` | 记录实际 kernel |
 
-### 关键观察
+### 必须核对
 
-- **FP8 在 H100 上几乎免费**：精度损失 < 1%，吞吐 ×1.6，显存减半
-- **INT4 吞吐 2×+ 来自 KV 容量翻倍 → 能装更多并发**，不是单请求变快
-- **AWQ ≈ GPTQ**（PPL 差 0.03），选哪个看 ecosystem 支持（AWQ activation-aware 校准更稳）
-- **prefill TTFT 反而略升**：反量化的 dequant kernel 启动 overhead，大约 +10-30 ms
-- **没走 Marlin 的 INT4 直接慢 3×**——A100 上的常见踩坑。启动日志必看 "Using Marlin kernel" 字样
-- WikiText PPL +2.7% 在 chatbot 通常感知不到，但 **math reasoning / code 任务上能明显感觉到错误率上升**
+- 启动日志中的实际 quantization backend/kernel 是否与预期一致；fallback 必须记入结果。
+- 权重 dtype 与 KV cache dtype 是两个自变量，不要在同一轮一起改。
+- 吞吐变化可能来自每 token 计算、可容纳 batch、KV 容量或 kernel fallback；用 batch=1 和饱和负载拆因。
+- PPL 不能替代业务质量评估；至少补一组与业务相似的 code/math/chat 任务。
 
 ### 自测题
 
@@ -399,7 +403,7 @@ for tp in 1 2 4 8; do
 
     # 多 QPS 曲线（找到拐点）
     for qps in 5 10 20 50 100; do
-        python benchmarks/benchmark_serving.py \
+        vllm bench serve \
             --model meta-llama/Llama-2-13b-hf \
             --dataset-name sharegpt \
             --num-prompts 300 \
@@ -411,7 +415,7 @@ for tp in 1 2 4 8; do
     nsys profile -t cuda,nvtx,osrt \
         --capture-range cudaProfilerApi --capture-range-end stop \
         -o profile_tp${tp} \
-        python -c "
+        .venv/bin/python -c "
 from vllm import LLM, SamplingParams
 import torch
 llm = LLM('meta-llama/Llama-2-13b-hf', tensor_parallel_size=$tp, enforce_eager=True)
@@ -428,22 +432,20 @@ done
 #   - 不同 TP 下 forward 总时长
 ```
 
-### 预期结果（Llama-2-13B，H100 NVLink）
+### 结果记录（不得预填）
 
 | TP | 单卡吞吐 (tok/s) | 总吞吐 | scaling efficiency | AllReduce 占 forward |
 | --- | --- | --- | --- | --- |
-| 1 | 4800 | 4800 | 100%（基准）| 0% |
-| 2 | 4500 | 9000 | **94%** | 6% |
-| 4 | 4100 | 16400 | **85%** | 13% |
-| 8 | 3400 | 27200 | **71%** | 22% |
+| 1 | `<实测>` | `<实测>` | 100%（基准）| `<实测>` |
+| 2 | `<实测>` | `<实测>` | `<计算>` | `<实测>` |
+| 4 | `<实测>` | `<实测>` | `<计算>` | `<实测>` |
+| 8 | `<实测>` | `<实测>` | `<计算>` | `<实测>` |
 
-### 关键观察
+### 必须核对
 
-- **scaling 是亚线性的**：TP 越大效率越低，AllReduce 通信摊薄不掉
-- **TPOT 跨 TP 几乎不变**——forward 算力÷N + 通信时间 ≈ 单卡 forward
-- **TTFT 显著下降**——prefill compute-bound，TP 切完算力真翻倍
-- 7B 模型 TP=2 最划算；13B 单机 TP=4 是甜点；70B 不得不 TP=8
-- **nsys timeline 直接看 NCCL kernel block 时间**——这是定位通信瓶颈和写复盘最有说服力的证据
+- 先验证各 TP 使用相同模型、dtype、输入分布、并发和拓扑；记录 NVLink/PCIe 与 NCCL 版本。
+- scaling efficiency 用 `TP=n 总吞吐 / (n × TP=1 总吞吐)` 计算，不凭经验填“甜点”。
+- 用 nsys 区分 GEMM、attention、NCCL 和空洞时间，再解释 TTFT/TPOT 变化。
 
 ### 自测题
 
@@ -483,24 +485,27 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct \
 SERVER_PID=$!
 sleep 60
 
-# 2. 用 py-spy 采样 scheduler 进程的 Python 栈
-SCHEDULER_PID=$(pgrep -f "EngineCore" | head -1)
+# 2. 先查看进程树，人工确认属于 SERVER_PID 的 EngineCore 子进程；
+# 不要用全机 pgrep 后取第一个结果。
+ps -eo pid,ppid,cmd | grep -E "PID|$SERVER_PID|EngineCore"
+export SCHEDULER_PID='<verified-engine-core-pid>'
+ps -p "$SCHEDULER_PID" -o pid,ppid,cmd
 sudo py-spy record \
     -o profile_async.svg \
-    --pid $SCHEDULER_PID \
+    --pid "$SCHEDULER_PID" \
     --duration 30 \
     --rate 1000 \
     --threads &
 PYSPY_PID=$!
 
 # 3. 同时跑大 batch workload 制造 scheduler 压力
-python benchmarks/benchmark_serving.py \
+vllm bench serve \
     --model Qwen/Qwen2.5-0.5B-Instruct \
     --dataset-name sharegpt \
     --num-prompts 500 \
     --request-rate 50
 
-wait $PYSPY_PID
+wait "$PYSPY_PID"
 
 # 4. 看 profile_async.svg：
 #    - 找 schedule() 调用栈，看它在 30s 里占多少
@@ -539,9 +544,9 @@ prof.export_chrome_trace("trace_async.json")
 # 用 chrome://tracing 或 https://ui.perfetto.dev 打开 trace_async.json
 ```
 
-### 预期结果
+### 结果记录（不得预填）
 
-在 Perfetto 时间线上你应该看到：
+在 Perfetto 时间线上标出 schedule 与 forward 是否重叠；下面只是读图示意，不代表实测比例：
 
 ```
 线程 EngineCore-main  ▓▓▓▓░░▓▓▓▓░░▓▓▓▓░░▓▓▓▓     ← schedule() 间歇执行
@@ -549,27 +554,20 @@ prof.export_chrome_trace("trace_async.json")
                        ^ schedule 与 forward 错开，几乎完全重叠
 ```
 
-数据上（大 batch 256，short prompt）：
-- schedule() 单次 CPU 时间：3-8 ms
-- forward 单次 GPU 时间：25-40 ms
-- **如果是同步 scheduler**：单 step = 3+25 = 28 ms
-- **AsyncScheduler**：单 step ≈ max(3, 25) = 25 ms
-- **吞吐改善约 5-12%**（batch 越大、schedule 越重，越接近 12%）
+报告中填写 schedule CPU time、forward GPU time、重叠区间、吞吐与 TPOT p99。若没有建立关闭/开启 async scheduling 的可比基线，就只能描述 trace，不能声称收益来自 AsyncScheduler。
 
-### 关键观察
+### 必须核对
 
-- **AsyncScheduler 不省 CPU 总时间**，**省的是延迟**（让 CPU 跟 GPU 并行）
-- 小 batch（< 16）几乎无收益——schedule 时间 << forward 时间
-- 大 batch（≥ 64）才能看到 5-10% 端到端收益
-- 副作用：scheduler 状态可能比 forward 输出"早一步"，需要小心 race condition（V1 已经处理）
-- 关键源码：`vllm/v1/core/sched/async_scheduler.py`
+- overlap 优化减少的是关键路径，不等于减少 schedule 的 CPU 总工作量。
+- batch 大小、请求长度和采样功能都会改变调度成本；至少测低/中/高三个负载点。
+- 关键源码入口是 `vllm/v1/core/sched/async_scheduler.py`；实验开关必须以当前 CLI/help 为准，不建议 patch V0 做对照。
 
 ### 自测题
 
 1. 为什么 schedule 时间会随 batch 增大？给出 2 个主要原因（提示：preempt 候选 + KV alloc）
 2. AsyncScheduler 如果 schedule 比 forward 还慢，发生什么？什么场景会出现？
 3. 这套 producer-consumer overlap 在 OS 课里有什么对应概念？（double buffering / pipelining）
-4. 关掉 async 直接跑一次（patch `async_scheduling=False` 或用 V0），TPOT 抖动会不会变大？
+4. 当前 CLI 若提供受支持的 async scheduling 开关，应如何设计只改该开关的 A/B？若没有，为什么不能用 patch V0 冒充可比基线？
 
 ### 可产出的博客角度
 
@@ -590,74 +588,42 @@ prof.export_chrome_trace("trace_async.json")
 
 - 2 个 GPU 同机（H100 或 A100 都行）
 - NIXL 库（NVIDIA GPU-Direct）或回退到 shared memory connector
-- vLLM ≥ 0.10（KV connector 接口稳定后版本）
+- 本教程锁定的源码 commit；KV connector 仍是实验性接口，升级后先重查示例与 schema
 
-### 脚本
+### 受控步骤
+
+当前协议参考是 `examples/disaggregated/disaggregated_prefill.sh`，但该开发示例会安装依赖并广泛结束 Python 进程，**不要在共享机器原样运行**。先静态审计：
 
 ```bash
-# Instance A：prefill 节点（专配大 batch token，小 seq 数）
-CUDA_VISIBLE_DEVICES=0 vllm serve meta-llama/Llama-2-7b-hf \
-    --port 8000 \
-    --max-num-seqs 8 \
-    --max-num-batched-tokens 16384 \
-    --kv-transfer-config '{
-        "kv_connector": "PyNixlConnector",
-        "kv_role": "kv_producer",
-        "kv_rank": 0,
-        "kv_parallel_size": 2
-    }' &
-
-# Instance B：decode 节点（专配多并发，小 batch token）
-CUDA_VISIBLE_DEVICES=1 vllm serve meta-llama/Llama-2-7b-hf \
-    --port 8001 \
-    --max-num-seqs 128 \
-    --max-num-batched-tokens 4096 \
-    --kv-transfer-config '{
-        "kv_connector": "PyNixlConnector",
-        "kv_role": "kv_consumer",
-        "kv_rank": 1,
-        "kv_parallel_size": 2
-    }' &
-
-# 简化的"前端路由"参考：vllm/examples/online_serving/disaggregated_prefill.sh
-# 它把请求第一次发到 prefill 节点，拿到 KV 后路由到 decode 节点继续
-
-# Baseline：TP=2 单实例（同时做 prefill+decode）
-CUDA_VISIBLE_DEVICES=0,1 vllm serve meta-llama/Llama-2-7b-hf \
-    --tensor-parallel-size 2 \
-    --port 8002 &
-
-# 跑 2 组 benchmark
-for port in 8000 8002; do
-    python benchmarks/benchmark_serving.py \
-        --model meta-llama/Llama-2-7b-hf \
-        --base-url http://localhost:$port \
-        --dataset-name sharegpt \
-        --num-prompts 300 \
-        --request-rate 30 \
-        --result-filename results_port${port}.json
-done
+EXAMPLE=examples/disaggregated/disaggregated_prefill.sh
+test -f "$EXAMPLE"
+grep -nE 'kv_connector|kv_role|proxy|pip install|pgrep|pkill|kill -9' "$EXAMPLE"
 ```
 
-### 预期结果
+把审计后的实验 launcher 放到独立目录，并满足以下验收条件后再跑：
+
+1. producer、consumer、proxy、baseline 各自绑定独立端口与 GPU；模型和 connector schema 从**当前示例**复制，不凭旧版本记忆填写。
+2. 依赖在实验前通过项目环境安装，launcher 内不执行 `pip install`。
+3. 每个后台进程启动后立即保存 `$!`；cleanup 只对这些 PID 先 `TERM`、等待、超时后再有选择地升级，不使用 `pgrep python` / `pkill -f python`。
+4. 先分别验证 producer/consumer health，再通过 proxy 的公开端口做功能请求；不能把 producer 端口的响应当作完整 P/D 服务。
+5. baseline 与 P/D 使用相同模型、dtype、总 GPU、workload 和 benchmark 参数；保存 proxy、两侧服务及 connector 日志。
+
+完成 launcher 的安全审查后，用当前 CLI 对 proxy 和 baseline 分别运行 `vllm bench serve`。命令参数先用 `vllm bench serve --help` 在锁定 commit 的环境确认；下一章会给出完整 benchmark 方法。
+
+### 结果记录（不得预填）
 
 | 配置 | TTFT p50 | TTFT p99 | TPOT p50 | 吞吐 tok/s |
 | --- | --- | --- | --- | --- |
-| TP=2 单实例（baseline） | 180 ms | 720 ms | 30 ms | 3200 |
-| **Disaggregated (P=1, D=1)** | **165 ms** | **410 ms** | **22 ms** | **4100** |
+| TP=2 单实例（baseline） | `<实测>` | `<实测>` | `<实测>` | `<实测>` |
+| Disaggregated (P=1, D=1) | `<实测>` | `<实测>` | `<实测>` | `<实测>` |
 
-收益方向：
-- **TTFT p99 显著降低**——prefill 不再被 decode 干扰
-- **TPOT 改善明显**——decode 节点不被长 prefill 卡
-- **吞吐略升**——资源专用化避免上下文切换
+同时记录 KV transfer 成功/失败、传输字节、connector、链路、重试和两侧队列。若只请求 prefill 端口而没有完成当前 connector 示例要求的路由协议，该结果不是有效的 P/D 对照。
 
-### 关键观察
+### 必须核对
 
-- KV transfer 本身有开销：RDMA loopback ~50 μs/GB；走 PCIe 跨卡 ~100 ms/GB
-- **短 prompt（< 512 token）场景 KV transfer 开销可能 > 收益**，得不偿失
-- **Hot prompt（prefix cache 命中）走不走 disaggregated 差异都小**——cache 命中后 prefill 本来就很快
-- **长 prompt + 长输出场景收益最大**——这正是 RAG / 长上下文 chatbot 的形态
-- 论文（llm-d / Moonshot）报告 TTFT/TPOT -30~40% 来自这个机制
+- KV transfer 有固定和按字节增长的成本，必须在当前链路实测，不能套用通用 μs/GB。
+- 分别测短/长 prompt、短/长输出与 prefix hit/miss，找出本环境的 break-even point。
+- P/D 增加路由、connector 与局部故障面；性能结论必须和正确性、重试与容量结果一起交付。
 
 ### 自测题
 
@@ -834,6 +800,6 @@ batch_size 与 GPU 状态的关系：
 ## 下一步
 
 - 下一节：[`07-hands-on/04-profiling-and-debugging.md`](04-profiling-and-debugging.md)（从"我能跑出数字"升级成"我能定位 kernel-level 异常"）
-- 想看源码：`benchmarks/benchmark_throughput.py`、`benchmarks/benchmark_serving.py`、`vllm/v1/core/sched/scheduler.py`
+- 想看源码：`vllm/benchmarks/throughput.py`、`vllm/benchmarks/serve.py`、`vllm/v1/core/sched/scheduler.py`
 - 想动手：把每个实验改成"对比 2 个 vLLM 版本"——这能直接产出社区 PR 的回归测试材料
 - 想从生产视角理解：[`08-production-deployment/05-slo-and-observability.md`](../08-production-deployment/05-slo-and-observability.md)（同样的指标在生产怎么报警）
