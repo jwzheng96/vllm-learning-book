@@ -85,7 +85,10 @@ sequenceDiagram
 
 ## 3. EP 配置：tp_size / dp_size / ep_size / pcp_size 怎么咬合
 
-源码：`vllm/model_executor/layers/fused_moe/config.py:1007` 的 `FusedMoEParallelConfig`：
+<!-- vllm-source: {"path":"vllm/model_executor/layers/fused_moe/config.py","symbol":"FusedMoEParallelConfig"} -->
+[源码锚点：vllm/model_executor/layers/fused_moe/config.py · FusedMoEParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/fused_moe/config.py#L1032)
+
+源码：`vllm/model_executor/layers/fused_moe/config.py` 的 `FusedMoEParallelConfig`：
 
 ```python
 @dataclass
@@ -169,10 +172,16 @@ NVLink-only 单机 8 卡 → AgRs 够用，编译简单
 **vLLM 的应对：**
 
 ### 6.1 ExpertMapManager
-`vllm/model_executor/layers/fused_moe/expert_map_manager.py:152` 管理 logical_expert_id → physical_rank 的映射。
+<!-- vllm-source: {"path":"vllm/model_executor/layers/fused_moe/expert_map_manager.py","symbol":"ExpertMapManager"} -->
+[源码锚点：vllm/model_executor/layers/fused_moe/expert_map_manager.py · ExpertMapManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/fused_moe/expert_map_manager.py#L152)
+
+`vllm/model_executor/layers/fused_moe/expert_map_manager.py` 管理 logical_expert_id → physical_rank 的映射。
 
 ### 6.2 RoutedExpertsCapturer
-`vllm/model_executor/layers/fused_moe/routed_experts_capturer.py:58` 在 forward 时统计每个 expert 收到多少 token，把数据回吐给 scheduler。
+<!-- vllm-source: {"path":"vllm/model_executor/layers/fused_moe/routed_experts_capturer.py","symbol":"RoutedExpertsCapturer"} -->
+[源码锚点：vllm/model_executor/layers/fused_moe/routed_experts_capturer.py · RoutedExpertsCapturer](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/fused_moe/routed_experts_capturer.py#L58)
+
+`vllm/model_executor/layers/fused_moe/routed_experts_capturer.py` 在 forward 时统计每个 expert 收到多少 token，把数据回吐给 scheduler。
 
 ### 6.3 EPLB（Expert Parallel Load Balancing）
 启用：`enable_eplb=True`（`FusedMoEParallelConfig.enable_eplb`）。
@@ -349,6 +358,9 @@ def use_deepep_ll_kernels(self):
 
 - 下一节：[`04-context-parallel.md`](04-context-parallel.md)（PCP / DCP——长上下文场景下另一种切分维度）。
 - 规模化实战：[`05-large-scale-cluster-inference.md`](05-large-scale-cluster-inference.md)（EPLB / DP padding / 微批重叠在千卡万卡上怎么治 EP 同步长尾、AllToAll 怎么撞网络墙）。
-- 想看源码：`vllm/model_executor/layers/fused_moe/config.py:1007`（ParallelConfig）、`vllm/distributed/device_communicators/all2all.py`（6 个后端）、`vllm/model_executor/layers/fused_moe/expert_map_manager.py`（EPLB 核心）。
+<!-- vllm-source: {"path":"vllm/model_executor/layers/fused_moe/config.py","symbol":"FusedMoEParallelConfig"} -->
+[源码锚点：vllm/model_executor/layers/fused_moe/config.py · FusedMoEParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/fused_moe/config.py#L1032)
+
+- 想看源码：`vllm/model_executor/layers/fused_moe/config.py`（ParallelConfig）、`vllm/distributed/device_communicators/all2all.py`（6 个后端）、`vllm/model_executor/layers/fused_moe/expert_map_manager.py`（EPLB 核心）。
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（MoE 的容量规划要把 EP 维度算进去）。
 - 想看 DeepEP 论文与实现：DeepSeek GitHub deep-ep 仓库。

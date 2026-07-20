@@ -30,7 +30,14 @@
 | **MFU**（Model FLOPs Utilization） | 实际有效 FLOPs / 峰值 FLOPs | `rate(estimated_flops) / peak_flops` | prefill 和大 batch |
 | **MBU**（Model Bandwidth Utilization） | 实际内存读写带宽 / 峰值 HBM 带宽 | `rate(estimated_read_bytes + estimated_write_bytes) / peak_bandwidth` | decode 和长上下文 |
 
-vLLM 当前已经有近似 perf 估算指标，不必完全手算。源码在 `vllm/vllm/v1/metrics/perf.py:1265` 的 `PerfMetricsProm`，Prometheus 计数器分别是 `vllm:estimated_flops_per_gpu_total`、`vllm:estimated_read_bytes_per_gpu_total`、`vllm:estimated_write_bytes_per_gpu_total`（注册点见 `vllm/vllm/v1/metrics/perf.py:1287`、`:1299`、`:1311`）。代码注释给出的 PromQL 原型在 `vllm/vllm/v1/metrics/perf.py:1271` 和 `:1275`。
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm","anchor":"rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1554)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm.__init__","anchor":"counter_flops = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1570)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1548)
+
+vLLM 当前已经有近似 perf 估算指标，不必完全手算。源码在 `vllm/v1/metrics/perf.py` 的 `PerfMetricsProm`，Prometheus 计数器分别是 `vllm:estimated_flops_per_gpu_total`、`vllm:estimated_read_bytes_per_gpu_total`、`vllm:estimated_write_bytes_per_gpu_total`（注册点见 `vllm/v1/metrics/perf.py`、`:1299`、`:1311`）。代码注释给出的 PromQL 原型在 `vllm/v1/metrics/perf.py` 和 `:1275`。
 
 ```promql
 # 每 GPU 估算 TFLOPS
@@ -66,22 +73,54 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 
 读源码时先记住三层来源：
 
-1. **Scheduler 状态**：running / waiting / KV 使用率 / prefix cache / preemption。注册在 `vllm/vllm/v1/metrics/loggers.py:451` 到 `:625`。
-2. **请求完成统计**：TTFT、ITL、TPOT、队列时间、prefill/decode 时间。注册在 `vllm/vllm/v1/metrics/loggers.py:754` 到 `:881`，观测逻辑在 `vllm/vllm/v1/metrics/loggers.py:1173` 到 `:1211`。
-3. **Perf 估算**：每步按 `SchedulerOutput` 区分 prefill/decode，估算 FLOPs 和 bytes。入口是 `vllm/vllm/v1/metrics/perf.py:1056`，新请求按 prefill 记（`:1068`），cached request 通常按 decode 记（`:1080` 到 `:1094`）。
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_running = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L493)
+
+1. **Scheduler 状态**：running / waiting / KV 使用率 / prefix cache / preemption。注册在 `vllm/v1/metrics/loggers.py` 到 `:625`。
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.record","anchor":"for ttft in iteration_stats.time_to_first_tokens_iter:"} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.record](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L1216)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_time_to_first_token = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L796)
+
+2. **请求完成统计**：TTFT、ITL、TPOT、队列时间、prefill/decode 时间。注册在 `vllm/v1/metrics/loggers.py` 到 `:881`，观测逻辑在 `vllm/v1/metrics/loggers.py` 到 `:1211`。
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"ModelMetrics.get_step_perf_stats_per_gpu"} -->
+[源码锚点：vllm/v1/metrics/perf.py · ModelMetrics.get_step_perf_stats_per_gpu](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1339)
+
+3. **Perf 估算**：每步按 `SchedulerOutput` 区分 prefill/decode，估算 FLOPs 和 bytes。入口是 `vllm/v1/metrics/perf.py`，新请求按 prefill 记（`:1068`），cached request 通常按 decode 记（`:1080` 到 `:1094`）。
+
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_running = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L493)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_waiting = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L503)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_waiting_by_reason = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L513)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_kv_cache_usage = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L561)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"counter_num_preempted_reqs = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L661)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"counter_prefix_cache_queries = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L584)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_time_to_first_token = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L796)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_inter_token_latency = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L829)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_queue_time_request = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L922)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1548)
 
 | 你想判断什么 | 先看 metric | 源码锚点 | 解释 |
 | --- | --- | --- | --- |
-| batch 是否够大 | `vllm:num_requests_running` | `vllm/vllm/v1/metrics/loggers.py:451` | 当前进入 model execution batch 的请求数 |
-| 是否在排队 | `vllm:num_requests_waiting` | `vllm/vllm/v1/metrics/loggers.py:461` | waiting + skipped waiting 会被写入这个 gauge，更新见 `:1070` |
-| 为什么排队 | `vllm:num_requests_waiting_by_reason` | `vllm/vllm/v1/metrics/loggers.py:471` | `capacity` 是容量不够，`deferred` 是 LoRA/KV transfer/blocked 等约束 |
-| KV 是否贴顶 | `vllm:kv_cache_usage_perc` | `vllm/vllm/v1/metrics/loggers.py:519` | 1.0 表示 KV cache 100% 占用，更新见 `:1081` |
-| 是否发生抢占 | `rate(vllm:num_preemptions_total[5m])` | `vllm/vllm/v1/metrics/loggers.py:619` | 源码 Counter 名是 `vllm:num_preemptions`，Prometheus 暴露时有 `_total` 后缀 |
-| prefix 是否命中 | `prefix_cache_hits / prefix_cache_queries` | `vllm/vllm/v1/metrics/loggers.py:542` | 本地 prefix cache，外部 KV connector 指标见 `:566` |
-| TTFT 是否坏 | `vllm:time_to_first_token_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:754` | 从请求进入到第一个 token |
-| TPOT/ITL 是否坏 | `request_time_per_output_token_seconds_bucket`、`inter_token_latency_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:787`、`:817` | ITL 是 token 间隔，TPOT 是请求级输出 token 平均 |
-| 队列贡献多少 | `vllm:request_queue_time_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:880` | WAITING 阶段时间 |
-| 近似 MFU/MBU | `estimated_flops/read_bytes/write_bytes` | `vllm/vllm/v1/metrics/perf.py:1265` | 基于每步 scheduled token 和模型配置估算 |
+| batch 是否够大 | `vllm:num_requests_running` | `vllm/v1/metrics/loggers.py` | 当前进入 model execution batch 的请求数 |
+| 是否在排队 | `vllm:num_requests_waiting` | `vllm/v1/metrics/loggers.py` | waiting + skipped waiting 会被写入这个 gauge，更新见 `:1070` |
+| 为什么排队 | `vllm:num_requests_waiting_by_reason` | `vllm/v1/metrics/loggers.py` | `capacity` 是容量不够，`deferred` 是 LoRA/KV transfer/blocked 等约束 |
+| KV 是否贴顶 | `vllm:kv_cache_usage_perc` | `vllm/v1/metrics/loggers.py` | 1.0 表示 KV cache 100% 占用，更新见 `:1081` |
+| 是否发生抢占 | `rate(vllm:num_preemptions_total[5m])` | `vllm/v1/metrics/loggers.py` | 源码 Counter 名是 `vllm:num_preemptions`，Prometheus 暴露时有 `_total` 后缀 |
+| prefix 是否命中 | `prefix_cache_hits / prefix_cache_queries` | `vllm/v1/metrics/loggers.py` | 本地 prefix cache，外部 KV connector 指标见 `:566` |
+| TTFT 是否坏 | `vllm:time_to_first_token_seconds_bucket` | `vllm/v1/metrics/loggers.py` | 从请求进入到第一个 token |
+| TPOT/ITL 是否坏 | `request_time_per_output_token_seconds_bucket`、`inter_token_latency_seconds_bucket` | `vllm/v1/metrics/loggers.py`、`:817` | ITL 是 token 间隔，TPOT 是请求级输出 token 平均 |
+| 队列贡献多少 | `vllm:request_queue_time_seconds_bucket` | `vllm/v1/metrics/loggers.py` | WAITING 阶段时间 |
+| 近似 MFU/MBU | `estimated_flops/read_bytes/write_bytes` | `vllm/v1/metrics/perf.py` | 基于每步 scheduled token 和模型配置估算 |
 
 一个容易踩的坑：老资料里常见 `vllm:gpu_cache_usage_perc`，当前源码对应的是 **`vllm:kv_cache_usage_perc`**。看当前代码时以后者为准。
 
@@ -91,13 +130,23 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 
 性能问题最后都会落到三个 budget：
 
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_batched_tokens: int = Field(default=DEFAULT_MAX_NUM_BATCHED_TOKENS, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L49)
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_seqs: int = Field(default=DEFAULT_MAX_NUM_SEQS, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L63)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"# Schedule newly needed KV blocks for the request."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L557)
+
 | budget | 配置/状态 | 源码 | 典型症状 |
 | --- | --- | --- | --- |
-| token budget | `max_num_batched_tokens` / `max_num_scheduled_tokens` | `vllm/vllm/config/scheduler.py:49`、`:56` | 每步 token 太少，prefill 被切太碎或 decode batch 太小 |
-| seq budget | `max_num_seqs` | `vllm/vllm/config/scheduler.py:63` | running 达上限，waiting 增长，但 KV 未必满 |
-| KV budget | block pool 可用块 | `vllm/vllm/v1/core/sched/scheduler.py:441` | allocate slots 失败，触发 preemption |
+| token budget | `max_num_batched_tokens` / `max_num_scheduled_tokens` | `vllm/config/scheduler.py`、`:56` | 每步 token 太少，prefill 被切太碎或 decode batch 太小 |
+| seq budget | `max_num_seqs` | `vllm/config/scheduler.py` | running 达上限，waiting 增长，但 KV 未必满 |
+| KV budget | block pool 可用块 | `vllm/v1/core/sched/scheduler.py` | allocate slots 失败，触发 preemption |
 
-`Scheduler.schedule()` 的注释很关键：它不硬分"prefill 阶段"和"decode 阶段"，而是让每个 request 的 `num_computed_tokens` 去追 `num_tokens_with_spec`，同一套逻辑覆盖 chunked prefill、prefix caching、speculative decoding（`vllm/vllm/v1/core/sched/scheduler.py:329`）。每步先拿到 `token_budget`（`:348`），然后：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+
+`Scheduler.schedule()` 的注释很关键：它不硬分"prefill 阶段"和"decode 阶段"，而是让每个 request 的 `num_computed_tokens` 去追 `num_tokens_with_spec`，同一套逻辑覆盖 chunked prefill、prefix caching、speculative decoding（`vllm/v1/core/sched/scheduler.py`）。每步先拿到 `token_budget`（`:348`），然后：
 
 1. 先调度 running 请求（`:364`），保证已经在跑的 decode 不被新 prefill 随便打断。
 2. 为请求分配新 KV block（`:441` 到 `:448`）。
@@ -113,7 +162,10 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 - `max_num_batched_tokens` 调太小，TTFT 可能变稳但 prefill 被切碎；调太大，长 prefill 又可能让 decode TPOT 抖。
 - `max_num_seqs` 不是越大越好，它会提高并发上限，也会提高 KV 压力和 preemption 风险。
 
-`SchedulerConfig` 里几个线上常调旋钮值得背下来：`max_num_partial_prefills` 控制可并发 chunked prefill 数（`vllm/vllm/config/scheduler.py:70`），`max_long_partial_prefills` 允许短 prompt 在某些场景跳过长 prompt（`:74` 到 `:78`），`enable_chunked_prefill` 默认开启（`:84`），`policy` 支持 `fcfs` 和 `priority`（`:109`），`async_scheduling` 用来减少 GPU 利用率空洞（`:146`）。
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_partial_prefills: int = Field(default=1, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L70)
+
+`SchedulerConfig` 里几个线上常调旋钮值得背下来：`max_num_partial_prefills` 控制可并发 chunked prefill 数（`vllm/config/scheduler.py`），`max_long_partial_prefills` 允许短 prompt 在某些场景跳过长 prompt（`:74` 到 `:78`），`enable_chunked_prefill` 默认开启（`:84`），`policy` 支持 `fcfs` 和 `priority`（`:109`），`async_scheduling` 用来减少 GPU 利用率空洞（`:146`）。
 
 ---
 
@@ -142,9 +194,15 @@ flowchart LR
 
 vLLM 针对这条链路的关键武器：
 
-- **Async scheduling**：减少调度带来的 GPU gap。配置注释直接写着它能避免 GPU utilization gaps（`vllm/vllm/config/scheduler.py:146`）。
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"async_scheduling: bool | None = None"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L158)
+
+- **Async scheduling**：减少调度带来的 GPU gap。配置注释直接写着它能避免 GPU utilization gaps（`vllm/config/scheduler.py`）。
 - **CUDA Graph**：把稳定 shape 的 decode forward 捕获成图，降低 Python 到 CUDA launch 开销，见 [`04-optimizations/03-cudagraph-and-compile.md`](../04-optimizations/03-cudagraph-and-compile.md)。
-- **持久化 InputBatch**：`InputBatch` 预分配 token、block table、sampling 参数等张量（`vllm/vllm/v1/worker/gpu_input_batch.py:91`、`:133`、`:170`），步间增量更新，不每步重建。
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_input_batch.py","symbol":"InputBatch"} -->
+[源码锚点：vllm/v1/worker/gpu_input_batch.py · InputBatch](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_input_batch.py#L92)
+
+- **持久化 InputBatch**：`InputBatch` 预分配 token、block table、sampling 参数等张量（`vllm/v1/worker/gpu_input_batch.py`、`:133`、`:170`），步间增量更新，不每步重建。
 - **chunked prefill**：把大 prefill 切进多个 step，让 decode 不被一个长 prompt 长时间阻塞。
 
 ---
@@ -175,7 +233,10 @@ MBU 低 = decode 步里 HBM 没在满速读。常见原因按出现频率排：
 
 ### 5.3 KV 容量不足，running batch 上不去
 
-KV block 不够时，scheduler 在 `allocate_slots` 失败后会 preempt running 请求（`vllm/vllm/v1/core/sched/scheduler.py:441` 到 `:483`）。指标组合：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"# Schedule newly needed KV blocks for the request."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L557)
+
+KV block 不够时，scheduler 在 `allocate_slots` 失败后会 preempt running 请求（`vllm/v1/core/sched/scheduler.py` 到 `:483`）。指标组合：
 
 ```text
 vllm:kv_cache_usage_perc > 0.90

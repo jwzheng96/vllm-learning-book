@@ -62,7 +62,10 @@ vllm serve <model> [--no-enable-prefix-caching]   # 关闭
 
 ## 4. Hash 算法详解（V1）
 
-源码：`vllm/v1/core/kv_cache_utils.py:541` 的 `hash_block_tokens()`。
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+
+源码：`vllm/v1/core/kv_cache_utils.py` 的 `hash_block_tokens()`。
 
 ### 4.1 Merkle 链式哈希
 
@@ -92,8 +95,11 @@ flowchart LR
 
 代码对应：
 
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+
 ```python
-# vllm/v1/core/kv_cache_utils.py:541
+# vllm/v1/core/kv_cache_utils.py
 def hash_block_tokens(hash_function, parent_block_hash,
                      curr_block_token_ids, extra_keys=None):
     if not parent_block_hash:
@@ -290,6 +296,9 @@ A: 不会。cached 但 ref_cnt=0 的 block 仍在 free queue 里，可以被新�
 ## 下一步
 
 - 下一节 [`05-chunked-prefill.md`](05-chunked-prefill.md)：理解 prefix cache 命中后"剩余 prefill"是怎么切的。
-- 想看源码：`vllm/v1/core/kv_cache_utils.py:541` (`hash_block_tokens`) 和 `vllm/v1/core/kv_cache_manager.py`（allocate / free）。
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+
+- 想看源码：`vllm/v1/core/kv_cache_utils.py` (`hash_block_tokens`) 和 `vllm/v1/core/kv_cache_manager.py`（allocate / free）。
 - 想做实验：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md) 第 3 个实验"prefix hit"。
 - 想看 L2/L3 cache：`vllm/v1/kv_offload/` + LMCache 项目。

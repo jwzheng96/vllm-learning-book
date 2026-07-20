@@ -1,7 +1,7 @@
 
 
 
-># 03. CUDA Graph 与 torch.compile
+# 03. CUDA Graph 与 torch.compile
 
 > **谁该读这一篇？** 启动慢得离谱、改了模型出现奇怪错误、想自己改 attention kernel、或者想搞清"默认开 / 什么时候要关 / 怎么诊断"的读者。
 >

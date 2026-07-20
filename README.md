@@ -1,5 +1,11 @@
 # vLLM 学习手册
 
+<!-- vllm-version:start -->
+- Validated vLLM: `b23bd73f540175f9e117eaee5029cd7d8df63964`
+- Upstream committed: `2026-07-20T15:32:54+00:00`
+- Validated: `2026-07-20T17:43:08Z`
+<!-- vllm-version:end -->
+
 [![Pages](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml)
 [![Site](https://img.shields.io/badge/site-jwzheng96.github.io%2Fvllm--learning--book-8b1538)](https://jwzheng96.github.io/vllm-learning-book/)
 [![vLLM](https://img.shields.io/badge/vllm-27b85d2_(2026--05--15)-1a4d80)](https://github.com/vllm-project/vllm/tree/27b85d2084c48f9b12f8cfd6638a56fe9b257635)
@@ -175,13 +181,16 @@ flowchart LR
 
 ## vLLM 仓库地标速查
 
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+
 | 想知道什么 | 去哪里看 |
 | --- | --- |
 | 用户怎么调用 vLLM | `vllm/entrypoints/llm.py`、`vllm/entrypoints/openai/api_server.py` |
 | 引擎主循环 | `vllm/v1/engine/core.py`、`vllm/v1/engine/llm_engine.py` |
 | 调度器（决定本步跑哪些请求） | `vllm/v1/core/sched/scheduler.py`（2300+ 行，全核心） |
 | KV cache 块管理 | `vllm/v1/core/kv_cache_manager.py`、`block_pool.py` |
-| Prefix caching hash | `vllm/v1/core/kv_cache_utils.py:541` (`hash_block_tokens`) |
+| Prefix caching hash | `vllm/v1/core/kv_cache_utils.py` (`hash_block_tokens`) |
 | Model runner（前向） | `vllm/v1/worker/gpu_model_runner.py` |
 | Attention 后端选择 | `vllm/v1/attention/backends/`（FlashAttn / FlashInfer / Triton / MLA） |
 | PagedAttention CUDA | `csrc/attention/` |

@@ -52,7 +52,10 @@ flowchart TD
 
 ## 2. SamplingParams 的全部参数
 
-`vllm/sampling_params.py:168` 的 `SamplingParams` 是 OpenAI API 与 vLLM 之间的桥梁，关键字段：
+<!-- vllm-source: {"path":"vllm/sampling_params.py","symbol":"SamplingParams"} -->
+[源码锚点：vllm/sampling_params.py · SamplingParams](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/sampling_params.py#L199)
+
+`vllm/sampling_params.py` 的 `SamplingParams` 是 OpenAI API 与 vLLM 之间的桥梁，关键字段：
 
 ```python
 class SamplingParams:
@@ -94,7 +97,12 @@ class SamplingParams:
 
 ## 3. Sampler.forward 源码节选
 
-`vllm/v1/sample/sampler.py:68-143`，简化版：
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.forward"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.forward](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L72)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.forward","anchor":"return sampler_output"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.forward](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L149)
+
+`vllm/v1/sample/sampler.py`，简化版：
 
 ```python
 def forward(self, logits, sampling_metadata, predict_bonus_token=False, ...):
@@ -139,7 +147,12 @@ def forward(self, logits, sampling_metadata, predict_bonus_token=False, ...):
 
 ## 4. sample() 内部：温度 + top-k/p
 
-`sampler.py:235-291`：
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.sample"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.sample](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L243)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.sample","anchor":"return sampled, processed_logprobs"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.sample](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L302)
+
+`sampler.py`：
 
 ```python
 def sample(self, logits, sampling_metadata, ...):
@@ -350,9 +363,36 @@ A: Leviathan 2023 证明：`min(1, p_t/p_d)` 接受 + `(p_t - p_d)_+ / Z` 拒绝
 
 ## Sources
 
-- `vllm/sampling_params.py:33,168`（SamplingType / SamplingParams）
-- `vllm/v1/sample/sampler.py:21,68,235,294,360,412`
-- `vllm/v1/sample/rejection_sampler.py:37,392,708,762`
+<!-- vllm-source: {"path":"vllm/sampling_params.py","symbol":"SamplingType"} -->
+[源码锚点：vllm/sampling_params.py · SamplingType](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/sampling_params.py#L64)
+<!-- vllm-source: {"path":"vllm/sampling_params.py","symbol":"SamplingParams"} -->
+[源码锚点：vllm/sampling_params.py · SamplingParams](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/sampling_params.py#L199)
+
+- `vllm/sampling_params.py`（SamplingType / SamplingParams）
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L20)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.forward"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.forward](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L72)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.sample"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.sample](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L243)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.compute_logprobs"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.compute_logprobs](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L305)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.apply_logits_processors"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.apply_logits_processors](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L371)
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.apply_penalties"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.apply_penalties](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L420)
+
+- `vllm/v1/sample/sampler.py`
+<!-- vllm-source: {"path":"vllm/v1/sample/rejection_sampler.py","symbol":"RejectionSampler"} -->
+[源码锚点：vllm/v1/sample/rejection_sampler.py · RejectionSampler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/rejection_sampler.py#L37)
+<!-- vllm-source: {"path":"vllm/v1/sample/rejection_sampler.py","symbol":"rejection_sample"} -->
+[源码锚点：vllm/v1/sample/rejection_sampler.py · rejection_sample](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/rejection_sampler.py#L396)
+<!-- vllm-source: {"path":"vllm/v1/sample/rejection_sampler.py","symbol":"rejection_greedy_sample_kernel"} -->
+[源码锚点：vllm/v1/sample/rejection_sampler.py · rejection_greedy_sample_kernel](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/rejection_sampler.py#L717)
+<!-- vllm-source: {"path":"vllm/v1/sample/rejection_sampler.py","symbol":"rejection_random_sample_kernel"} -->
+[源码锚点：vllm/v1/sample/rejection_sampler.py · rejection_random_sample_kernel](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/rejection_sampler.py#L776)
+
+- `vllm/v1/sample/rejection_sampler.py`
 - `vllm/v1/sample/ops/topk_topp_sampler.py`、`penalties.py`、`bad_words.py`、`logprobs.py`
 - `vllm/v1/sample/metadata.py`（SamplingMetadata）
 - `csrc/sampler.cu`（一些 fallback CUDA kernel）

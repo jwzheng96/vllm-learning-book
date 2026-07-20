@@ -1,8 +1,13 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from tools.source_sync.impact import build_impact, render_impact_markdown
+from tools.source_sync.impact import (
+    _changed_files,
+    build_impact,
+    render_impact_markdown,
+)
 
 from tests.source_sync.helpers import commit_all, create_tutorial_repo
 
@@ -50,6 +55,23 @@ class ImpactTests(unittest.TestCase):
         )
         self.assertIn("csrc/uncovered.cu", result.uncovered_files)
         self.assertIn("vllm/example.py", result.changed_files)
+
+    def test_changed_file_scan_disables_rename_detection(self):
+        source_root = self.repo / "vllm"
+        with patch(
+            "tools.source_sync.impact.run_git", return_value="vllm/example.py"
+        ) as run_git:
+            changed = _changed_files(source_root, self.baseline, self.candidate)
+
+        self.assertEqual(changed, ("vllm/example.py",))
+        run_git.assert_called_once_with(
+            source_root,
+            "diff",
+            "--no-renames",
+            "--name-only",
+            f"{self.baseline}..{self.candidate}",
+            "--",
+        )
 
     def test_renders_deterministic_review_report(self):
         report = render_impact_markdown(

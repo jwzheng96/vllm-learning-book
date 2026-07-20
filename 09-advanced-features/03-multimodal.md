@@ -18,13 +18,18 @@ Qwen2-VL / Llama-3.2-Vision / Phi-3.5-Vision / Whisper 等模型在 vLLM 里能�
 
 ## 1. 数据流：图片如何变成 token
 
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._execute_mm_encoder"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._execute_mm_encoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L2963)
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._gather_mm_embeddings"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._gather_mm_embeddings](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L3172)
+
 ```mermaid
 flowchart TD
     U["用户输入<br/>prompt = 'Describe &lt;|image|&gt; in detail'<br/>multi_modal_data = {image: PIL.Image / bytes / URL}"]
     P["1. Processor (每模型一份)<br/><sub>vllm/multimodal/processing/</sub><br/>· 调用 HF Processor 把 image → pixel_values<br/>· 决定 image 占多少 token（Qwen2-VL: grid_thw → N）<br/>· 把 &lt;|image|&gt; 替换为 N 个 placeholder token id"]
     Q["2. 进 Scheduler 队列<br/>token_ids = [...&lt;IMG&gt;&lt;IMG&gt;...&lt;IMG&gt;...]<br/>mm_features = [MultiModalFeatureSpec(...mm_hash)]"]
-    E["3. Vision Encoder forward<br/><sub>ModelRunner._execute_mm_encoder</sub><br/><sub>gpu_model_runner.py:2813</sub><br/>pixel_values → ViT/SigLIP<br/>→ image_embeds [N, hidden]<br/>缓存到 EncoderCacheManager (mm_hash)"]
-    G["4. _gather_mm_embeddings<br/><sub>gpu_model_runner.py:3024</sub><br/>把 placeholder 位置替换为 image_embeds"]
+    E["3. Vision Encoder forward<br/><sub>ModelRunner._execute_mm_encoder</sub><br/><sub>gpu_model_runner.py</sub><br/>pixel_values → ViT/SigLIP<br/>→ image_embeds [N, hidden]<br/>缓存到 EncoderCacheManager (mm_hash)"]
+    G["4. _gather_mm_embeddings<br/><sub>gpu_model_runner.py</sub><br/>把 placeholder 位置替换为 image_embeds"]
     F["5. LLM forward(inputs_embeds=...)<br/>不传 input_ids，直接吃 embed"]
 
     U --> P --> Q --> E --> G --> F
@@ -58,7 +63,10 @@ vllm/multimodal/
 
 ## 3. PlaceholderRange：核心数据结构
 
-`vllm/multimodal/inputs.py:119`：
+<!-- vllm-source: {"path":"vllm/multimodal/inputs.py","symbol":"PlaceholderRange"} -->
+[源码锚点：vllm/multimodal/inputs.py · PlaceholderRange](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/multimodal/inputs.py#L119)
+
+`vllm/multimodal/inputs.py`：
 
 ```python
 @dataclass
@@ -83,7 +91,10 @@ PlaceholderRange(offset=10, length=16, is_embed=None)
 
 ## 4. EncoderCacheManager：编码器输出缓存
 
-`vllm/v1/core/encoder_cache_manager.py:17` 一个 EngineCore 一份。结构：
+<!-- vllm-source: {"path":"vllm/v1/core/encoder_cache_manager.py","symbol":"EncoderCacheManager"} -->
+[源码锚点：vllm/v1/core/encoder_cache_manager.py · EncoderCacheManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/encoder_cache_manager.py#L17)
+
+`vllm/v1/core/encoder_cache_manager.py` 一个 EngineCore 一份。结构：
 
 ```python
 class EncoderCacheManager:
@@ -282,11 +293,22 @@ A: ViT 通常**不 TP**（小），所有 TP rank 各自跑完整 ViT；image_em
 
 ## Sources
 
-- `vllm/multimodal/inputs.py:119`（PlaceholderRange）、`:854,882`（MultiModalKwargs）
+<!-- vllm-source: {"path":"vllm/multimodal/inputs.py","symbol":"PlaceholderRange"} -->
+[源码锚点：vllm/multimodal/inputs.py · PlaceholderRange](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/multimodal/inputs.py#L119)
+
+- `vllm/multimodal/inputs.py`（PlaceholderRange）、`:854,882`（MultiModalKwargs）
 - `vllm/multimodal/processing/`（每模型一份）
 - `vllm/multimodal/hasher.py`、`cache.py`、`encoder_budget.py`
-- `vllm/v1/core/encoder_cache_manager.py:17`
-- `vllm/v1/worker/gpu_model_runner.py:2813,3024`（_execute_mm_encoder / _gather_mm_embeddings）
+<!-- vllm-source: {"path":"vllm/v1/core/encoder_cache_manager.py","symbol":"EncoderCacheManager"} -->
+[源码锚点：vllm/v1/core/encoder_cache_manager.py · EncoderCacheManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/encoder_cache_manager.py#L17)
+
+- `vllm/v1/core/encoder_cache_manager.py`
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._execute_mm_encoder"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._execute_mm_encoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L2963)
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._gather_mm_embeddings"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._gather_mm_embeddings](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L3172)
+
+- `vllm/v1/worker/gpu_model_runner.py`（_execute_mm_encoder / _gather_mm_embeddings）
 - `vllm/model_executor/models/qwen2_vl.py`、`llava.py`、`phi3v.py`、`internvl.py`
 
 ---

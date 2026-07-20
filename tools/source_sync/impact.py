@@ -14,6 +14,7 @@ def _changed_files(source_root, baseline: str, candidate: str) -> Tuple[str, ...
     output = run_git(
         source_root,
         "diff",
+        "--no-renames",
         "--name-only",
         f"{baseline}..{candidate}",
         "--",

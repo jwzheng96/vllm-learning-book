@@ -6,6 +6,7 @@ from pathlib import Path
 from tools.source_sync.versions import (
     gitlink_head,
     load_source_lock,
+    render_version_block,
     submodule_head,
     validate_repository,
 )
@@ -34,6 +35,12 @@ class VersionTests(unittest.TestCase):
     def test_reads_submodule_and_committed_gitlink_sha(self):
         self.assertEqual(submodule_head(self.repo), self.source_sha)
         self.assertEqual(gitlink_head(self.repo), self.source_sha)
+
+    def test_version_block_has_no_trailing_whitespace(self):
+        block = render_version_block(
+            load_source_lock(self.repo / "source.lock.json")
+        )
+        self.assertTrue(all(line == line.rstrip() for line in block.splitlines()))
 
     def test_reports_uninitialized_submodule(self):
         git(self.repo, "submodule", "deinit", "-f", "vllm")

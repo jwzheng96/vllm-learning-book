@@ -46,20 +46,37 @@ vLLM 的处理：
 
 `vllm/model_executor/layers/pooler/`：
 
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/abstract.py","symbol":"Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/abstract.py · Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/abstract.py#L16)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/poolers.py","symbol":"SequencePooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/poolers.py · SequencePooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/poolers.py#L44)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"SequencePoolingMethod"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · SequencePoolingMethod](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L21)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/tokwise/poolers.py","symbol":"TokenPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/tokwise/poolers.py · TokenPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/tokwise/poolers.py#L48)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"DispatchPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · DispatchPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L25)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"IdentityPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · IdentityPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L140)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BOSEOSFilter"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BOSEOSFilter](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L152)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
 ```mermaid
 flowchart LR
-    Root["Pooler (abstract)<br/><sub>pooler/abstract.py:16</sub>"]
-    SP["SequencePooler<br/><sub>seqwise/poolers.py:44</sub>"]
-    SPM["SequencePoolingMethod<br/><sub>seqwise/methods.py:20</sub>"]
+    Root["Pooler (abstract)<br/><sub>pooler/abstract.py</sub>"]
+    SP["SequencePooler<br/><sub>seqwise/poolers.py</sub>"]
+    SPM["SequencePoolingMethod<br/><sub>seqwise/methods.py</sub>"]
     CLS["CLSPool<br/>取第一个 token"]
     Last["LastPool<br/>取最后一个 token"]
     Mean["MeanPool<br/>取均值"]
-    TP["TokenPooler<br/><sub>tokwise/poolers.py:48</sub>"]
+    TP["TokenPooler<br/><sub>tokwise/poolers.py</sub>"]
     All["AllPool<br/>返回所有 token 的 embed"]
-    Disp["DispatchPooler<br/>按 task 路由<br/><sub>special.py:25</sub>"]
-    ID["IdentityPooler<br/>原样返回 hidden<br/><sub>special.py:139</sub>"]
-    Filter["BOSEOSFilter<br/>过滤 BOS/EOS<br/><sub>special.py:151</sub>"]
-    Bge["BgeM3Pooler<br/>dense + sparse + col-bert<br/><sub>special.py:198</sub>"]
+    Disp["DispatchPooler<br/>按 task 路由<br/><sub>special.py</sub>"]
+    ID["IdentityPooler<br/>原样返回 hidden<br/><sub>special.py</sub>"]
+    Filter["BOSEOSFilter<br/>过滤 BOS/EOS<br/><sub>special.py</sub>"]
+    Bge["BgeM3Pooler<br/>dense + sparse + col-bert<br/><sub>special.py</sub>"]
 
     Root --> SP --> SPM
     SPM --> CLS
@@ -79,7 +96,10 @@ flowchart LR
     class CLS,Last,Mean,All,Disp,ID,Filter,Bge leaf;
 ```
 
-PoolerActivation（`activations.py:73`）后处理：
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerActivation"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerActivation](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L79)
+
+PoolerActivation（`activations.py`）后处理：
 
 - `PoolerIdentity`：原样输出
 - `PoolerNormalize`：L2 normalize（对 dot product / cosine 相似度必须做）
@@ -196,7 +216,10 @@ BGE-M3 输出 3 种表示：
 - Sparse（每 token 计算稀疏权重）
 - ColBERT（per-token embedding for late interaction）
 
-`BgeM3Pooler`（`special.py:198`）继承 Pooler，**一次 forward 输出三种结果**：
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
+`BgeM3Pooler`（`special.py`）继承 Pooler，**一次 forward 输出三种结果**：
 
 ```python
 class BgeM3Pooler(Pooler):
@@ -318,11 +341,33 @@ A: 主要看 prefill TFLOPs。短文本（128 token）+ BGE-large（~300M 参数
 
 ## Sources
 
-- `vllm/model_executor/layers/pooler/abstract.py:16`（Pooler）
-- `vllm/model_executor/layers/pooler/seqwise/methods.py:36,50,60`（CLS/Last/Mean）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/abstract.py","symbol":"Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/abstract.py · Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/abstract.py#L16)
+
+- `vllm/model_executor/layers/pooler/abstract.py`（Pooler）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"CLSPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · CLSPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L37)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"LastPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · LastPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L50)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"MeanPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · MeanPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L60)
+
+- `vllm/model_executor/layers/pooler/seqwise/methods.py`（CLS/Last/Mean）
 - `vllm/model_executor/layers/pooler/tokwise/methods.py`
-- `vllm/model_executor/layers/pooler/activations.py:73,102,112`
-- `vllm/model_executor/layers/pooler/special.py:25,198`（Dispatch / BgeM3）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerActivation"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerActivation](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L79)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerNormalize"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerNormalize](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L108)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerClassify"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerClassify](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L118)
+
+- `vllm/model_executor/layers/pooler/activations.py`
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"DispatchPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · DispatchPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L25)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
+- `vllm/model_executor/layers/pooler/special.py`（Dispatch / BgeM3）
 - `vllm/v1/pool/late_interaction.py`、`metadata.py`
 - `vllm/pooling_params.py`
 - `vllm/model_executor/models/bert.py`、`bge_m3.py`、`jina_embeddings_v3.py`

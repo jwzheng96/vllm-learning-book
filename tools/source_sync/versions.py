@@ -113,9 +113,9 @@ def gitlink_head(repo_root: Path, submodule: str = "vllm") -> str:
 def render_version_block(lock: SourceLock) -> str:
     return (
         f"{VERSION_START}\n"
-        f"Validated vLLM: `{lock.commit}`  \n"
-        f"Upstream committed: `{lock.committed_at}`  \n"
-        f"Validated: `{lock.validated_at}`\n"
+        f"- Validated vLLM: `{lock.commit}`\n"
+        f"- Upstream committed: `{lock.committed_at}`\n"
+        f"- Validated: `{lock.validated_at}`\n"
         f"{VERSION_END}"
     )
 
@@ -171,10 +171,14 @@ def validate_repository(
 
     source_root = repo_root / "vllm"
     source_ready = False
+    source_filenames = None
     actual_submodule = None
     try:
         actual_submodule = submodule_head(repo_root)
         source_ready = True
+        source_filenames = frozenset(
+            item.name for item in source_root.rglob("*") if item.is_file()
+        )
         if actual_submodule != lock.commit:
             errors.append(
                 "submodule HEAD does not match source lock: "
@@ -216,7 +220,11 @@ def validate_repository(
     for path in markdown_paths(repo_root):
         try:
             text = path.read_text(encoding="utf-8")
-            errors.extend(find_unmanaged_line_references(path, text))
+            errors.extend(
+                find_unmanaged_line_references(
+                    path, text, source_filenames=source_filenames
+                )
+            )
             references = scan_document(path, text)
             if source_ready:
                 for reference in references:

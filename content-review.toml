@@ -1,0 +1,601 @@
+# Semantic review ledger for the commit in source.lock.json.
+
+[[review]]
+path = "01-overview/00-prerequisites.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "01-overview/01-what-is-vllm.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "01-overview/02-architecture.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "01-overview/03-v0-vs-v1.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "01-overview/04-project-structure.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "01-overview/05-process-and-ipc-internals.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "02-core-concepts/01-paged-attention.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "02-core-concepts/02-continuous-batching.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "02-core-concepts/03-kv-cache-management.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "02-core-concepts/04-prefix-caching.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "02-core-concepts/05-chunked-prefill.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/01-entry-points.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/02-scheduler.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/02b-scheduling-policies.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/03-kv-cache-manager.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/04-model-runner.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/05-attention-backends.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/06-cuda-kernels.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "03-code-walkthrough/07-model-architectures.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "04-optimizations/01-quantization.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "04-optimizations/02-speculative-decoding.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "04-optimizations/03-cudagraph-and-compile.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "04-optimizations/04-compilation-internals.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "04-optimizations/05-roofline-and-arithmetic-intensity.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "05-distributed/01-tp-pp-ep.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "05-distributed/02-disaggregated.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "05-distributed/03-expert-parallel-deep-dive.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "05-distributed/04-context-parallel.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "05-distributed/05-large-scale-cluster-inference.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "06-interview/01-common-questions.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "06-interview/02-system-design.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "07-hands-on/01-setup.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "07-hands-on/02-trace-a-request.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "07-hands-on/03-mini-experiments.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "07-hands-on/04-profiling-and-debugging.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/01-deployment-architectures.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/02-smart-routing-and-load-balancing.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/03-gateway-and-service-mesh.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/04-autoscaling-and-capacity.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/05-slo-and-observability.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/06-reliability-and-failure-modes.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/07-incident-playbook.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/08-monitoring-cookbook.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/09-vllm-doctor-skill.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "08-production-deployment/10-gpu-utilization-and-tail-latency.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "09-advanced-features/01-sampling-and-logits.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "09-advanced-features/02-structured-output.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "09-advanced-features/03-multimodal.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "09-advanced-features/04-lora-serving.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []
+
+[[review]]
+path = "09-advanced-features/05-embedding-and-pooling.md"
+status = "pending"
+reviewed_commit = ""
+reviewed_at = ""
+source_contracts = false
+commands_checked = false
+metrics_checked = false
+diagrams_checked = false
+hardware_verified = []
+notes = []

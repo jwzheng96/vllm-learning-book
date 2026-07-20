@@ -79,7 +79,10 @@
 
 ### 1.6 Perf / Roofline 估算
 
-源码：`vllm/vllm/v1/metrics/perf.py:1265` 的 `PerfMetricsProm`。这些指标不是硬件计数器，而是 vLLM 按模型结构、scheduled token 和阶段估算的每 GPU FLOPs / bytes，用来近似算 MFU / MBU（见 [`10-gpu-utilization-and-tail-latency.md`](10-gpu-utilization-and-tail-latency.md)）。
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1548)
+
+源码：`vllm/v1/metrics/perf.py` 的 `PerfMetricsProm`。这些指标不是硬件计数器，而是 vLLM 按模型结构、scheduled token 和阶段估算的每 GPU FLOPs / bytes，用来近似算 MFU / MBU（见 [`10-gpu-utilization-and-tail-latency.md`](10-gpu-utilization-and-tail-latency.md)）。
 
 | Metric | 含义 |
 | --- | --- |

@@ -50,7 +50,12 @@ xgrammar 用 **C++ 写的状态机** + **预编译 token mask 表**，每步只�
 
 ## 3. 抽象接口
 
-`vllm/v1/structured_output/backend_types.py:31,99`：
+<!-- vllm-source: {"path":"vllm/v1/structured_output/backend_types.py","symbol":"StructuredOutputGrammar"} -->
+[源码锚点：vllm/v1/structured_output/backend_types.py · StructuredOutputGrammar](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/backend_types.py#L31)
+<!-- vllm-source: {"path":"vllm/v1/structured_output/backend_types.py","symbol":"StructuredOutputBackend"} -->
+[源码锚点：vllm/v1/structured_output/backend_types.py · StructuredOutputBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/backend_types.py#L99)
+
+`vllm/v1/structured_output/backend_types.py`：
 
 ```python
 class StructuredOutputGrammar(ABC):
@@ -86,7 +91,10 @@ class StructuredOutputBackend(ABC):
 
 ## 4. StructuredOutputManager：引擎级调度
 
-`vllm/v1/structured_output/__init__.py:35` 一个 EngineCore 一个。关键属性：
+<!-- vllm-source: {"path":"vllm/v1/structured_output/__init__.py","symbol":"StructuredOutputManager"} -->
+[源码锚点：vllm/v1/structured_output/__init__.py · StructuredOutputManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/__init__.py#L36)
+
+`vllm/v1/structured_output/__init__.py` 一个 EngineCore 一个。关键属性：
 
 ```python
 class StructuredOutputManager:
@@ -293,13 +301,33 @@ A: 标准 JSON Schema 全支持。但极端复杂的 lark grammar 偶有 corner 
 
 ## Sources
 
-- `vllm/v1/structured_output/__init__.py:35,114,203,301`
-- `vllm/v1/structured_output/backend_types.py:31,99`
+<!-- vllm-source: {"path":"vllm/v1/structured_output/__init__.py","symbol":"StructuredOutputManager"} -->
+[源码锚点：vllm/v1/structured_output/__init__.py · StructuredOutputManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/__init__.py#L36)
+<!-- vllm-source: {"path":"vllm/v1/structured_output/__init__.py","symbol":"StructuredOutputManager.grammar_init"} -->
+[源码锚点：vllm/v1/structured_output/__init__.py · StructuredOutputManager.grammar_init](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/__init__.py#L115)
+<!-- vllm-source: {"path":"vllm/v1/structured_output/__init__.py","symbol":"StructuredOutputManager.grammar_bitmask"} -->
+[源码锚点：vllm/v1/structured_output/__init__.py · StructuredOutputManager.grammar_bitmask](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/__init__.py#L204)
+<!-- vllm-source: {"path":"vllm/v1/structured_output/__init__.py","symbol":"StructuredOutputManager.should_fill_bitmask"} -->
+[源码锚点：vllm/v1/structured_output/__init__.py · StructuredOutputManager.should_fill_bitmask](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/__init__.py#L351)
+
+- `vllm/v1/structured_output/__init__.py`
+<!-- vllm-source: {"path":"vllm/v1/structured_output/backend_types.py","symbol":"StructuredOutputGrammar"} -->
+[源码锚点：vllm/v1/structured_output/backend_types.py · StructuredOutputGrammar](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/backend_types.py#L31)
+<!-- vllm-source: {"path":"vllm/v1/structured_output/backend_types.py","symbol":"StructuredOutputBackend"} -->
+[源码锚点：vllm/v1/structured_output/backend_types.py · StructuredOutputBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/structured_output/backend_types.py#L99)
+
+- `vllm/v1/structured_output/backend_types.py`
 - `vllm/v1/structured_output/backend_xgrammar.py`
 - `vllm/v1/structured_output/backend_guidance.py`
 - `vllm/v1/structured_output/request.py`
-- `vllm/sampling_params.py:41`（StructuredOutputsParams）
-- `vllm/v1/sample/sampler.py:360`（apply_logits_processors 入口）
+<!-- vllm-source: {"path":"vllm/sampling_params.py","symbol":"StructuredOutputsParams"} -->
+[源码锚点：vllm/sampling_params.py · StructuredOutputsParams](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/sampling_params.py#L72)
+
+- `vllm/sampling_params.py`（StructuredOutputsParams）
+<!-- vllm-source: {"path":"vllm/v1/sample/sampler.py","symbol":"Sampler.apply_logits_processors"} -->
+[源码锚点：vllm/v1/sample/sampler.py · Sampler.apply_logits_processors](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/sample/sampler.py#L371)
+
+- `vllm/v1/sample/sampler.py`（apply_logits_processors 入口）
 - `vllm/tool_parsers/`、`vllm/reasoning/`
 
 ---

@@ -74,7 +74,10 @@ vllm/lora/
 
 ## 4. LoRAModelManager：核心数据结构
 
-`vllm/lora/model_manager.py:64`，关键属性：
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L71)
+
+`vllm/lora/model_manager.py`，关键属性：
 
 ```python
 class LoRAModelManager:
@@ -127,7 +130,10 @@ ModelRunner 在每步 forward 前调这个。
 
 ## 5. LRUCacheLoRAModelManager：自动换入换出
 
-`model_manager.py:946`：
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LRUCacheLoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LRUCacheLoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L1176)
+
+`model_manager.py`：
 
 ```python
 class LRUCacheLoRAModelManager(LoRAModelManager):
@@ -144,7 +150,10 @@ class LRUCacheLoRAModelManager(LoRAModelManager):
 
 ## 6. PunicaWrapper：批量 LoRA matmul
 
-`vllm/lora/punica_wrapper/punica_base.py:124` 抽象：
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L124)
+
+`vllm/lora/punica_wrapper/punica_base.py` 抽象：
 
 ```python
 class PunicaWrapperBase:
@@ -328,8 +337,24 @@ A: block_hash 的 extra_keys 含 LoRA adapter id。同一段 prompt 用不同 Lo
 
 ## Sources
 
-- `vllm/lora/model_manager.py:64,266,325,946` (LoRAModelManager / LRUCacheLoRAModelManager)
-- `vllm/lora/punica_wrapper/punica_base.py:22,124,168` (interface)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L71)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager.activate_adapter"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager.activate_adapter](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L301)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager._set_adapter_mapping"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager._set_adapter_mapping](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L360)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LRUCacheLoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LRUCacheLoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L1176)
+
+- `vllm/lora/model_manager.py` (LoRAModelManager / LRUCacheLoRAModelManager)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperABC"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperABC](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L22)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L124)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase._update_base_metadata"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase._update_base_metadata](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L168)
+
+- `vllm/lora/punica_wrapper/punica_base.py` (interface)
 - `vllm/lora/punica_wrapper/punica_gpu.py`
 - `vllm/lora/layers/{column_parallel_linear,row_parallel_linear,fused_moe,logits_processor}.py`
 - `vllm/lora/worker_manager.py`

@@ -1,0 +1,401 @@
+# Every field is an explicit source-review contract.
+
+[[chapter]]
+path = "01-overview/00-prerequisites.md"
+title = "00. 前置知识：进入 vLLM 之前要懂的概念"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/**"]
+
+[[chapter]]
+path = "01-overview/01-what-is-vllm.md"
+title = "01. vLLM 是什么？为什么快？"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "01-overview/02-architecture.md"
+title = "02. vLLM 整体架构"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/**", "vllm/entrypoints/openai/**", "vllm/model_executor/**", "vllm/model_executor/models/**", "vllm/v1/core/**", "vllm/v1/core/sched/**", "vllm/v1/engine/**", "vllm/v1/executor/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "01-overview/03-v0-vs-v1.md"
+title = "03. V0 → V1：vLLM 的架构重构"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/core/**", "vllm/engine/**", "vllm/v1/attention/**", "vllm/v1/core/**", "vllm/v1/core/sched/**", "vllm/v1/engine/**", "vllm/v1/worker/**", "vllm/worker/**"]
+
+[[chapter]]
+path = "01-overview/04-project-structure.md"
+title = "04. vLLM 项目文件架构地图"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/attention/**", "csrc/moe/**", "csrc/quantization/**", "vllm/compilation/**", "vllm/config/**", "vllm/distributed/**", "vllm/distributed/device_communicators/**", "vllm/engine/**", "vllm/entrypoints/**", "vllm/entrypoints/openai/**", "vllm/lora/**", "vllm/model_executor/**", "vllm/model_executor/layers/quantization/**", "vllm/model_executor/models/**", "vllm/multimodal/**", "vllm/platforms/**", "vllm/profiler/**", "vllm/reasoning/**", "vllm/tool_parsers/**", "vllm/utils/**", "vllm/v1/attention/**", "vllm/v1/core/**", "vllm/v1/core/sched/**", "vllm/v1/engine/**", "vllm/v1/executor/**", "vllm/v1/kv_offload/**"]
+
+[[chapter]]
+path = "01-overview/05-process-and-ipc-internals.md"
+title = "05. 进程模型与进程间通信内部机制"
+level = "beginner"
+tracks = ["quickstart", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/distributed/**", "vllm/distributed/device_communicators/**", "vllm/entrypoints/**", "vllm/utils/**", "vllm/v1/engine/**", "vllm/v1/executor/**"]
+
+[[chapter]]
+path = "02-core-concepts/01-paged-attention.md"
+title = "01. PagedAttention 详解"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/attention/**", "vllm/v1/attention/**", "vllm/v1/core/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "02-core-concepts/02-continuous-batching.md"
+title = "02. Continuous Batching（连续批处理）"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/sched/**", "vllm/v1/engine/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "02-core-concepts/03-kv-cache-management.md"
+title = "03. KV Cache 管理深入"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "02-core-concepts/04-prefix-caching.md"
+title = "04. Prefix Caching 专题"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/distributed/kv_transfer/**", "vllm/utils/**", "vllm/v1/core/**", "vllm/v1/kv_offload/**"]
+
+[[chapter]]
+path = "02-core-concepts/05-chunked-prefill.md"
+title = "05. Chunked Prefill"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/attention/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/01-entry-points.md"
+title = "01. 入口与引擎主循环"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/**", "vllm/entrypoints/openai/**", "vllm/model_executor/**", "vllm/model_executor/models/**", "vllm/v1/attention/**", "vllm/v1/core/**", "vllm/v1/core/sched/**", "vllm/v1/engine/**", "vllm/v1/executor/**", "vllm/v1/metrics/**", "vllm/v1/sample/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/02-scheduler.md"
+title = "02. Scheduler 深读"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/sched/**", "vllm/v1/engine/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/02b-scheduling-policies.md"
+title = "02b. 调度策略：FCFS vs PRIORITY、优先级反演与抢占代价"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/03-kv-cache-manager.md"
+title = "03. KVCacheManager 与 BlockPool 源码深读"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/04-model-runner.md"
+title = "04. GPUModelRunner 源码深读"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/model_executor/models/**", "vllm/platforms/**", "vllm/v1/attention/**", "vllm/v1/sample/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/05-attention-backends.md"
+title = "05. Attention Backends 源码深读"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/attention/**", "vllm/v1/attention/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/06-cuda-kernels.md"
+title = "06. CUDA Kernels：从 paged_attention 到自定义算子"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/**", "csrc/attention/**", "csrc/quantization/**", "vllm/v1/attention/**"]
+
+[[chapter]]
+path = "03-code-walkthrough/07-model-architectures.md"
+title = "07. 模型架构特异：MLA / Mamba / MoE 在 vLLM 源码层"
+level = "intermediate"
+tracks = ["internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/attention/**", "csrc/moe/**", "vllm/distributed/eplb/**", "vllm/lora/**", "vllm/model_executor/**", "vllm/model_executor/layers/fused_moe/**", "vllm/model_executor/models/**", "vllm/v1/attention/**", "vllm/v1/core/**"]
+
+[[chapter]]
+path = "04-optimizations/01-quantization.md"
+title = "01. 量化（Quantization）"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["csrc/quantization/**", "vllm/model_executor/layers/quantization/**"]
+
+[[chapter]]
+path = "04-optimizations/02-speculative-decoding.md"
+title = "02. Speculative Decoding（投机解码）"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/v1/core/**", "vllm/v1/core/sched/**", "vllm/v1/sample/**", "vllm/v1/spec_decode/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "04-optimizations/03-cudagraph-and-compile.md"
+title = "03. CUDA Graph 与 torch.compile"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/compilation/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "04-optimizations/04-compilation-internals.md"
+title = "04. Compilation Internals：CompilerManager / VllmBackend / 自定义 pass"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/compilation/**", "vllm/config/**"]
+
+[[chapter]]
+path = "04-optimizations/05-roofline-and-arithmetic-intensity.md"
+title = "05. 性能模型：存算比、Roofline，以及 Prefill / Decode 的本质差异"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/compilation/**", "vllm/v1/spec_decode/**", "vllm/model_executor/layers/quantization/**"]
+
+[[chapter]]
+path = "05-distributed/01-tp-pp-ep.md"
+title = "01. 分布式推理：TP / PP / EP / DP"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/compilation/**", "vllm/distributed/**", "vllm/distributed/device_communicators/**", "vllm/distributed/eplb/**", "vllm/model_executor/**", "vllm/v1/engine/**", "vllm/v1/executor/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "05-distributed/02-disaggregated.md"
+title = "02. Disaggregated Prefill / Decode"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/distributed/kv_transfer/**", "vllm/v1/kv_offload/**"]
+
+[[chapter]]
+path = "05-distributed/03-expert-parallel-deep-dive.md"
+title = "03. Expert Parallel 深度：AllToAll、6 个后端、负载均衡"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/distributed/device_communicators/**", "vllm/model_executor/layers/fused_moe/**"]
+
+[[chapter]]
+path = "05-distributed/04-context-parallel.md"
+title = "04. Context Parallel：PCP / DCP 与长上下文切分"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/config/**", "vllm/v1/attention/**", "vllm/v1/core/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "05-distributed/05-large-scale-cluster-inference.md"
+title = "05. 千卡 / 万卡集群推理：规模化才暴露的工程问题"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/distributed/device_communicators/**", "vllm/distributed/eplb/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "06-interview/01-common-questions.md"
+title = "vLLM 工程问答速查"
+level = "intermediate"
+tracks = ["interview"]
+environments = ["no-gpu"]
+source_areas = ["csrc/attention/**", "vllm/distributed/**", "vllm/distributed/eplb/**", "vllm/model_executor/**", "vllm/v1/attention/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "06-interview/02-system-design.md"
+title = "LLM 推理服务设计：工程推演"
+level = "intermediate"
+tracks = ["interview"]
+environments = ["no-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/v1/core/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "07-hands-on/01-setup.md"
+title = "01. 环境搭建与第一个 Demo"
+level = "intermediate"
+tracks = ["quickstart", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/**", "vllm/entrypoints/openai/**", "vllm/model_executor/**", "vllm/model_executor/models/**", "vllm/v1/core/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "07-hands-on/02-trace-a-request.md"
+title = "02. Trace 一个请求：把内部跑明白"
+level = "intermediate"
+tracks = ["quickstart", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "07-hands-on/03-mini-experiments.md"
+title = "03. 5 个 Mini 实验：把直觉变成数字"
+level = "intermediate"
+tracks = ["quickstart", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "07-hands-on/04-profiling-and-debugging.md"
+title = "04. Profiling 与调试：怎么定位 vLLM 性能 / 正确性问题"
+level = "intermediate"
+tracks = ["quickstart", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/profiler/**"]
+
+[[chapter]]
+path = "08-production-deployment/01-deployment-architectures.md"
+title = "01. 大规模 vLLM 部署参考架构（2026 视角）"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/entrypoints/**", "vllm/v1/engine/**"]
+
+[[chapter]]
+path = "08-production-deployment/02-smart-routing-and-load-balancing.md"
+title = "02. 请求调度与负载均衡：LLM 专属的\"智能路由\""
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/03-gateway-and-service-mesh.md"
+title = "03. API 网关与 Service Mesh：让 LLM 流量\"可治理\""
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/entrypoints/openai/**"]
+
+[[chapter]]
+path = "08-production-deployment/04-autoscaling-and-capacity.md"
+title = "04. 自动扩缩与容量规划"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/05-slo-and-observability.md"
+title = "05. SLO 与可观测性：怎么\"知道你的 LLM 服务好不好\""
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/06-reliability-and-failure-modes.md"
+title = "06. 稳定性：LLM 推理的失效模式与防护"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/distributed/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "08-production-deployment/07-incident-playbook.md"
+title = "07. 真实故障 Runbook：8 个生产案例"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/v1/core/sched/**", "vllm/v1/engine/**"]
+
+[[chapter]]
+path = "08-production-deployment/08-monitoring-cookbook.md"
+title = "08. 监控菜谱：可直接复制的 Prometheus 规则、PromQL、Dashboard 面板"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/09-vllm-doctor-skill.md"
+title = "09. 把 playbook 编成 agent：vllm-doctor skill"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/v1/engine/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/10-gpu-utilization-and-tail-latency.md"
+title = "10. 全链路性能诊断：GPU 为什么打不满、利用率上不去、长尾怎么治"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/config/**", "vllm/v1/core/sched/**", "vllm/v1/metrics/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "09-advanced-features/01-sampling-and-logits.md"
+title = "01. Sampling 全栈：从 logits 到 token"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["csrc/**", "vllm/v1/sample/**"]
+
+[[chapter]]
+path = "09-advanced-features/02-structured-output.md"
+title = "02. Structured Output：JSON / Regex / Grammar 约束生成"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/reasoning/**", "vllm/tool_parsers/**", "vllm/v1/core/sched/**", "vllm/v1/sample/**", "vllm/v1/structured_output/**"]
+
+[[chapter]]
+path = "09-advanced-features/03-multimodal.md"
+title = "03. Multimodal：图像 / 视频 / 音频 一路打通"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/model_executor/models/**", "vllm/multimodal/**", "vllm/v1/core/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "09-advanced-features/04-lora-serving.md"
+title = "04. LoRA Serving：一个 base model 服务多个微调版本"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/lora/**", "vllm/model_executor/**"]
+
+[[chapter]]
+path = "09-advanced-features/05-embedding-and-pooling.md"
+title = "05. Embedding / Pooling 模型：vLLM 不只能做生成"
+level = "advanced"
+tracks = ["internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/model_executor/layers/pooler/**", "vllm/model_executor/models/**", "vllm/v1/pool/**", "vllm/v1/worker/**"]

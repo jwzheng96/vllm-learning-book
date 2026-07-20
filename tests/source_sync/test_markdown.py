@@ -112,6 +112,18 @@ class MarkdownContractTests(unittest.TestCase):
             (f"{self.chapter_path}:2: vllm/example.py:8",),
         )
 
+    def test_reports_bare_name_only_when_it_exists_in_source_tree(self):
+        text = "example.py:8\ntrace.py:8\n"
+        errors = find_unmanaged_line_references(
+            self.chapter_path,
+            text,
+            source_filenames=frozenset({"example.py"}),
+        )
+        self.assertEqual(
+            errors,
+            (f"{self.chapter_path}:1: example.py:8",),
+        )
+
     def test_managed_link_is_not_reported_as_legacy(self):
         refreshed = refresh_document(
             self.chapter_path, self.original, self.source_root, self.lock

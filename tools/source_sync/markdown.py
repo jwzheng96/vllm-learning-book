@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from .models import MarkdownReference, SourceDirective, SourceLock
 from .resolver import resolve_reference
@@ -18,6 +18,12 @@ LEGACY_LINE_RE = re.compile(
     r"(?<![A-Za-z0-9_])"
     r"(?:vllm/|csrc/)"
     r"[A-Za-z0-9_./{}*-]+"
+    r":\d+(?:[-,]\s*\d+)*"
+)
+BARE_LINE_RE = re.compile(
+    r"(?<![A-Za-z0-9_./])"
+    r"(?P<path>(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\."
+    r"(?:py|cu|cuh|cpp|cc|h|hpp))"
     r":\d+(?:[-,]\s*\d+)*"
 )
 
@@ -134,9 +140,25 @@ def refresh_document(
     return refreshed
 
 
-def find_unmanaged_line_references(path: Path, text: str) -> Tuple[str, ...]:
+def find_unmanaged_line_references(
+    path: Path,
+    text: str,
+    source_filenames: Optional[FrozenSet[str]] = None,
+) -> Tuple[str, ...]:
+    matches = list(LEGACY_LINE_RE.finditer(text))
+    occupied = [(match.start(), match.end()) for match in matches]
+    if source_filenames is not None:
+        for match in BARE_LINE_RE.finditer(text):
+            if any(
+                match.start() < end and match.end() > start
+                for start, end in occupied
+            ):
+                continue
+            if PurePosixPath(match.group("path")).name in source_filenames:
+                matches.append(match)
+
     errors = []
-    for match in LEGACY_LINE_RE.finditer(text):
+    for match in sorted(matches, key=lambda item: item.start()):
         line_number = text.count("\n", 0, match.start()) + 1
         errors.append(f"{path}:{line_number}: {match.group(0)}")
     return tuple(errors)

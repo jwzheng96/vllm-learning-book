@@ -29,7 +29,10 @@ CP 的思路：**把 seq 维度切到多卡**，每卡只持有 seq_len/cp_size 
 
 ## 2. vLLM 的两个 CP：PCP 和 DCP
 
-vLLM 把 CP 分成了两个独立的并行维度，源码：`vllm/config/parallel.py:115, 310`。
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L117)
+
+vLLM 把 CP 分成了两个独立的并行维度，源码：`vllm/config/parallel.py`。
 
 | 维度 | 字段 | 作用 | 是否增加 GPU |
 | --- | --- | --- | --- |
@@ -74,13 +77,21 @@ flowchart LR
 
 DCP-2 时：原 TP-8 的 head 0 那张卡，**变成 2 张卡**，每张持有一半 seq。Attention 完成后通过通信合并。
 
-**约束**：`tp_size % dcp_size == 0`（`parallel.py:474-477`）。常用：TP-8 + DCP-2 或 TP-8 + DCP-4。
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig._validate_parallel_config"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig._validate_parallel_config](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L440)
+
+**约束**：`tp_size % dcp_size == 0`（`parallel.py`）。常用：TP-8 + DCP-2 或 TP-8 + DCP-4。
 
 ---
 
 ## 4. DCP 的通信后端：`ag_rs` vs `a2a`
 
-源码：`parallel.py:323-329` 的 `dcp_comm_backend` 配置：
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig","anchor":"\"\"\"Communication backend for Decode Context Parallel (DCP)."} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L353)
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L117)
+
+源码：`parallel.py` 的 `dcp_comm_backend` 配置：
 
 | Backend | 通信模式 | 每层 NCCL 调用数 | 适用 |
 | --- | --- | --- | --- |
@@ -91,8 +102,13 @@ DCP-2 时：原 TP-8 的 head 0 那张卡，**变成 2 张卡**，每张持有�
 
 **注意约束**：`a2a` 需 `dcp_size > 1`（line 480-482），否则报错。
 
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig._validate_parallel_config","anchor":"if self.dcp_comm_backend == \"a2a\" and self.decode_context_parallel_size <= 1:"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig._validate_parallel_config](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L522)
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig._validate_parallel_config","anchor":"\"dcp_comm_backend='a2a' requires decode_context_parallel_size > 1.\""} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig._validate_parallel_config](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L524)
+
 ```python
-# parallel.py:480-482
+# parallel.py
 if self.dcp_comm_backend == "a2a" and self.decode_context_parallel_size <= 1:
     raise ValueError(
         "dcp_comm_backend='a2a' requires decode_context_parallel_size > 1."
@@ -105,7 +121,10 @@ if self.dcp_comm_backend == "a2a" and self.decode_context_parallel_size <= 1:
 
 DCP / PCP 把 KV 切到多卡后，要决定**怎么按 seq 切**：
 
-源码：`cp_kv_cache_interleave_size`（`parallel.py:335`）：
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L117)
+
+源码：`cp_kv_cache_interleave_size`（`parallel.py`）：
 
 ```
 total_cp_rank = pcp_rank * dcp_world_size + dcp_rank
@@ -178,12 +197,17 @@ flowchart TD
 
 **关键约束总结：**
 
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"resolve_kv_cache_block_sizes","anchor":"raise ValueError("} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · resolve_kv_cache_block_sizes](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L683)
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"resolve_kv_cache_block_sizes"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · resolve_kv_cache_block_sizes](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L626)
+
 | 关系 | 约束 |
 | --- | --- |
 | world_size | `tp × pp × dp × pcp` |
 | ep_size | `tp × dp × pcp`（EP 启用时） |
 | DCP | `tp % dcp == 0`，不影响 world_size |
-| 混合 KV cache（Mamba + attention） | 当前**不支持 CP**（`kv_cache_utils.py:599-602` 报错） |
+| 混合 KV cache（Mamba + attention） | 当前**不支持 CP**（`kv_cache_utils.py` 报错） |
 
 ---
 
@@ -334,7 +358,15 @@ TP-8 + DCP-2：
 
 ## 下一步
 
-- 想看源码：`vllm/config/parallel.py:115,310,323,335`（CP 配置）、`vllm/v1/worker/cp_utils.py`（CP 工具函数）、`vllm/v1/attention/backends/`（attention 后端怎么消费 CP metadata）。
-- 想理解 KV cache 在 CP 下怎么寻址：`vllm/v1/core/kv_cache_utils.py:571` (`resolve_kv_cache_block_sizes`)。
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig"} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L117)
+<!-- vllm-source: {"path":"vllm/config/parallel.py","symbol":"ParallelConfig","anchor":"\"\"\"Communication backend for Decode Context Parallel (DCP)."} -->
+[源码锚点：vllm/config/parallel.py · ParallelConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/parallel.py#L353)
+
+- 想看源码：`vllm/config/parallel.py`（CP 配置）、`vllm/v1/worker/cp_utils.py`（CP 工具函数）、`vllm/v1/attention/backends/`（attention 后端怎么消费 CP metadata）。
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"resolve_kv_cache_block_sizes"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · resolve_kv_cache_block_sizes](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L626)
+
+- 想理解 KV cache 在 CP 下怎么寻址：`vllm/v1/core/kv_cache_utils.py` (`resolve_kv_cache_block_sizes`)。
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（长上下文容量算法）。
 - 想看 Ring Attention 论文（PCP 的理论基础）：Liu et al., 2023, *Ring Attention with Blockwise Transformers*。
