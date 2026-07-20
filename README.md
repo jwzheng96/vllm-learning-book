@@ -3,16 +3,20 @@
 <!-- vllm-version:start -->
 - Validated vLLM: `b23bd73f540175f9e117eaee5029cd7d8df63964`
 - Upstream committed: `2026-07-20T15:32:54+00:00`
-- Validated: `2026-07-20T17:43:08Z`
+- Validated: `2026-07-20T17:53:34Z`
+- Latest candidate: `b23bd73f540175f9e117eaee5029cd7d8df63964`
+- Candidate lag: `2268` commits
+- Impact report: [artifacts/source-sync/latest-impact.md](artifacts/source-sync/latest-impact.md)
 <!-- vllm-version:end -->
 
 [![Pages](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml)
+[![Upstream sync](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/sync-upstream.yml)
 [![Site](https://img.shields.io/badge/site-jwzheng96.github.io%2Fvllm--learning--book-8b1538)](https://jwzheng96.github.io/vllm-learning-book/)
-[![vLLM](https://img.shields.io/badge/vllm-27b85d2_(2026--05--15)-1a4d80)](https://github.com/vllm-project/vllm/tree/27b85d2084c48f9b12f8cfd6638a56fe9b257635)
+[![vLLM](https://img.shields.io/badge/vllm-b23bd73_(2026--07--20)-1a4d80)](https://github.com/vllm-project/vllm/tree/b23bd73f540175f9e117eaee5029cd7d8df63964)
 
 > 一份写给大模型推理工程入门者的源码教程。
-> **49 章 · 21K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
-> 每章都对照 vLLM 源码（`file_path:line_number`），可以"读笔记 ↔ 跳源码"无缝切换。
+> **50 章 · 21K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
+> 每章都用可刷新语义锚点对照锁定 commit 的 vLLM 源码，可以“读笔记 ↔ 跳源码”无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**
 
@@ -38,9 +42,11 @@
 | 方式 | 入口 | 适合 |
 | --- | --- | --- |
 | **Markdown 直接读** | 本 README.md → 按章节文件名跳转 | IDE 内阅读、对照源码、想在 GitHub 上读 |
-| **HTML 在线版** | `python3 build_html.py` 后开 `vllm-learning-html/index.html` | 想要侧栏 + 全文搜索 + Mermaid 渲染 + 暗色主题 + 阅读时间提示 |
+| **HTML 在线版** | `python3 build_html.py` 后开 `_site/index.html` | 想要侧栏 + 全文搜索 + Mermaid 渲染 + 暗色主题 + 阅读时间提示 |
 
 所有跨章链接、内嵌 Mermaid、代码块都在两种模式下都能用。HTML 版额外有 lunr.js 全文搜索和阅读时间估算。
+
+源码版本、语义锚点、影响报告和人工复核的完整流程见 [`docs/source-sync.md`](docs/source-sync.md)。每周工作流只创建候选 PR，不会自动合并或发布；红色 Upstream sync badge 表示候选尚未通过全部门禁。
 
 **每章统一的结构：**
 
@@ -90,7 +96,7 @@ flowchart LR
 | 零基础 | 先读 [`01-overview/00-prerequisites.md`](01-overview/00-prerequisites.md)（前置概念）再走任何一条路径 |
 | 1 天（~5h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-architecture`](01-overview/02-architecture.md) → [`01-paged-attention`](02-core-concepts/01-paged-attention.md) → [`工程问答速查`](06-interview/01-common-questions.md) |
 | 1 周（~15h） | 精读 `01-overview/` + `02-core-concepts/`，跑通 `vllm` repo 的 `examples/offline_inference/basic.py` |
-| 3-4 周（~35h） | 顺序读 01 → 09，每章配合源码对照（每章都标 `file_path:line_number`） |
+| 3-4 周（~35h） | 顺序读 01 → 09，每章配合锁定 commit 的语义源码锚点对照 |
 | 核心机制快读（~8h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-core-concepts/`](02-core-concepts/) 全部 → [`06-interview/`](06-interview/) 两篇工程问答 |
 | 生产部署快读（~10h） | [`01-overview/02-architecture`](01-overview/02-architecture.md) → [`08-production-deployment/`](08-production-deployment/) 全部 |
 

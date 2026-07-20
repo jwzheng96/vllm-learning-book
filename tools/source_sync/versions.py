@@ -5,7 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .inventory import discover_chapters, validate_inventory
 from .markdown import (
@@ -110,19 +110,44 @@ def gitlink_head(repo_root: Path, submodule: str = "vllm") -> str:
     return commit
 
 
-def render_version_block(lock: SourceLock) -> str:
-    return (
-        f"{VERSION_START}\n"
-        f"- Validated vLLM: `{lock.commit}`\n"
-        f"- Upstream committed: `{lock.committed_at}`\n"
-        f"- Validated: `{lock.validated_at}`\n"
-        f"{VERSION_END}"
-    )
+def render_version_block(
+    lock: SourceLock,
+    *,
+    candidate: str = "",
+    lag_commits: Optional[int] = None,
+    impact_report: str = "",
+) -> str:
+    lines = [
+        VERSION_START,
+        f"- Validated vLLM: `{lock.commit}`",
+        f"- Upstream committed: `{lock.committed_at}`",
+        f"- Validated: `{lock.validated_at}`",
+    ]
+    if candidate:
+        lines.append(f"- Latest candidate: `{candidate}`")
+    if lag_commits is not None:
+        lines.append(f"- Candidate lag: `{lag_commits}` commits")
+    if impact_report:
+        lines.append(f"- Impact report: [{impact_report}]({impact_report})")
+    lines.append(VERSION_END)
+    return "\n".join(lines)
 
 
-def refresh_readme_version(path: Path, lock: SourceLock) -> None:
+def refresh_readme_version(
+    path: Path,
+    lock: SourceLock,
+    *,
+    candidate: str = "",
+    lag_commits: Optional[int] = None,
+    impact_report: str = "",
+) -> None:
     text = path.read_text(encoding="utf-8")
-    block = render_version_block(lock)
+    block = render_version_block(
+        lock,
+        candidate=candidate,
+        lag_commits=lag_commits,
+        impact_report=impact_report,
+    )
     start = text.find(VERSION_START)
     end = text.find(VERSION_END)
     if start >= 0 or end >= 0:

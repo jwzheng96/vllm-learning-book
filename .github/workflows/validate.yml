@@ -1,0 +1,66 @@
+name: Validate tutorial
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install documentation dependencies
+        run: python -m pip install -r requirements-docs.txt
+
+      - name: Run source-sync unit tests
+        run: python3 -m unittest discover -s tests/source_sync -v
+
+  contracts-and-build:
+    name: Source contracts and HTML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install documentation dependencies
+        run: python -m pip install -r requirements-docs.txt
+
+      - name: Validate committed source contracts
+        run: >-
+          python3 -m tools.source_sync validate
+          --profile contracts --require-committed
+
+      - name: Build HTML
+        env:
+          VLLM_LEARNING_DST: ${{ runner.temp }}/vllm-learning-site
+        run: python3 build_html.py
+
+      - name: Upload rendered site
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-site
+          path: ${{ runner.temp }}/vllm-learning-site
+          if-no-files-found: warn

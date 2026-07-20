@@ -17,7 +17,7 @@
 
 ```bash
 # Python 依赖
-python3 -m pip install --user markdown pygments
+python3 -m pip install --user -r requirements-docs.txt
 
 # PDF / EPUB 工具链（可选；CI 不构建）
 # macOS
@@ -90,7 +90,9 @@ git push -u origin main
 # 4. 推完几分钟后访问 https://yourname.github.io/vllm-learning-book/
 ```
 
-每次 `git push` 自动：① CI 跑 `build_html.py` 生成 `_site/` ② 上传到 Pages artifact ③ 部署到 Pages。**你永远只 commit markdown，HTML 从不进 git**。
+每次 `git push` 自动：① 初始化锁定的 vLLM 子模块 ② 跑 source-sync 单测和 committed contracts ③ 构建 `_site/` ④ 上传并部署。任一源码契约失败都不会发布。**你永远只 commit Markdown 和契约元数据，HTML 从不进 git**。
+
+上游版本刷新、语义源码锚点、影响报告和人工 review 的操作见 [`docs/source-sync.md`](docs/source-sync.md)。每周 `sync-upstream.yml` 只维护一个候选 PR，不会自动合并或部署。
 
 ### 方案 B · 手动推 gh-pages 分支（备用）
 
@@ -109,14 +111,16 @@ python3 build_html.py
 ```
 vllm-learning-book/             ← GitHub 仓库根
 ├── README.md                   ← 书的首页（hermes 风格 hero）
-├── 01-overview/ ... 09-advanced-features/   ← 46 章源 markdown
+├── 01-overview/ ... 09-advanced-features/   ← 50 章源 Markdown
 ├── build_html.py               ← HTML 构建脚本
 ├── build_pdf_epub.py           ← PDF + EPUB 构建脚本
 ├── deploy_gh_pages.sh          ← 手动 gh-pages 部署（备用）
 ├── DEPLOY.md                   ← 本文件
 ├── .gitignore                  ← 忽略 _site/ 等构建产物
 ├── .github/workflows/
-│   └── pages.yml               ← Actions 自动构建 + 部署
+│   ├── validate.yml            ← PR 单测、契约与 HTML 构建
+│   ├── sync-upstream.yml       ← 每周/手动生成上游候选 PR
+│   └── pages.yml               ← 门禁通过后构建 + 部署
 ├── _site/                      ← 🚫 构建产物，gitignored
 │   ├── index.html
 │   ├── style.css

@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from .impact import build_impact, render_impact_markdown
 from .models import FULL_SHA_RE, SourceLock
@@ -21,6 +21,19 @@ from .versions import (
 
 OFFICIAL_REPOSITORY = "https://github.com/vllm-project/vllm"
 OFFICIAL_BRANCH = "main"
+
+
+def _impact_commits(path: Path) -> Optional[Tuple[str, str]]:
+    baseline = ""
+    candidate = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("- Baseline: `") and line.endswith("`"):
+            baseline = line[len("- Baseline: `") : -1]
+        elif line.startswith("- Candidate: `") and line.endswith("`"):
+            candidate = line[len("- Candidate: `") : -1]
+    if FULL_SHA_RE.fullmatch(baseline) and FULL_SHA_RE.fullmatch(candidate):
+        return baseline, candidate
+    return None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -71,6 +84,9 @@ def _refresh(
     if not FULL_SHA_RE.fullmatch(candidate_sha):
         print("ERROR: candidate SHA must be 40 lowercase hexadecimal characters")
         return 1
+    if report is not None and not report.exists():
+        print(f"ERROR: requested impact report does not exist: {report}")
+        return 1
     try:
         actual = submodule_head(repo_root)
         if actual != candidate_sha:
@@ -93,16 +109,44 @@ def _refresh(
             validated_at=validated_at,
         )
         write_source_lock(repo_root / "source.lock.json", lock)
-        refresh_readme_version(repo_root / "README.md", lock)
+        impact_candidate = ""
+        impact_lag = None
+        impact_path = ""
+        if report is not None:
+            commits = _impact_commits(report)
+            if commits is not None:
+                baseline, impact_candidate = commits
+                if impact_candidate != candidate_sha:
+                    raise ValueError(
+                        "impact report candidate does not match refresh candidate"
+                    )
+                impact_lag = int(
+                    run_git(
+                        repo_root / "vllm",
+                        "rev-list",
+                        "--count",
+                        f"{baseline}..{impact_candidate}",
+                    )
+                )
+                try:
+                    impact_path = report.resolve().relative_to(
+                        repo_root.resolve()
+                    ).as_posix()
+                except ValueError:
+                    impact_path = str(report)
+        refresh_readme_version(
+            repo_root / "README.md",
+            lock,
+            candidate=impact_candidate,
+            lag_commits=impact_lag,
+            impact_report=impact_path,
+        )
         refresh_markdown(repo_root, lock)
         errors = validate_repository(repo_root, profile="contracts")
     except (OSError, UnicodeError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 1
 
-    if report is not None and not report.exists():
-        print(f"ERROR: requested impact report does not exist: {report}")
-        return 1
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

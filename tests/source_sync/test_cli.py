@@ -80,6 +80,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("committed gitlink does not match", output)
 
+    def test_refresh_renders_candidate_lag_from_impact_report(self):
+        submodule = self.repo / "vllm"
+        (submodule / "new.py").write_text("value = 1\n")
+        git(submodule, "add", "new.py")
+        git(submodule, "commit", "-m", "new source")
+        candidate = git(submodule, "rev-parse", "HEAD")
+        report = self.repo / "impact.md"
+        report.write_text(
+            "# vLLM Upstream Impact Report\n\n"
+            "## Summary\n\n"
+            f"- Baseline: `{self.source_sha}`\n"
+            f"- Candidate: `{candidate}`\n",
+            encoding="utf-8",
+        )
+
+        cli_status, _ = self.run_cli(
+            "refresh",
+            "--candidate-sha",
+            candidate,
+            "--validated-at",
+            VALIDATED_AT,
+            "--report",
+            str(report),
+        )
+
+        self.assertEqual(cli_status, 0)
+        readme = (self.repo / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"Latest candidate: `{candidate}`", readme)
+        self.assertIn("Candidate lag: `1` commit", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
