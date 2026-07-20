@@ -12,6 +12,8 @@
 > 3. 解释 Marlin 为什么能让 INT4 W × FP16 A 比反量化路径快 3-4×
 > 4. 根据硬件（H100 / A100 / 4090 / MI300）选出合适的量化组合并写出 vLLM 启动命令
 
+> **当前源码复核（`b23bd73`）：** quantization 名称只是 checkpoint/config 与 kernel 路径的入口；是否支持还取决于 GPU 架构、模型层、group size、dtype、TP 切分、attention/compile 组合。硬件表是候选矩阵，不是绝对推荐；质量、吞吐、TTFT/TPOT、显存和回滚必须在同一 workload 下测量。
+
 把权重 / 激活 / KV 从 FP16/BF16 压到 FP8/INT8/INT4，换显存、换带宽、换吞吐。代价是少量精度损失。
 
 ---
@@ -175,6 +177,10 @@ A: 反量化开销 > 算力节省时（小 batch、prefill 阶段 compute-bound�
 
 ---
 
+## 单变量实验：量化决策记录
+
+固定 model/revision、数据集、输入/输出长度分布、并发、seed、服务参数与硬件，只改变 quantization/KV dtype。记录：质量基线（perplexity 或任务准确率）、TTFT/TPOT/吞吐、峰值显存、启动时间、backend 日志和错误率。预先写回滚线，例如“准确率下降 >1 个百分点或 p99 TPOT 退化 >10% 即回退”。未过质量门禁，不因显存收益上线。
+
 ## 小结
 
 - 量化三层正交：weight-only（AWQ/GPTQ/Marlin）、weight+activation（FP8/SmoothQuant）、KV cache（FP8）。weight-only 主要省显存与带宽，KV 量化几乎翻倍 num_blocks。
@@ -210,7 +216,7 @@ A: 反量化开销 > 算力节省时（小 batch、prefill 阶段 compute-bound�
 
 **实战推荐**：单机单 H100 跑 70B 必须 INT4（AWQ 或 GPTQ）。FP8 也能装但 KV 太小，几乎无并发能力。多机 / 多卡 TP=2 才能上 FP16/FP8 跑 70B。
 
-补充细节：实际还有 CUDA Graph buffer / Marlin workspace 等 1-2 GB 占用。生产部署用 `--gpu-memory-utilization 0.9` 留 buffer。
+补充细节：实际还有 CUDA Graph buffer / Marlin workspace 等额外占用，大小依赖 shape 和配置。生产部署从当前默认 `--gpu-memory-utilization 0.92` 起测，并按 NCCL、workspace 与动态峰值留余量。
 
 ---
 
@@ -282,4 +288,3 @@ FP8 路径：
 - 想看源码：`vllm/model_executor/layers/quantization/awq_marlin.py`、`vllm/model_executor/layers/quantization/fp8.py`、`csrc/quantization/gptq_marlin/`
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（同模型跑 FP16 vs AWQ vs FP8，对比 throughput / latency / 显存占用）
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（量化对单卡容量与单位 token 成本的影响）
-

@@ -12,6 +12,8 @@
 > 3. 描述 piecewise split 的切点策略与每段的编译/CUDA Graph 处理
 > 4. 知道 CompilationConfig 哪些旋钮在生产里要调
 
+> **当前源码复核（`b23bd73`）：** `CompilerManager` / `VllmBackend` 仍是核心边界，但 `CompilationConfig` 已围绕 `cudagraph_mode`、Inductor graph partition、attention/KV splitting ops 与 capability resolution 演进。文中的 level/piecewise 术语用于理解历史与抽象，最终行为以解析后的 config 和日志为准。
+
 `03-cudagraph-and-compile.md` 讲了 "torch.compile + CUDA Graph 是什么"。本节深入 `vllm/compilation/`，看 vLLM 怎么**自己包装一层 backend**，把 paged attention 这种自定义 op 也纳入图编译。
 
 ---
@@ -246,7 +248,7 @@ vllm serve <model> \
 ### CompilationLevel
 - **0 NO_COMPILATION**：纯 eager（debug / 兼容性兜底）
 - **1 DYNAMO_AS_IS**：Dynamo trace 但不优化
-- **2 PIECEWISE**：默认。按 attention 切段编译
+- **2 PIECEWISE**：一种常见/历史 level 语义；当前最终 split 与 graph mode 还要经过模型和 capability resolution
 - **3 FULL_COMPILE**：（实验）整图 compile
 
 ---
@@ -365,6 +367,10 @@ A: 不能。cache key 含 vLLM 版本、torch 版本、CUDA 版本。任一变�
 A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 5-15% 吞吐。单 pass 单卡的收益不大，但叠加多 pass + 高并发后明显。
 
 ---
+
+## 单变量实验：证明是哪一层带来收益
+
+保存解析后的 `CompilationConfig`、cache key 输入、splitting ops、graph mode/capture sizes 与编译日志。先固定 workload 只改一个 pass 或 partition 设置；分别报告 Dynamo/Inductor 编译时间、cache cold/warm、graph replay 覆盖率、kernel time、端到端指标和数值误差。若 fallback 增多、cache key 不稳定或 warmup 超预算，回退到上一层配置。
 
 ## 小结
 

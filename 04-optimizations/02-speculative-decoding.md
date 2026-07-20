@@ -13,7 +13,9 @@
 > 4. 知道接受率怎么测、N（lookahead）怎么选
 > 5. 在源码里定位投机解码与 Scheduler / ModelRunner / Sampler 的三个集成点
 
-用小模型 N 个 token 一起提议、大模型一次性验证。接受率高时吞吐 1.5-3×。是当下最热的推理优化方向。
+> **当前源码复核（`b23bd73`）：** speculative config、draft method、target 模型兼容、token budget、KV lookahead、acceptance sampler 与 runner path 必须成套核对。理论“一步多个 token”不保证端到端加速；最终看 acceptance、draft/verify 成本、TTFT/TPOT、吞吐和显存。
+
+用小模型或其他 proposer 一次提议多个 token、大模型批量验证。收益高度依赖接受率、batch 和额外开销；`1.5-3×` 只能作为特定实验结果，不能当生产承诺。
 
 ---
 
@@ -193,6 +195,10 @@ A: 动态开关：bs < threshold 开 spec，bs > threshold 关。或者用 MTP �
 
 ---
 
+## 单变量实验：接受率不是唯一结果
+
+固定 target model、sampling、请求集、并发和 KV/compile 配置，只切换 speculative config 或一次只改 draft tokens。记录 acceptance rate/每位置接受率、draft 与 verify 时间、平均接受 token 数、TTFT/ITL/TPOT、吞吐、显存与失败。回滚条件应同时包含端到端退化和正确性；高接受率但 draft 过慢仍可能净亏。
+
 ## 小结
 
 - 投机解码 = draft 提议 N + target 一次 forward 验证 + 拒绝采样；数学上输出分布与直接从 target 采样等价（Leviathan 2023）。
@@ -347,4 +353,3 @@ rate(vllm:spec_accepted_total[5m]) / rate(vllm:spec_proposed_total[5m])
 - 想看源码：`vllm/v1/spec_decode/eagle.py`、`vllm/v1/spec_decode/ngram_proposer.py`、`vllm/v1/sample/`
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（开 / 关投机解码，对比小 batch 与大 batch 的吞吐变化）
 - 想从生产视角理解：[`08-production-deployment/05-slo-and-observability.md`](../08-production-deployment/05-slo-and-observability.md)（接受率作为投机解码的核心可观测指标）
-
