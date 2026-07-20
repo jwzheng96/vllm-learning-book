@@ -1,411 +1,181 @@
 # 02. Scheduler 深读
 
-> **谁该读这一篇？** 已经知道 vLLM 大致进程拓扑，准备死磕 V1 Scheduler 这 2300 行核心代码的工程师；想把 token budget、preempt、chunked prefill 讲清楚的读者。
+> **谁该读这一篇？** 已理解 V1 请求生命周期，想真正读懂 token budget、KV 分配、抢占、spec decode、structured output 与 KV connector 如何在同一步互相约束的工程师。
 >
-> **前置阅读：** [`01-entry-points.md`](01-entry-points.md)、[`02-continuous-batching.md`](../02-core-concepts/02-continuous-batching.md)、[`05-chunked-prefill.md`](../02-core-concepts/05-chunked-prefill.md)
+> **前置阅读：** [`01-entry-points.md`](01-entry-points.md)、[`02-core-concepts/03-kv-cache-management.md`](../02-core-concepts/03-kv-cache-management.md)。
 >
-> **耗时：** 约 18 分钟
+> **耗时：** 约 25 分钟。
 >
 > **学完能：**
-> 1. 在白板上画出 `schedule()` 的 5 个阶段（A-E）以及每步对 token budget 的扣减
-> 2. 解释 `_schedule_running` 与 `_schedule_waiting` 各自承担的角色和优先级关系
-> 3. 准确说出 preempt 的触发条件、被踢顺序，以及 recompute vs swap 两种模式
-> 4. 解释 AsyncScheduler 把哪一段时间和 forward overlap，理论收益是多少
+> 1. 沿当前 `Scheduler.schedule()` 的真实顺序解释 running / waiting / skipped waiting。
+> 2. 手算一个 step 的 token、encoder 与 KV block 预算。
+> 3. 准确描述 FCFS/PRIORITY 的 victim 选择和当前 recompute 抢占。
+> 4. 从 `SchedulerOutput` 判断 runner 本步要新增、更新、释放哪些状态。
 
-`vllm/v1/core/sched/scheduler.py` 是 vLLM 最重要的代码文件（2300+ 行）。看懂它就看懂了 vLLM 的灵魂。本节按 `schedule()` 的执行顺序拆解。
+> **静态复核：** 锁定 `b23bd73f540175f9e117eaee5029cd7d8df63964`。当前实现不是 `_schedule_running()` / `_schedule_waiting()` 两个方法，也没有 `--preemption-mode swap`；这些旧版伪代码不再作为事实引用。
 
 ---
 
-## 1. Scheduler 的状态
+## 1. 先抓住统一模型
 
-```python
-class Scheduler:
-    # 队列
-    waiting: deque[Request]          # 等待进入 batch
-    running: list[Request]           # 正在跑
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
+[源码锚点：Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
 
-    # 配置
-    scheduler_config: SchedulerConfig
-    cache_config: CacheConfig
+当前注释先否定“prefill phase / decode phase”二分法。每个请求只有两组关键量：
 
-    # 核心组件
-    kv_cache_manager: KVCacheManager   # 管 block 分配
-    encoder_cache_manager: ...          # 多模态用
-    structured_output_manager: ...      # JSON / grammar 约束生成
-    connector: KVConnector | None       # 跨节点 KV 传输
+- `num_computed_tokens`：已经由模型计算完成的位置；
+- `num_tokens_with_spec + num_output_placeholders`：本轮希望追上的位置。
 
-    # 统计
-    num_lookahead_tokens: int           # 投机解码用
-    finished_req_ids: set[str]          # 上一步刚完成的
+差值就是候选 `num_new_tokens`。长 prompt 得到多个 token，普通 decode 通常得到一个或少量 speculative token；Scheduler 对它们使用同一个预算循环。这一抽象自然覆盖 chunked prefill、prefix cache、spec decode 和 jump decoding。
+
+## 2. 三个队列/集合，不是两个阶段
+
+| 状态 | 含义 | 本步可能发生什么 |
+| --- | --- | --- |
+| `running` | 已被 runner 持久化、持有或关联执行状态 | 先尝试追赶 token；KV 不足时可能成为 victim |
+| `waiting` | 尚未进入或被抢占后重新排队 | 在 running 之后准入；先查 prefix/external KV，再分配槽位 |
+| `skipped_waiting` | 本次遍历因约束暂时跳过 | 后续 step 重新尝试，避免一个阻塞请求卡住全部队列 |
+
+此外还有 paused streaming session、encoder cache、KV connector pending 等状态。面试时说“只有 waiting/running”可以做入门简化，但读源码时必须看到这些阻塞状态。
+
+## 3. `schedule()` 的真实顺序
+
+```mermaid
+flowchart TD
+    A[初始化 token / encoder budget] --> B[KV manager: new_step_starts]
+    B --> C[遍历 running]
+    C --> D{计算 num_new_tokens}
+    D -->|0| C
+    D -->|>0| E[处理 encoder / hybrid 对齐]
+    E --> F[allocate_slots]
+    F -->|成功| G[登记 scheduled running]
+    F -->|失败| H[选择 victim 并 preempt]
+    H --> F
+    G --> I{本步发生 preempt?}
+    I -->|否| J[遍历 waiting / skipped]
+    I -->|是| K[不准入新 waiting]
+    J --> L[生成 SchedulerOutput]
+    K --> L
 ```
 
----
+关键细节：
 
-## 2. `schedule()` 的整体框架
+1. `token_budget` 取 `max_num_scheduled_tokens`，通常与 `max_num_batched_tokens` 相等，但 speculative decode 等场景可更小。
+2. running 优先处理，不表示永远严格 FCFS；encoder budget、PP cadence、hybrid block alignment 等原因会让某请求 `continue`。
+3. `allocate_slots()` 返回 `None` 才触发 KV 压力抢占。
+4. 本步一旦发生抢占，就不再准入 waiting 请求，避免刚释放的资源马上引入更多状态变化。
+5. waiting 准入还要满足最大 running 数、LoRA 容量、structured output、远端 KV/encoder connector 等约束。
 
-```python
-def schedule(self) -> SchedulerOutput:
-    # === Step A: 重置每步的临时状态 ===
-    scheduled_new_reqs = []
-    scheduled_cached_reqs = []
-    num_scheduled_tokens = {}
-    token_budget = self.max_num_scheduled_tokens
+## 4. 手算一个 step
 
-    # === Step B: 先调度 running 队列 ===
-    # 保证已经在跑的请求至少 decode 1 token，剩余 budget 用于 chunked prefill
-    req_to_new_block_ids = self._schedule_running(token_budget, num_scheduled_tokens)
+设最终配置：
 
-    # === Step C: 再调度 waiting 队列 ===
-    # 看 KV、token budget 是否允许新请求加入
-    new_running = self._schedule_waiting(token_budget, num_scheduled_tokens)
+- `max_num_scheduled_tokens = 16`；
+- running A 还差 1 个 decode token；
+- running B 还差 5 个 speculative/normal token；
+- waiting C 的 prompt cache 命中 8 token，仍需计算 20 token；
+- encoder budget 充足，KV 也足够。
 
-    # === Step D: Encoder budget（多模态）===
-    # vision encoder 也有独立的 budget
+计算：
 
-    # === Step E: 组装 SchedulerOutput ===
-    return SchedulerOutput(
-        scheduled_new_reqs=scheduled_new_reqs,
-        scheduled_cached_reqs=scheduled_cached_reqs,
-        num_scheduled_tokens=num_scheduled_tokens,
-        total_num_scheduled_tokens=sum(num_scheduled_tokens.values()),
-        preempted_req_ids=self.preempted_req_ids,
-        finished_req_ids=self.finished_req_ids,
-        ...
-    )
-```
+| 顺序 | 请求 | 申请 | 实际调度 | 剩余 budget |
+| --- | --- | ---: | ---: | ---: |
+| 1 | A | 1 | 1 | 15 |
+| 2 | B | 5 | 5 | 10 |
+| 3 | C | 20 | 10 | 0 |
 
----
+C 的 8 个 cache-hit token 影响 `num_computed_tokens` 起点，但不会消耗本步 forward token budget；剩余 20 个 miss token 被 chunk 为 10。下一步是否继续 C，取决于 A/B 新增输出、KV 和所有预算的最新状态。
 
-## 3. `_schedule_running`：保住老用户
+## 5. KV 不够时发生什么
 
-伪代码（实际更复杂，含 spec decoding、KV connector 等）：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler._preempt_request"} -->
+[源码锚点：Scheduler._preempt_request](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L1208)
 
-```python
-def _schedule_running(self, token_budget, num_scheduled_tokens):
-    new_running = []
+当前 `_preempt_request()` 做五件事：
 
-    for req in self.running:
-        # 决定这个请求本步算几个 token
-        num_new_tokens = self._get_num_new_tokens_for_req(req, token_budget)
+1. 释放 request KV blocks 和 encoder cache；
+2. 清除 inflight prefill；
+3. 状态改为 `PREEMPTED`；
+4. `num_computed_tokens = 0`，清掉 spec tokens；
+5. prepend 回 waiting，并记录 preemption event/ID。
 
-        if num_new_tokens == 0:
-            # budget 用完
-            break
+这就是 recompute。它没有 swap 分支。KV offload 或 P/D connector 会在独立接口中保存/加载外部状态，不能写成 `--preemption-mode swap`。
 
-        # 算需要多少新 block
-        while not self.kv_cache_manager.allocate_slots(req, num_new_tokens):
-            # KV 不够！要 preempt
-            victim = self.running.pop()    # 通常从队尾找
-            if victim is req:
-                # 没人可以踢了，这个请求自己被踢
-                self._preempt(req)
-                num_new_tokens = 0
-                break
-            self._preempt(victim)
-        else:
-            num_scheduled_tokens[req.request_id] = num_new_tokens
-            token_budget -= num_new_tokens
-            new_running.append(req)
+victim 选择：
 
-    self.running = new_running
-```
+- FCFS：`running.pop()`，牺牲队尾；
+- PRIORITY：选择 `(priority, arrival_time)` 最大者。当前约定数值越小优先级越高，因此最大者是最低优先级、同优先级中较晚到达者。
 
-**核心逻辑**：
+如果 victim 已在本步被登记，Scheduler 还会归还它占用的 token/encoder budget，并移除相应输出字段。这是不能只看 `_preempt_request()` 的原因。
 
-1. 给每个 running 请求分配本步要算几个 token
-2. 如果 KV 不够，从队尾踢人（preempt）
-3. 踢到自己头上就把自己设回 waiting
+## 6. `SchedulerOutput` 是 runner 的差量协议
 
----
+<!-- vllm-source: {"path":"vllm/v1/core/sched/output.py","symbol":"SchedulerOutput"} -->
+[源码锚点：SchedulerOutput](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/output.py#L191)
 
-## 4. `_get_num_new_tokens_for_req`：本步算几个 token？
+| 字段族 | 作用 |
+| --- | --- |
+| `scheduled_new_reqs` | 首次发送完整请求数据，runner 建立持久状态 |
+| `scheduled_cached_reqs` | 已知请求只发送变化，减少每 step IPC/CPU 开销 |
+| `num_scheduled_tokens` / total | 本步每请求和总 forward token 数 |
+| `scheduled_spec_decode_tokens` | 本步真正采用的 draft token 子集 |
+| `scheduled_encoder_inputs` | 需要处理的图像/音频等 encoder item |
+| `finished_req_ids` / `preempted_req_ids` | 通知 runner 清理或重置持久状态 |
+| common prefix / connector metadata | cascade attention、外部 KV/encoder cache 的执行契约 |
+| structured-output flags | async scheduling 下 grammar bitmask 是否就绪 |
 
-```python
-def _get_num_new_tokens_for_req(self, req, token_budget):
-    # 剩余要算的 prompt token 数
-    remaining_prompt = req.num_prompt_tokens - req.num_computed_tokens
-    
-    if remaining_prompt > 0:
-        # 还在 prefill 阶段 → chunk
-        return min(remaining_prompt, token_budget, self.max_chunk_size)
-    else:
-        # 已经在 decode 阶段
-        # 投机解码会一次提议多个，普通模式是 1
-        return min(1 + self.num_lookahead_tokens, token_budget)
-```
+“Scheduler 决定，Worker 执行”不是说 Worker 没有状态，而是 Worker 的状态变化由这个差量协议驱动。
 
-这就是 chunked prefill 的核心：把 "请求长度 - 已算" 切成 budget 大小。
+## 7. 约束如何相互作用
 
----
+### Structured output
 
-## 5. `_schedule_waiting`：让新人进来
+grammar 状态未就绪时，请求可能停在 waiting；async scheduling 还要保证用于 bitmask 的输出 token 已到达。不要把 grammar 开销只归因于 sampler。
 
-```python
-def _schedule_waiting(self, token_budget, num_scheduled_tokens):
-    while self.waiting and token_budget > 0:
-        req = self.waiting[0]   # peek 不 pop
+### Speculative decoding
 
-        # 检查多模态 encoder 是否有空间（不展开）
-        if not self._can_schedule_encoder(req):
-            break
+候选 draft tokens 进入 `num_tokens_with_spec`，但受 model length、token budget 与本步允许数量裁剪。被拒 token 会影响下一步的 computed-token 校正。
 
-        # 算 num_new_tokens
-        num_new_tokens = min(req.num_prompt_tokens, token_budget, max_chunk_size)
+### Multimodal / encoder
 
-        # 尝试分配 KV
-        if not self.kv_cache_manager.allocate_slots(req, num_new_tokens):
-            break   # 不够，停止往 batch 加新人
+除了 token budget，还有 encoder compute budget、encoder cache 容量和“一个 item 是否允许切分”的约束。`num_new_tokens == 0` 不一定是 token budget 用尽。
 
-        # 加入 batch
-        self.waiting.popleft()
-        req.status = RUNNING
-        self.running.append(req)
-        num_scheduled_tokens[req.request_id] = num_new_tokens
-        token_budget -= num_new_tokens
-```
+### KV / EC connector
 
-**注意**：
+waiting 请求可能处于异步加载外部 KV 或 encoder cache 的状态；Scheduler 必须先确认完成，才能把请求变成可执行输入。超时与 connector failure 是生产排障的一等分支。
 
-- waiting 队列是按 FCFS（或 priority）排序的
-- 只要 KV 不够或 budget 用完，立刻停止往 batch 塞，**不会跳过等小请求**（避免饥饿）
+## 8. 生产诊断
 
----
+当前 Prometheus counter `vllm:num_preemptions_total` 上升时，联看：
 
-## 6. `update_from_output`：处理上一步的结果
+- `vllm:kv_cache_usage_perc` 是否贴近 1；
+- waiting 数和 queue time 是否同步上升；
+- prompt token 分布、`max_num_seqs` 与 `max_num_batched_tokens`；
+- priority workload 是否让低优先级长请求反复重算；
+- 外部 KV connector 是否卡在 load/save/ack。
 
-每个 step 结束后，把 Worker 返回的 sampled_token_ids 更新到 Request 上：
+不要只把 `--gpu-memory-utilization` 调高：0.92 已是当前默认，继续提高可能把 NCCL、CUDA Graph、临时 tensor 和模型动态峰值挤出安全余量。
 
-```python
-def update_from_output(self, scheduler_output, model_output):
-    self.finished_req_ids.clear()
+## 9. 30 秒面试回答
 
-    for req_id, sampled_tokens in model_output.sampled_token_ids.items():
-        req = self.requests[req_id]
-
-        # 1. 把新 token 加到 output
-        req.output_token_ids.extend(sampled_tokens)
-        req.num_computed_tokens = scheduler_output.num_scheduled_tokens[req_id]
-                                  + req.num_computed_tokens
-
-        # 2. 检查是否完成
-        if (sampled_tokens[-1] == req.sampling_params.eos_token_id
-            or len(req.output_token_ids) >= req.sampling_params.max_tokens
-            or self._check_stop_strings(req)):
-            self._finished(req)
-            self.finished_req_ids.add(req_id)
-            continue
-
-        # 3. 检查 stop / structured output / spec decoding 等
-
-    # 4. 收集本步的 EngineCoreOutput，返回给 EngineCore
-    return [EngineCoreOutput(req_id, new_tokens) for ...]
-```
-
----
-
-## 7. Preemption 的实际策略
-
-```python
-def _preempt(self, req, preemption_mode="recompute"):
-    # 释放 KV
-    self.kv_cache_manager.free(req)
-    
-    if preemption_mode == "recompute":
-        req.num_computed_tokens = 0
-    else:  # swap
-        self.kv_cache_manager.swap_out_to_cpu(req)
-    
-    req.status = RequestStatus.WAITING
-    self.waiting.appendleft(req)  # 重启时优先级最高
-```
-
-V1 默认 recompute，前面解释过。
-
-被 preempt 谁？默认从 running 队尾倒着踢（最晚到的最先牺牲）。priority 模式下选 priority 最低的。
-
----
-
-## 8. 一些"高级"逻辑（速览，初读可先略过）
-
-- **结构化输出（structured output）**：JSON schema / grammar 约束 → 每步 logits 加 mask。Scheduler 会维护 grammar state machine 每步推进。
-- **投机解码（spec decoding）**：Scheduler 一次性给一个请求分配 `1 + num_lookahead_tokens` 个 token，Worker 返回的是 "提议 - 验证" 结果。
-- **多模态 encoder budget**：vision encoder 算图像 embedding 是独立的，要单独计 budget。
-- **KV connector（disaggregated prefill）**：跨节点传 KV，Scheduler 协调"传完了再 decode"的同步。
-- **DP / EP**：data parallel 与 expert parallel 下的调度协调（多个 EngineCore 协同）。
-
----
-
-## 9. Async Scheduler
-
-`vllm/v1/core/sched/async_scheduler.py`：让 `schedule()` 跟上一步的 forward overlap。
-
-实现思路：
-
-- 普通 Scheduler 是 "schedule → forward → update → schedule → ..."
-- AsyncScheduler 拆成两个 task：
-  - schedule_task：每次给 worker 发任务时，**先发任务**，再 await 上次的输出
-  - 也就是说 step N+1 的 schedule 在 step N 的 forward 还在跑时启动
-
-CPU/GPU overlap 节省 5-10%。
-
----
-
-## 10. 你应该精读的代码片段
-
-打开 `vllm/v1/core/sched/scheduler.py`，重点看：
-
-1. `__init__`：所有依赖看一遍
-2. `schedule()`：主入口
-3. `_schedule_running()`：含 preemption 逻辑
-4. `_schedule_waiting()`：含 prefix caching 集成
-5. `_get_num_new_tokens_for_req()`：chunked prefill 实现处
-6. `_preempt()`：抢占细节
-7. `update_from_output()`：状态更新与完成检测
-
-预计 1-2 小时能扫完。
-
----
+> V1 Scheduler 不区分 prefill/decode 阶段，而是让每个请求的 `num_computed_tokens` 追上已有 token，统一受 token、KV、encoder 和请求数预算约束。它先服务 running，再准入 waiting；`allocate_slots` 失败时按 FCFS 队尾或 priority 最低者抢占。当前抢占会释放 KV、清零进度并重新排队，没有 swap mode。结果通过 `SchedulerOutput` 以 new/cached request 差量交给 runner。
 
 ## 小结
 
-- `schedule()` 一次的核心顺序是"先 running 再 waiting"，token budget 是贯穿所有分支的全局账本。
-- `_schedule_running` 保 SLA，KV 不够就从队尾 preempt；`_schedule_waiting` 引入新人，KV/budget 不够立刻停手，避免饥饿。
-- chunked prefill 的入口就一个函数 `_get_num_new_tokens_for_req`，由剩余 prompt 与 budget 取 min 决定本步算多少。
-- AsyncScheduler 把"下一步的 schedule"塞到"本步 forward"的等待区，是低开销但很值的 CPU/GPU overlap。
+- `num_computed_tokens` 与目标 token 的差值统一描述 prefill、decode 和 spec decode。
+- KV、token、encoder、LoRA、grammar、connector 都能阻塞调度，不能只画一个 token budget。
+- 抢占必须同时回滚本步预算和 runner 状态；当前 V1 使用 recompute。
+- `SchedulerOutput` 是跨 Scheduler/runner 的差量状态协议。
 
 ## 自检
 
-> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
-
-**1. preempt victim 从队头还是队尾选？**
-
-**FCFS 模式**：队尾（`self.running.pop()`，最近加入 batch 的）。代码（约 line 450）：
-
-```python
-if self.policy == SchedulingPolicy.FCFS:
-    preempted_req = self.running.pop()         # 队尾，最后加入的
-```
-
-**PRIORITY 模式**：`max((priority, arrival_time))`——优先级最低（priority 数值最大）的，同优先级里最晚到的：
-
-```python
-if self.policy == SchedulingPolicy.PRIORITY:
-    preempted_req = max(
-        self.running,
-        key=lambda r: (r.priority, r.arrival_time),
-    )                                          # 优先级最低、最晚到的
-    self.running.remove(preempted_req)
-```
-
-**为什么 FCFS 选队尾？** 队头是已经跑了最久的请求，踢它损失最大；队尾是最新加入的，工作量小，踢它代价低。这是 SRPT（最短剩余处理时间优先）的近似。
-
-详见 [`02b-scheduling-policies.md`](02b-scheduling-policies.md)。
-
----
-
-**2. 32k prefill + `max_num_batched_tokens=2048`，要几个 step 跑完 prefill？**
-
-每个 step 最多算 2048 token。但**实际每步要先扣 running decode**——假设 batch 里没有其他 running 请求，每步 prefill 满 2048：
-
-```
-step 1:  prefill chunk 0..2048    剩 30720 token
-step 2:  prefill chunk 2048..4096 剩 28672 token
-...
-step 16: prefill chunk 30720..32768 剩 0
-step 17: decode 第一个新 token
-```
-
-→ **16 个 step 跑完 prefill**，第 17 步开始 decode。
-
-如果同时有 N 个 running decode 请求争 budget：
-
-- 每步先扣 N（每 running 1 token）
-- 剩余 2048-N 给 prefill chunk
-- 总 step 数 = ⌈32768 / (2048-N)⌉
-
-例：N=16 个 decode，每 step prefill 2032 token → 需要 ⌈32768/2032⌉ = **17 个 step** 跑完 prefill。
-
-**时间轴**（gantt 风格）：
-
-```
-T=0  [decode×16 + prefill 2032 (chunk 0)]   ← 17 个用户在 decode 中, prefill 在并行
-T=1  [decode×16 + prefill 2032 (chunk 1)]
-T=2  [decode×16 + prefill 2032 (chunk 2)]
-...
-T=16 [decode×16 + prefill 2032 (chunk 16)]  ← prefill 完成
-T=17 [decode×17] (新 prefill 请求开始 decode)
-```
-
-→ **这就是 chunked prefill 的核心好处**：长 prefill 不会阻塞其他人的 decode，每个 step 时长稳定（约 2048 token），TPOT 平稳。
-
----
-
-**3. `update_from_output` 中检测"请求完成"的 3 种条件 + 分支位置。**
-
-源码：`vllm/v1/core/sched/scheduler.py::_update_request_with_output`（行号会变）
-
-```python
-# ① EOS token
-if new_token_id == request.sampling_params.eos_token_id:
-    request.status = RequestStatus.FINISHED_STOPPED
-    return True
-# 或：if new_token_id in stop_token_ids:
-
-# ② max_tokens 达到
-if request.num_output_tokens >= request.sampling_params.max_tokens:
-    request.status = RequestStatus.FINISHED_LENGTH_CAPPED
-    return True
-
-# ③ stop strings（detokenize 后字符串匹配）
-if detokenized.contains_any(request.sampling_params.stop):
-    request.status = RequestStatus.FINISHED_STOPPED
-    return True
-```
-
-完整代码位置：
-
-- EOS：通常在 `_check_stop()` 或 `_check_finish()` 内，对照 `eos_token_id` / `stop_token_ids`
-- max_tokens：对照 `num_output_tokens >= max_tokens`
-- stop strings：往往在 detokenizer 端做（`vllm/v1/engine/detokenizer.py`），因为需要解码完整字符串才能匹配
-
-**`finish_reason`** 字段记录是哪种：`stop` / `length` / `abort`，对应 `vllm:request_success` 这个 Prometheus counter 的 label。
-
----
-
-**4. AsyncScheduler 多了哪个 task？为什么能 overlap？正确性问题？**
-
-**多了什么**：AsyncScheduler 在 `step()` 中**提前发起下一步的 schedule**，让它与本步的 GPU forward 重叠：
-
-```python
-# 普通 Scheduler
-def step():
-    so = schedule()                  # CPU
-    out = execute_model(so)          # GPU (forward)
-    update_from_output(so, out)
-
-# AsyncScheduler
-def step():
-    out = self._pending_forward.result()    # 等上一步 forward
-    update_from_output(self._last_so, out)
-    self._last_so = schedule()              # 启动新 schedule
-    self._pending_forward = execute_model_async(self._last_so)  # 异步发 forward
-    # 函数返回前 forward 还在跑；下一个 step 进来时再 .result() 收
-```
-
-**为什么能 overlap**：CPU schedule 与 GPU forward 不依赖同一资源（CPU vs GPU stream），可以真正并行。
-
-**正确性问题与解法**：
-
-- **新 token 状态没更新就 schedule 下一步**？不会——schedule 不需要新 token 内容，它只需要"running 列表 + KV 占用"，这些上一步已经记好
-- **新请求 add_request 时机**？AsyncScheduler 仍在 schedule 前同步 add，不会丢失
-- **preempt 导致状态不一致**？这是真坑——AsyncScheduler 有专门处理"上一步触发 preempt 后下一步的 running 列表"的逻辑（`vllm/v1/core/sched/async_scheduler.py`），通过把 preempted 请求标记后再继续
-
-整体收益 5-10%，详见 [`02-architecture.md`](../01-overview/02-architecture.md) §6 与本节自检题 5。
+1. running 请求 `num_new_tokens == 0` 有哪四类原因？
+2. 为什么发生一次 preempt 后，本步不再准入 waiting？
+3. priority 数值 0 和 10 谁更高？victim 如何打破同优先级平局？
+4. cache hit token 为什么不消耗 forward token budget？
+5. `preempted_req_ids` 对持久 `InputBatch` 有什么意义？
 
 ## 下一步
 
-- 下一节：[`03-kv-cache-manager.md`](03-kv-cache-manager.md)（Scheduler 调用的 `allocate_slots` 内部到底做了什么）
-- 想看源码：`vllm/v1/core/sched/scheduler.py`、`vllm/v1/core/sched/async_scheduler.py`
-- 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（造 preempt、观察调度行为）
-- 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（max-num-batched-tokens、max-num-seqs 等调度参数如何影响容量规划）
-
+- [`02b-scheduling-policies.md`](02b-scheduling-policies.md)：公平性、优先级与抢占代价。
+- [`03-kv-cache-manager.md`](03-kv-cache-manager.md)：`allocate_slots()` 为什么返回 `None`。

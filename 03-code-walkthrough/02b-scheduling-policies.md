@@ -9,8 +9,10 @@
 > **学完能：**
 > 1. 说清 vLLM V1 仅有的 2 种官方策略：FCFS（deque）/ PRIORITY（min-heap），数据结构、复杂度、各自的 add/pop 行为。
 > 2. 推导 PRIORITY 模式下"抢占—释放—重排"的发生顺序，并解释为什么会出现"实质上的优先级反演"。
-> 3. 量化算抢占代价（recompute 模式下损失多少 prefill token、swap 模式下走多少 PCIe）。
+> 3. 量化算当前 recompute 抢占代价，并与独立 KV offload 的传输代价比较。
 > 4. 给定 SLA 描述（多租户 / 优先级请求 / 长尾），选择"用 PRIORITY"、"上多实例"、"加路由层"中的哪个方案。
+
+> **当前源码复核（`b23bd73`）：** 官方 policy 仍为 `fcfs` / `priority`；数值越小优先级越高。当前 `_preempt_request()` 只有释放 KV、清零进度并回 waiting 的 recompute 路径，`--preemption-mode swap` 已不是当前 V1 CLI。
 
 Scheduler 文章讲了"一步内怎么决定跑谁"，本节是其中**队列层**的专题：vLLM 真正提供的调度策略只有两种，但里面藏了几个坑。
 
@@ -133,16 +135,16 @@ flowchart TD
 - 被踢请求重新入 `waiting`，本步剩余 budget / 已分配 block 全部退还。
 - 整个过程**单步内可发生多次**（while 循环），直到 allocate 成功或 running 空。
 
-### 4.1 V1 默认 RECOMPUTE
+### 4.1 当前 V1 使用 RECOMPUTE
 
-V0 默认 SWAP，V1 改成 RECOMPUTE。原因：
+当前实现选择 RECOMPUTE。工程原因包括：
 
 - SWAP 需要 PCIe 拷贝 KV：H100 ↔ host ~50 GB/s，70B 模型一个长上下文请求 KV 可达数 GB——拷贝几十到几百 ms。
 - RECOMPUTE 只需在重新调度时跑一次 prefill；现代 GPU FLOPS 充足，且 chunked prefill 可分摊。
 - prefix caching 命中时 RECOMPUTE 大部分免费——前面 cached 的块复用，只重算 miss 段。
 - 综合 RECOMPUTE 通常**更快且实现更简单**。
 
-切回 SWAP：`--preemption-mode swap`（仅在 KV 极大、prefill 极贵的窄场景下值得考虑）。
+需要 CPU/远端 KV 时，应评估 `--kv-offload-backend` 或 `--kv-transfer-config` 的独立能力、状态协议和故障语义，不能用不存在的 preemption flag 切换。
 
 ---
 
@@ -181,7 +183,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 
 但若 prefix cache 命中率高（如 system prompt 长 + cache 未 evict），实际重算只是 miss 段——可能仅几十 ms。
 
-### 6.2 SWAP 模式
+### 6.2 独立 KV offload 的对比模型
 
 被踢请求 KV 拷出 CPU + 恢复时拷回。Llama-70B 长 2500 token KV ≈ 2.5 GB（BF16 GQA）。
 
@@ -196,7 +198,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 
 ### 6.3 监控
 
-抢占次数：`vllm:num_preemptions`（Counter）。生产突然 spike 通常意味着：
+抢占次数：Prometheus 暴露 `vllm:num_preemptions_total`（Counter）。生产突然 spike 通常意味着：
 
 1. 大批高优先级请求涌入；
 2. KV cache 容量配置过小（`--num-gpu-blocks-override` 不足）；
@@ -238,7 +240,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 - vLLM V1 官方只有 **FCFS（deque）** 和 **PRIORITY（heap）**两种策略，启动时固定。
 - FCFS 并不严格"先来先服务"——`skipped_waiting` 队列允许小请求绕过卡住的大请求（throughput +）。
 - PRIORITY 模式下抢占踢 `max((priority, arrival_time))`，会**等效优先级反演**：低优请求做的工作可能被高优请求到达完全废弃。
-- V1 默认 RECOMPUTE 而非 SWAP——KV 拷贝太贵，prefix cache 命中下重算其实更快。
+- 当前 V1 抢占使用 RECOMPUTE；KV offload/transfer 是独立系统，必须另外核算传输、容量和一致性。
 - 复杂策略（SJF / EDF / weighted fair）请放路由层做，不要在 scheduler 里加。
 
 ## 自检

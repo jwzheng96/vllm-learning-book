@@ -12,6 +12,8 @@
 > 3. 在源码里准确定位 9 个核心文件并知道每个文件的关键方法
 > 4. 画出 step() 一次调用的 mermaid 调用链
 
+> **当前源码复核（`b23bd73`）：** 在线主链以 `OpenAIServingChat/Completion` → `AsyncLLM` → `EngineCoreClient` → `EngineCoreProc` 为准；离线 `LLM` 可选择 in-process client。成功路径之外，request validation、EngineDead、client disconnect/abort 也必须沿同一 request ID 追踪。
+
 一个请求是怎么从用户代码（或 HTTP）走到 GPU 的？本节回答"我打开 vllm 仓库，从哪里开始读"。
 
 ---
@@ -233,6 +235,16 @@ class GPUModelRunner:
 
 ## 9. 一次 step 的完整调用链
 
+| API/对象 | 内部对象 | 边界 | 状态变化 | 可观测证据 |
+| --- | --- | --- | --- | --- |
+| OpenAI protocol model | rendered `EngineInput` | API/renderer | validated | 4xx 与 request ID |
+| `AsyncLLM.add_request` | `EngineCoreRequest` | API → core client | collector registered | input/queue trace span |
+| `EngineCore.add_request` | internal `Request` | IPC → EngineCore | `WAITING` | scheduler waiting / queue time |
+| `Scheduler.schedule` | `SchedulerOutput` | core → executor | `RUNNING` / `PREEMPTED` | scheduled tokens / preemption counter |
+| `ModelRunnerOutput` | `EngineCoreOutputs` | worker → core client | output/finished | first-token、iteration、finish reason |
+
+错误与取消不是旁路：validation 可在第一行提前返回；EngineCore 失败由 client 映射为 engine-dead；disconnect 触发 abort，Scheduler 从 waiting/running 清理，output collector 最终关闭。生产 trace 必须覆盖这些状态，而不只覆盖成功生成。
+
 ```mermaid
 flowchart TD
     A["LLMEngine.step()<br/><sub>vllm/v1/engine/llm_engine.py</sub>"]
@@ -385,4 +397,3 @@ def step(self):
 - 想看源码：`vllm/v1/engine/core.py`、`vllm/v1/worker/gpu_model_runner.py`（最推荐用 IDE 跟一遍 step 调用栈）
 - 想动手：[`07-hands-on/02-trace-a-request.md`](../07-hands-on/02-trace-a-request.md)（加 print 实际追一条请求）
 - 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)（看进程拓扑怎么映射到真实部署）
-

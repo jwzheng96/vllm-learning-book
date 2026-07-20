@@ -12,7 +12,9 @@
 > 3. 解释 `KVCacheBlock.ref_cnt` 的 5 个变化时机，以及"free 时为何要 reverse"
 > 4. 读懂 `allocate_slots` 的 9 个参数和那张五段 layout 图
 
-文件：`vllm/v1/core/kv_cache_manager.py`（570 行）、`vllm/v1/core/block_pool.py`（509 行）。这是 PagedAttention 的工程心脏。本节按真实代码顺序拆解。
+> **当前源码复核（`b23bd73`）：** `KVCacheManager` 通过 coordinator 支持单类型与 hybrid group；`allocate_slots()` 返回 `None` 仍是 Scheduler 的容量失败信号。普通 block 的 `ref_cnt==0` 对应 free queue，null block 是例外；hash key 还包含 group/extra context，不能只按 token tuple 理解。
+
+核心文件是 `vllm/v1/core/kv_cache_manager.py` 与 `vllm/v1/core/block_pool.py`；行数随主线变化，不作为接口事实。这是 PagedAttention 的工程心脏，本节按数据契约与调用顺序拆解。
 
 ---
 
@@ -73,7 +75,7 @@ class KVCacheBlock:
 
 `vllm/v1/core/block_pool.py` — `class BlockPool`
 
-### 3.1 初始化（line 149-182）
+### 3.1 初始化与 block pool 不变式
 
 ```python
 def __init__(self, num_gpu_blocks, enable_caching, hash_block_size, ...):
@@ -96,7 +98,7 @@ def __init__(self, num_gpu_blocks, enable_caching, hash_block_size, ...):
 2. `free_block_queue` 是双向链表而非栈：`append_n` 放尾部，`popleft` 取头部 → **LRU 复用**。
 3. `null_block` 是个占位 trick，避免 block_id=0 被误用。
 
-### 3.2 分配新 block（line 322-352）
+### 3.2 分配新 block
 
 ```python
 def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
@@ -121,7 +123,7 @@ def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
 - 从 free queue **头部**取（LRU 中最早 free 的）→ 配合 prefix caching，最旧的 cached block 才会被覆盖。
 - 若取出的 block 仍带 hash（曾被 cache 过），先把它从 `cached_block_hash_to_block` 里移除（`_maybe_evict_cached_block`），才能给新请求用。
 
-### 3.3 命中已 cache 的 block（line 391-406）
+### 3.3 命中已 cache 的 block
 
 ```python
 def touch(self, blocks: Sequence[KVCacheBlock]) -> None:
@@ -135,7 +137,7 @@ def touch(self, blocks: Sequence[KVCacheBlock]) -> None:
 
 这是 prefix cache 命中时调用的：block 之前可能 `ref_cnt=0`（在 free queue 里待回收），命中后 `ref_cnt=1`、并从 free queue 里抽出。
 
-### 3.4 释放 block（line 408-422）
+### 3.4 释放 block
 
 ```python
 def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
@@ -154,7 +156,7 @@ def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
 - 调用方负责把 blocks 按"优先回收顺序"传入（通常是 **逆序**：tail 先 free）。KVCacheManager.free 就是 `reversed(...)`。这样回收时 free queue 里 tail 排前面，会被先 evict（保留更可能复用的 head block）。
 - 只有 `ref_cnt → 0` 的才真正放回 free queue。
 
-### 3.5 把"满 block"挂到 hash 表（line 211-320）
+### 3.5 把可复用 block 挂到 hash 表
 
 ```python
 def cache_full_blocks(self, request, blocks, num_cached_blocks, num_full_blocks, block_size, kv_cache_group_id):
@@ -184,7 +186,7 @@ def cache_full_blocks(self, request, blocks, num_cached_blocks, num_full_blocks,
 
 `vllm/v1/core/kv_cache_manager.py` — `class KVCacheManager`
 
-### 4.1 数据契约：KVCacheBlocks（line 19-103）
+### 4.1 数据契约：KVCacheBlocks
 
 Scheduler 拿到的不是 `list[KVCacheBlock]` 而是 `KVCacheBlocks`：
 
@@ -198,7 +200,7 @@ class KVCacheBlocks:
 
 意图：Scheduler **完全不知道**内部有几种 KV group。它只管"给这个请求的所有 KV 加了 N 个 block"。
 
-### 4.2 prefix 命中（line 194-234）
+### 4.2 prefix 命中
 
 ```python
 def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
@@ -229,7 +231,7 @@ def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
 - **最后一个 token 必须重算**：因为 vLLM 需要它的 logits 来采样下一个 token；如果命中了它，反而没有 logits 可用。
 - `find_longest_cache_hit` 按 `block_hashes` 链式查找——**第一个 miss 后停下**（前缀性质，文档里讲过）。
 
-### 4.3 allocate_slots：最核心的 200 行（line 236-427）
+### 4.3 allocate_slots：容量与复用的核心
 
 完整签名：
 
@@ -317,7 +319,7 @@ return self.create_kv_cache_blocks(new_blocks)
 
 返回值约定：`None` = "无法分配，请 preempt"；非 None = "已分配的新 block 列表"。
 
-### 4.4 free（line 429-437）
+### 4.4 free
 
 ```python
 def free(self, request: Request) -> None:
@@ -329,7 +331,7 @@ def free(self, request: Request) -> None:
 
 为什么 reverse？因为 free queue 是 FIFO 出（LRU），先放进去的先被覆盖。把 tail block 先 free，head block 后 free → 后续 head block 排在 free queue 后面 → 不容易被立刻 evict → **保留前缀**。
 
-### 4.5 reset_prefix_cache（line 460-475）
+### 4.5 reset_prefix_cache
 
 ```python
 def reset_prefix_cache(self) -> bool:
@@ -496,4 +498,3 @@ allocate_slots(request, num_new_tokens=3)
 - 想看源码：`vllm/v1/core/kv_cache_manager.py`、`vllm/v1/core/block_pool.py`、`vllm/v1/core/single_type_kv_cache_manager.py`
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（自己构造 prefix 命中、观察 free queue 长度变化）
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（gpu-memory-utilization 与 num_gpu_blocks 的容量规划）
-

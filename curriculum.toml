@@ -153,6 +153,14 @@ environments = ["no-gpu", "nvidia-gpu"]
 source_areas = ["csrc/attention/**", "csrc/moe/**", "vllm/distributed/eplb/**", "vllm/lora/**", "vllm/model_executor/**", "vllm/model_executor/layers/fused_moe/**", "vllm/model_executor/models/**", "vllm/v1/attention/**", "vllm/v1/core/**"]
 
 [[chapter]]
+path = "03-code-walkthrough/08-input-processing-and-tokenization.md"
+title = "08. 输入处理与 Tokenization：从 OpenAI 请求到 EngineCoreRequest"
+level = "intermediate"
+tracks = ["quickstart", "internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/inputs/**", "vllm/renderers/**", "vllm/tokenizers/**", "vllm/v1/engine/**"]
+
+[[chapter]]
 path = "04-optimizations/01-quantization.md"
 title = "01. 量化（Quantization）"
 level = "advanced"

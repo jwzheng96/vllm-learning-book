@@ -134,51 +134,51 @@ notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/01-entry-points.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/02-scheduler.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/02b-scheduling-policies.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/03-kv-cache-manager.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/04-model-runner.md"
@@ -227,6 +227,18 @@ metrics_checked = false
 diagrams_checked = false
 hardware_verified = []
 notes = []
+
+[[review]]
+path = "03-code-walkthrough/08-input-processing-and-tokenization.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "04-optimizations/01-quantization.md"
