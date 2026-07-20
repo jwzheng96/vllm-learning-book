@@ -12,6 +12,8 @@
 > 3. 区分 vLLM 与 TGI / TensorRT-LLM / SGLang / LMDeploy 的定位差异。
 > 4. 指出哪些场景**不**适合用 vLLM，避免"为了 vLLM 而 vLLM"。
 
+> **当前源码复核（`b23bd73`）：** PagedAttention、iteration-level scheduling、prefix caching 与 chunked prefill 仍是核心机制；具体吞吐或 TTFT 百分比属于论文/特定 benchmark 结果，不能外推成当前版本对任意模型、硬件和负载的承诺。
+
 ---
 
 ## 1. 一句话定义
@@ -95,7 +97,7 @@ flowchart LR
 
 借鉴 OS 虚拟内存：
 
-- KV cache 切成定长 **block**（默认 16 token/block）
+- KV cache 切成定长 **block**（通用 fallback 为 16 token/block，平台或显式参数可以覆盖）
 - 每个请求一张**块表（block table）**，把逻辑 block 索引映射到物理 block
 - 物理 block 池统一管理、按需分配
 - 内存利用率 > **96%**
@@ -127,7 +129,7 @@ flowchart LR
 | --- | --- |
 | **内存即一等公民** | 调度的第一问是"还有 KV block 吗"，不是"队列有请求吗" |
 | **请求是异步事件，不是同步循环** | EngineCore 异步轮询；Scheduler 每步独立决策，没有"等一个 batch 跑完"的概念 |
-| **任何长操作都要可中断** | 长请求被 preempt（KV 释放或 swap），新请求立即进入 |
+| **任何长操作都要可调度** | 长 prefill 可切块；资源不足时请求会被 preempt、释放 KV 并回到 waiting，之后重算或命中 prefix cache |
 | **Worker 是纯执行器** | Scheduler 决定"做什么"，Worker 只负责"做"。分布式扩展时这个边界很重要 |
 | **后端是可插拔的** | Attention 有 7+ 个后端，量化 10+ 种，平台 CUDA / ROCm / CPU / TPU |
 | **正确性 > 性能，但两者都要** | Chunked prefill 的 attention mask 必须严格等价于完整 prefill 的结果 |
@@ -235,7 +237,7 @@ flowchart LR
 
 两者通过 `kv_cache_manager.py` 衔接：scheduler 说"这个请求要 K 个新 block"，kv_cache_manager 调 block_pool 分配。**没有 block_pool，scheduler 无法做内存决策；没有 scheduler，block_pool 只是个空闲块池。**
 
-补充：再讲清 `kv_cache_utils.py:hash_block_tokens` 是 **prefix caching** 的入口（链式 hash，详见 `02-core-concepts/04-prefix-caching.md`）。这是第四件"次要武器"，跟 block_pool 配合做跨请求 KV 复用。
+补充：再讲清 `hash_block_tokens` 是 **prefix caching** 的关键计算（链式 hash，详见 `02-core-concepts/04-prefix-caching.md`）。这是第四件"次要武器"，跟 block pool 配合做跨请求 KV 复用。
 
 ## 下一步
 

@@ -2,135 +2,135 @@
 
 [[review]]
 path = "01-overview/00-prerequisites.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "01-overview/01-what-is-vllm.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "01-overview/02-architecture.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "01-overview/03-v0-vs-v1.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "01-overview/04-project-structure.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "01-overview/05-process-and-ipc-internals.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/01-paged-attention.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/02-continuous-batching.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/03-kv-cache-management.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/04-prefix-caching.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/05-chunked-prefill.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "03-code-walkthrough/01-entry-points.md"

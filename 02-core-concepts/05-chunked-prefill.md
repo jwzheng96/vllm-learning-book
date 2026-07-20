@@ -12,6 +12,8 @@
 > 3. 按业务（低 TTFT vs 低 TPOT）选 `max-num-batched-tokens`。
 > 4. 在 metrics 上识别"该开 chunked 但没开"的症状（TPOT p99 长尾、iteration token 方差大）。
 
+> **当前源码复核（`b23bd73`）：** chunked prefill 默认值取决于 `model_config.is_chunked_prefill_supported`，不是对所有 runner/模型/平台无条件为 True；`max_num_batched_tokens` 也按 usage context 与硬件生成。下文的 8192 是算例或 ≥70 GiB 非 A100 API server 的当前默认之一，不是全局默认。
+
 ---
 
 ## 1. 问题：长 prefill 会"占据"整个 step
@@ -111,7 +113,7 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 
 ## 5. 调度策略：先 decode 还是先 prefill？
 
-每个 step 的 token budget B（默认 8192）需要在 prefill 和 decode 之间分配。两种策略：
+每个 step 的 token budget B（以下用 8192 举例）需要在 prefill 和 decode 之间分配。两种直觉：
 
 ### 5.1 Prefill-first
 优先把 budget 给新进的 prefill 请求。
@@ -137,15 +139,15 @@ Model runner 把所有请求的 input token 拼成一个 1D 序列长度 2050 �
 
 | 参数                          | 作用                            | 默认            |
 | --------------------------- | ----------------------------- | ------------- |
-| `--enable-chunked-prefill`  | 开关（V1 默认开）                    | True          |
-| `--max-num-batched-tokens`  | 单步总 token 上限（决定 chunk 大小）     | 与模型相关，常见 8192 |
+| `--enable-chunked-prefill`  | 开关；默认跟随模型是否支持                    | 受模型/runner/平台约束 |
+| `--max-num-batched-tokens`  | 单步总 token 上限（决定 chunk 大小）     | 按 usage context 与硬件生成 |
 | `--long-prefill-token-threshold` | 超过此长度强制 chunk            | 与上面相关         |
 
 调优经验：
 
 - 追求低 TTFT → 大 `max-num-batched-tokens`（弱化 chunk）
 - 追求低 TPOT → 小 `max-num-batched-tokens`（强 chunk）
-- 默认 8192 是 90 分通用值
+- 不存在跨硬件的“90 分默认值”；以启动后的最终配置为基线做负载测试
 
 ### 6.1 按业务场景的推荐值
 

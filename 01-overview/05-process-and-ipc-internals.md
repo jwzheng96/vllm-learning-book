@@ -12,6 +12,8 @@
 > 3. 解释 vLLM Worker 为什么必须用进程、而不是线程；fork vs spawn 在 CUDA 上下文初始化顺序上的坑。
 > 4. 把三种部署形态（Inproc / MPClient / Ray Distributed）与"单机 offline / 单机 serve / 跨机 serve"三种工作模式对上号。
 
+> **当前源码复核（`b23bd73`）：** `EngineCoreClient` 当前有 in-process、multiprocess、data-parallel load-balanced 等实现；multiprocessing 与 Ray v2 executor 都可使用 `MessageQueue`，但跨节点还会叠加分布式传输。后文的 ZMQ/shm 图描述常见路径，不是所有 executor 的统一物理拓扑。
+
 这一篇是 [`02-architecture.md`](02-architecture.md) 的**深度续篇**。读完 `02` 知道 vLLM 有三层进程后，本篇回答"它们到底怎么生出来、怎么交换数据、为什么这么设计"。
 
 ---

@@ -12,6 +12,8 @@
 > 3. 调出一个低命中率场景的 root cause（block_size 不对齐 / cache 容量不够 / hash 函数选错）。
 > 4. 知道分布式 KV cache（CPU offload、远端 LMCache、P/D KV transfer）在哪里接入。
 
+> **当前源码复核（`b23bd73`）：** `CacheConfig.prefix_caching_hash_algo` 当前默认 `sha256`，可选 `sha256_cbor`、`xxhash`、`xxhash_cbor`。普通受支持模型默认开启 prefix caching，但 hybrid model 目前保持 opt-in；“V1 一律默认开启”不准确。
+
 ---
 
 ## 1. 解决什么问题
@@ -50,7 +52,7 @@ LLM 应用中存在大量"前缀重复"：
 
 ## 3. 启用方式
 
-V1 中 prefix caching **默认开启**。命令行：
+V1 对支持 prefix caching 的非 hybrid 模型默认开启；hybrid model 当前保持 opt-in，RISC-V CPU 等不支持路径还会关闭。命令行：
 
 ```
 vllm serve <model> [--no-enable-prefix-caching]   # 关闭
@@ -114,16 +116,18 @@ def hash_block_tokens(hash_function, parent_block_hash,
 
 ### 4.2 Hash 函数选择
 
-V1 提供两种 cbor-encoded hash（`vllm/utils/hashing.py`）：
+V1 提供四个选项，序列化格式和 hash 强度是两个独立维度：
 
-| 函数 | 速度 | 抗碰撞 | 默认场景 |
+| 函数 | 序列化 | 安全属性 | 建议 |
 | --- | --- | --- | --- |
-| `sha256_cbor` | 慢（密码学级别）| 几乎不可能碰撞 | 多租户、跨进程共享 cache、远端 KV |
-| `xxhash_cbor` | 快（数倍）| 弱（足够 in-process）| 单进程默认（speed-first） |
+| `sha256` | Pickle | 加密 hash | **当前默认** |
+| `sha256_cbor` | canonical CBOR | 加密 hash、跨语言可复现 | 跨语言共享键 |
+| `xxhash` | Pickle | 非加密 hash | 明确接受碰撞/多租户风险时才用 |
+| `xxhash_cbor` | canonical CBOR | 非加密 hash、跨语言可复现 | 同上，且需要可复现序列化 |
 
-通过 `cache_config.prefix_caching_hash_algo` 切换。**跨进程/跨机共享 cache 时必须用 sha256**——否则攻击者可以构造碰撞污染他人的 KV。
+通过 `cache_config.prefix_caching_hash_algo` 切换。多租户或跨进程共享 cache 时应优先加密 hash，并同时设计租户命名空间；单靠 hash 算法不能完成租户隔离。
 
-> **PYTHONHASHSEED 注意：** Python 内置 `hash()` 每次启动会随机化。`init_none_hash()`（同文件 line 97）会对此做检查，并强制建议用上述 cbor hash。
+> **序列化注意：** `init_none_hash()` 初始化 parent sentinel。是否跨语言可复现取决于 Pickle/CBOR 选择；是否抗对抗碰撞取决于 SHA-256/xxHash 选择，不要把两者混为一谈。
 
 ### 4.3 extra_keys：把"上下文"塞进 hash
 
@@ -136,7 +140,7 @@ V1 提供两种 cbor-encoded hash（`vllm/utils/hashing.py`）：
 | Prompt embeds | `_gen_prompt_embeds_extra_hash_keys` | embed tensor 的 `sha256(tensor_data)` |
 | Cache salt | request 层 | 用户传入的隔离标记（防跨用户命中）|
 
-入口：`generate_block_hash_extra_keys()`（line 503）按 block 区间合并这些 key。
+入口：`generate_block_hash_extra_keys()` 按 block 区间合并这些 key。
 
 **实战含义：**
 
@@ -236,7 +240,7 @@ prefix cache 不是无限的。当 BlockPool 用尽时：
 
 这意味着：**冷的 cached block 会被淘汰**，新请求要重算。
 
-监控指标：`vllm:prefix_cache_hit_rate`（Prometheus 暴露），命中率低说明配置需要调（见下节）。
+当前 Prometheus 暴露 `vllm:prefix_cache_hits_total` 与 `vllm:prefix_cache_queries_total` counter；命中率应在同一窗口用二者的 `rate()` 相除，注意 query 的单位是 token，不要引用不存在的预计算 hit-rate gauge。
 
 ---
 
@@ -244,7 +248,7 @@ prefix cache 不是无限的。当 BlockPool 用尽时：
 
 | 症状 | 可能原因 | 排查命令 |
 | --- | --- | --- |
-| 同 prompt 多次发，第二次还慢 | 第一次还没填完 cache，或 block_size 太大导致末尾 block 不命中 | 看 `vllm:cache_hit_rate` 趋势；try `--block-size 16` |
+| 同 prompt 多次发，第二次还慢 | 第一次还没填完 cache，或 block_size 边界导致末尾 block 不命中 | 用 hit/query counters 计算窗口命中率；核对最终 `block_size` |
 | 改了 LoRA 后命中率清零 | extra_keys 变了，hash 全不一样（**这是对的**）| 这是 by design |
 | TP 多卡命中不一致 | hash 函数 race（用了 builtin `hash()`）| `--prefix-caching-hash-algo sha256` |
 | 多模态请求几乎不命中 | 图像内容每次不同 → mm extra_key 变 → hash 变 | 多模态本就难命中；只有"同图反复问"才命中 |
@@ -261,8 +265,8 @@ A: prefill KV 全部命中 → 跳过 prefill。decode 阶段各自独立采样�
 **Q: prefix cache 在多卡 TP 下怎么工作？**
 A: 每张卡独立维护各自的 KV cache 和 hash 表，但 hash 算法一致，所以同一个 block hash 在所有 rank 上同步命中或同步 miss。Scheduler 在 driver rank 上算 hash，广播给 worker（见 §7.1）。
 
-**Q: 为什么 vLLM 默认不用 SHA-256？**
-A: 单进程内 xxhash 已经足够（碰撞概率极低且非对抗场景），但比 SHA-256 快数倍。**跨进程/跨机共享**（如 LMCache、P/D）时必须切到 SHA-256_cbor 防恶意碰撞。
+**Q: 为什么当前默认用 SHA-256，什么时候才考虑 xxHash？**
+A: hash 碰撞会导致错误复用，甚至形成多租户数据风险，因此当前默认 `sha256`。只有在可信、隔离的环境里量化出 hash CPU 成本，且接受非加密碰撞风险时，才考虑 `xxhash`；需要跨语言稳定键时再选择对应的 CBOR 变体。
 
 **Q: hash 链长了后还能 O(1) 查吗？**
 A: 能。`cached_block_hash_to_block` 是个普通 dict——拿到当前 block 的 hash 直接查。链式只影响"算 hash"的过程（顺序计算），不影响查询。
@@ -272,7 +276,7 @@ A:
 
 1. 跑 `benchmarks/benchmark_prefix_caching.py`
 2. 自定义 workload：同 system prompt + 不同 user query，对比开关 prefix caching 的 TTFT / throughput
-3. 看 Prometheus 的 `vllm:prefix_cache_hit_rate` 和 `vllm:prefix_cache_queries_total`
+3. 看 Prometheus 的 `vllm:prefix_cache_hits_total` 和 `vllm:prefix_cache_queries_total`，用相同窗口的 `rate()` 计算比值
 
 **Q: prefix cache 会不会占用太多 KV cache 让新请求挤不进去？**
 A: 不会。cached 但 ref_cnt=0 的 block 仍在 free queue 里，可以被新请求**透明地复用**（覆写）。代价是失去 cache 内容。
@@ -291,7 +295,7 @@ A: 不会。cached 但 ref_cnt=0 的 block 仍在 free queue 里，可以被新�
 1. 写出 `H₃ = ?` 的表达式（参考 §4.1 图）。如果 `tokens[16..31]` 改一个 byte，`H₃` 会变吗？
 2. 同 prompt 同 token、A 用 LoRA-α、B 用 LoRA-β，能 hit 同一个 block 吗？为什么？
 3. 想跨 vLLM 实例共享 prefix cache，至少要改哪两项配置？
-4. `vllm:prefix_cache_hit_rate` 从 70% 掉到 5%。给出 3 个可能的 root cause 并说怎么验证。
+4. 由 hit/query counters 算出的 5 分钟命中率从 70% 掉到 5%。给出 3 个可能的 root cause 并说怎么验证。
 
 ## 下一步
 

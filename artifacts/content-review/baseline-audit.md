@@ -38,6 +38,10 @@
 | `09-advanced-features` | 5 | 5 | 0 |
 | **合计** | **50** | **50** | **0** |
 
+### Review progress after the foundations/core batch
+
+在冻结基线之后，`01-overview` 的 6 章与 `02-core-concepts` 的 5 章已按 `b23bd73f540175f9e117eaee5029cd7d8df63964` 完成静态源码、命令、指标与图示复核：当前累计 **11 reviewed / 39 pending**。硬件列仍为空；这不会改变上表记录的“扩充前起点”。
+
 ## Affected Chapters from Upstream Diff
 
 上游影响分析将 **50/50** 章全部标记为 affected。按分区展开如下；章节的精确顺序以 `curriculum.toml` 为准。

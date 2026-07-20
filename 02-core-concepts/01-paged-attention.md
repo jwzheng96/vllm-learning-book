@@ -12,6 +12,8 @@
 > 3. 描述一个请求从 prefill 到 decode 在 BlockPool / BlockTable 上的 KV 分配序列。
 > 4. 讲清"PagedAttention 跟 FlashAttention 是什么关系" / "PagedAttention vs RadixAttention 的区别"。
 
+> **当前源码复核（`b23bd73`）：** `CacheConfig.DEFAULT_BLOCK_SIZE` 为 16，但 `block_size=None` 表示先走平台默认，混合 KV 模型还会做组间对齐；下文用 16 做算例，不把它当成所有硬件/模型的不可变默认。PagedAttention 是 KV 地址管理接口，FlashAttention/FlashInfer/Triton 等是受能力约束的执行后端。
+
 vLLM 的心脏。如果只能讲清一个概念，必须是它。
 
 ---
@@ -145,7 +147,7 @@ for block_idx in block_table[req_id]:
 
 ---
 
-## 5. block_size 为什么默认 16
+## 5. 为什么常用 `block_size=16`
 
 - 太小：每个 block 一次 indirection，block_table 变长，访存开销线性放大
 - 太大：内部碎片回归（每个请求最多浪费 `block_size - 1` 个 token 的槽位）
@@ -156,7 +158,7 @@ for block_idx in block_table[req_id]:
 - 配合 RoPE / GQA 的 head_dim 友好
 - 内部碎片影响 < 2%
 
-可通过 `--block-size 8/16/32` 调整。
+可通过 `--block-size` 调整；有效范围与限制由当前平台实现校验，不能假设所有后端都支持同一组候选值。
 
 ---
 
@@ -264,7 +266,7 @@ A: PagedAttention 是**线性 block 序列**，每个请求一张表。RadixAtte
 ## 小结
 
 - PagedAttention = **把 KV cache 当 OS 物理页管**：定长 block + 每请求一张 BlockTable + 物理 block 池 + refcount + COW + LRU 复用。每条性质都能在 OS 教材里找到原型。
-- 默认 `block_size=16` 是工程取舍——太小 indirection 多、太大内部碎片回归；可通过 `--block-size 8/16/32` 调。
+- 通用 fallback `block_size=16` 是工程取舍——太小 indirection 多、太大内部碎片回归；最终值仍受平台、模型与显式配置约束。
 - "PagedAttention 论文"讲的是思想，**当前代码主要走 FlashAttention v2/v3 / FlashInfer 的 paged 版本**，自家 `paged_attention_v1/v2.cu` 只是 fallback。
 - 共享语义有三种用法：跨请求 prefix caching、beam search、parallel sampling——本质都是 `ref_cnt` 的加减游戏。
 - 它跟 RadixAttention 是"线性 block 序列" vs "trie / radix 树"的区别——前者实现简单稳定，后者前缀复用更激进。

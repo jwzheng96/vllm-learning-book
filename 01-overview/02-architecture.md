@@ -12,6 +12,8 @@
 > 3. 在脑子里展开单次 step 的执行链：Scheduler → Executor → Worker → forward → Sampler → 输出。
 > 4. 把 vLLM 的每一项设计映射回操作系统 / 网络 / 分布式系统课里学过的对应概念。
 
+> **当前源码复核（`b23bd73`）：** 在线服务的主链是 API server / `AsyncLLM` → `EngineCoreClient`（常见为 `AsyncMPClient`）→ `EngineCoreProc` → `Executor` → Worker。离线单进程、multiprocessing、Ray 与 external launcher 的边界不同，三层图是逻辑职责图，不保证每种部署都产生相同 PID 数量或同一种 IPC。
+
 目标是脑子里有一张清晰的图——一个请求从 HTTP 到 GPU 再到流式返回的完整路径。这张图刻进脑子，后面所有源码走读都能定位到它的某一层。
 
 ---
@@ -142,6 +144,32 @@ flowchart TB
 ---
 
 ## 3. 单次推理 step 的完整流程
+
+```mermaid
+sequenceDiagram
+    participant API as OpenAI API Server
+    participant A as AsyncLLM
+    participant C as AsyncMPClient
+    participant E as EngineCoreProc
+    participant S as Scheduler
+    participant X as Executor
+    participant W as Worker/GPUModelRunner
+    participant O as OutputProcessor
+    API->>A: add_request(...)
+    A->>C: EngineCoreRequest
+    C->>E: ZMQ request channel
+    E->>S: schedule()
+    S-->>E: SchedulerOutput
+    E->>X: execute_model(SchedulerOutput)
+    X->>W: collective RPC / local call
+    W-->>E: ModelRunnerOutput
+    E-->>C: EngineCoreOutputs
+    C-->>A: output queue
+    A->>O: process_outputs(...)
+    O-->>API: RequestOutput / streaming chunk
+```
+
+`InprocClient`、Ray executor 或外部 launcher 会替换其中的传输实现，但不会改变“请求契约 → 调度契约 → runner 输出 → 用户输出”的职责顺序。
 
 整个推理过程的核心 step 循环：
 
@@ -278,7 +306,7 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 | --- | --- | --- |
 | 进程 vs 线程 | Worker 用进程不用线程（避开 Python GIL；每进程独立 CUDA context） | `05-process-and-ipc-internals.md` §2 |
 | 虚拟内存 / 页表 | **PagedAttention** —— KV block 是物理页，每请求一张 block table | `02-core-concepts/01-paged-attention.md` |
-| 页错误 → 抢占 | KV 不够时的 `preempt`（释放或 swap） | `02-core-concepts/03-kv-cache-management.md` |
+| 页错误 → 抢占 | KV 不够时的 `preempt`（当前 V1 释放并重算；offload/connector 另行建模） | `02-core-concepts/03-kv-cache-management.md` |
 | 写时复制（COW） | beam search / parallel sampling 多候选共享前缀 block，分歧时再 fork | 同上 |
 | 引用计数（refcount） | `KVCacheBlock.ref_cnt` | 同上 |
 | LRU 缓存替换 | `BlockPool` 的 `free_block_queue` 是 LRU 双向链表 | `03-code-walkthrough/03-kv-cache-manager.md` |
@@ -333,7 +361,7 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 | --- | --- | --- |
 | 主从模型（leader/follower） | rank 0 是 driver worker，广播 SchedulerOutput 给其他 worker | `03-code-walkthrough/04-model-runner.md` |
 | 共识 / 协调 | DP 模式下 `DPCoordinator` 协调多个 EngineCore 的全局状态 | `vllm/v1/engine/coordinator.py` |
-| 故障恢复 | KV preempt = "断点重续"（recompute）vs swap（持久化） | `02-core-concepts/02-continuous-batching.md` §7 |
+| 故障恢复 | KV preempt = 释放本地 block、清零进度、重新排队；外部 KV connector 另有状态协议 | `02-core-concepts/02-continuous-batching.md` §7 |
 | 心跳 / liveness | `EngineCore` 监控 Worker 健康，崩了整组重启 | `08-production-deployment/06-reliability-and-failure-modes.md` |
 | 一致性视图 | AIBrix 的 KV Event Sync 让所有 Pod 看到一致的 cache 状态 | `08-production-deployment/02-smart-routing-and-load-balancing.md` §4.2 |
 | 水平扩展 vs 垂直扩展 | API Server 多副本（水平）vs Worker 加 TP（垂直） | 本篇 §1 |
@@ -423,7 +451,7 @@ flowchart TB
 | `num_scheduled_tokens : dict[req_id, int]` | 每个本步要算的 token 数（prefill chunk / decode = 1）| Worker 据此组装 packed batch |
 | `total_num_scheduled_tokens : int` | 全步 token 总数 | Worker 据此 pad / 选 CUDA Graph capture 尺寸 |
 | `scheduled_spec_decode_tokens : dict[req_id, list[int]]` | 投机解码的草稿 token | Worker 一起塞进 forward，验证后采纳/拒绝 |
-| `preempted_req_ids : set[str]` | 本步被抢占的请求 | Worker 释放 KV（recompute）或拷出 CPU（swap） |
+| `preempted_req_ids : set[str]` | 本步被抢占的请求 | runner 清理持久 batch 状态；Scheduler 侧已释放 KV 并重置请求进度 |
 | `finished_req_ids : set[str]` | 本步完成的请求 | Worker 释放 KV、清理 sampling 状态 |
 | `kv_connector_metadata` | P/D 分离 / KV offload 元数据 | Worker 据此触发 KV transfer |
 | `grammar_bitmask` | 结构化输出的 token mask | Worker 在 sampler 里 apply |

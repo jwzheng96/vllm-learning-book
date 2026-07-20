@@ -7,10 +7,12 @@
 > **耗时：** 约 20 分钟。
 >
 > **学完能：**
-> 1. 复述启动阶段 `profile run` 算 num_blocks 的 5 步公式，并解释为什么 `--gpu-memory-utilization` 默认 0.9。
+> 1. 复述启动阶段 `profile run` 算 num_blocks 的 5 步公式，并解释 `--gpu-memory-utilization` 默认 0.92 的含义与风险。
 > 2. 写出 KVCacheBlock / FreeKVCacheBlockQueue / cached_block_hash_to_block 三个数据结构的不变式。
 > 3. 画出一个请求"WAITING → RUNNING → FINISHED"过程中 KV block 的分配 / 复用 / 释放序列。
 > 4. 讲清 chain hash 为什么必须 chain、prefix caching 的命中是"按顺序"的。
+
+> **当前源码复核（`b23bd73`）：** `CacheConfig.gpu_memory_utilization` 当前默认 0.92；prefix hash 默认 `sha256`。`ref_cnt==0` 表示普通 block 在 free queue，但 null block 是明确例外；hash 不再能简化成 Python 内置 `hash()`，命中正确性也不能靠“二次 token 比对”兜底。
 
 PagedAttention 是"理念"，本节是"工程实现"。看完这节，你才能讲清"vLLM 启动时怎么决定要分多少 block"。
 
@@ -32,7 +34,7 @@ vLLM 启动时不会用 `torch.cuda.memory_allocated()` 估算 KV 可用空间�
 
 参数：
 
-- `--gpu-memory-utilization`：默认 0.9（用 90% 显存）
+- `--gpu-memory-utilization`：默认 0.92（这是当前实例的 executor 显存预算比例，不是 `nvidia-smi` GPU-Util）
 - `--kv-cache-dtype`：默认与模型 dtype 一致；可设 fp8 减半
 
 启动日志会打印类似 `# GPU blocks: 12345`，这就是 num_blocks。
@@ -231,7 +233,7 @@ def _preempt(self, req):
 
 选谁来 preempt？默认 FCFS 倒序（最晚到的先牺牲）；priority 模式下选优先级最低的。
 
-V1 几乎总是用 recompute 而非 swap，理由前面讲过（PCIe 慢 + prefix cache 兜底）。
+当前 V1 preemption 直接使用 recompute；CPU/远端 KV offload 由独立 backend/connector 负责，不是这里的分支。
 
 ---
 
@@ -270,14 +272,14 @@ A: 风险大。profile run 测的是单一 batch 的峰值，runtime 实际可�
 A: 通过 `seq_lens` / `block_table` 中的有效长度告诉 kernel "这个请求总共 N 个 token，超过 N 的位置 mask 掉"。kernel 内部按 block 加载，但 softmax 时排除无效位置。
 
 **Q: prefix caching 会不会出错？比如 hash 冲突？**
-A: 用 Python `hash()` 或更安全的 SHA-1（vLLM 用过 xxhash）。冲突概率极低，且即使冲突会被 token id 序列比对二次验证。
+A: 当前默认用 `sha256` 序列化后哈希；也支持 `sha256_cbor`、`xxhash`、`xxhash_cbor`。缓存索引按 hash 查找，不能宣称总有 token 序列二次比对；非加密 hash 的碰撞风险在多租户环境还可能成为隔离问题，所以必须按风险选择算法。
 
 ---
 
 ## 小结
 
 - 启动时通过 **profile run** 实测峰值显存，再按 `(gpu_mem_util × total) - peak` 算 KV 可用空间，得到 `num_blocks`——这是 `--gpu-memory-utilization` 留 0.9 给 activation 余量的原因。
-- **BlockPool** 是物理 block 的中央仓库：`blocks` 元数据数组 + LRU **FreeKVCacheBlockQueue** + **cached_block_hash_to_block** 索引。三个不变式：`ref_cnt==0 ⟺ 在 free queue`、`ref_cnt>0 ⟺ 被引用`、`block_hash!=None ⟺ 写满且参与 prefix cache`。
+- **BlockPool** 是物理 block 的中央仓库：`blocks` 元数据数组 + LRU **FreeKVCacheBlockQueue** + **cached_block_hash_to_block** 索引。对普通 block，`ref_cnt==0` 表示在 free queue、`ref_cnt>0` 表示被引用；null block 的引用计数不按该规则维护。缓存 hash 与物理写满/可复用状态相关，但 hybrid KV 与组 ID 使真实键比三元伪代码更丰富。
 - 一个请求的 KV 一生：WAITING → 调度时 `allocate_slots` → RUNNING → 每越 block 边界再 allocate 1 → FINISHED 时 `free()` 把 ref_cnt-=1，归零的 block 进 free queue 尾（**但 hash 保留**供未来命中）。
 - Prefix caching 用**链式 hash**（`hash((prev_hash, tokens, extra_keys))`）保证位置敏感；命中按顺序，第一个 miss 之后全部 miss。
 - Preemption 默认走 **recompute**：释放所有 block + 状态回到 WAITING，下次 schedule 时重新 prefill（重算时还能命中 prefix cache）。FP8 KV 是免费翻倍 num_blocks 的常用手段。
@@ -357,7 +359,7 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 
 ---
 
-**4. V1 总是用 recompute 的 3 条理由 + 什么硬件上 swap 合理。**
+**4. 当前 V1 为何用 recompute；什么时候值得单独评估 KV offload？**
 
 **Recompute 偏好的 3 条理由**：
 
@@ -365,13 +367,13 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 2. **Prefix cache 救场**：被踢请求重新进 waiting 后，多数情况能命中之前 cached 的 block（同 hash），实际只重算 cache miss 段——通常远小于全部 prefill。综合 recompute 比 swap 快
 3. **实现简单**：recompute = "free 所有 block + 回到 WAITING 状态"，无需管理 host buffer 池、PCIe DMA 调度、双端同步
 
-**Swap 反而合理的场景**：
+**独立 KV offload 值得评估的场景**（不是 preemption mode）：
 
-- **Grace Hopper / GH200**：CPU↔GPU 900 GB/s NVLink-C2C，swap 接近免费
+- **Grace Hopper / GH200 等快互连**：理论传输上限更高，但仍须测序列化、排队和双向迁移
 - **超长上下文 + 极低 prefix cache 命中**：每次 prompt 都不一样，recompute 等于全部重 prefill 没意义
-- **prefill 算力严重 contended**：大并发同时争 GPU，swap 释放 GPU 给其他 running 任务
+- **prefill 算力严重 contended**：大并发同时争 GPU，外部 KV 可能减少重算，但会引入回压和一致性状态
 
-参数：`--preemption-mode swap`（默认 `recompute`）。
+当前 V1 抢占没有 swap CLI：`Scheduler._preempt_request()` 释放 request blocks、清零 `num_computed_tokens` 并放回 waiting。KV offload/transfer 是独立子系统，不能混写成抢占模式。
 
 ---
 
@@ -407,4 +409,4 @@ chain prev_hash 后：A 的 block 1 hash = hash(hash([1..16]), [99,100,...])，B
 - 跟着读：[`05-chunked-prefill.md`](05-chunked-prefill.md)（与 KV 管理强相关的另一项 V1 默认行为，剩余 prefill 是怎么切的）。
 - 想看源码：`vllm/v1/core/block_pool.py`（BlockPool）、`vllm/v1/core/kv_cache_manager.py`（allocate_slots / free）、`vllm/v1/core/kv_cache_utils.py`（hash 计算）、`vllm/v1/worker/gpu_worker.py`（determine_available_memory）。
 - 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（用 `--gpu-memory-utilization` / `--kv-cache-dtype fp8` 对比 num_blocks 与并发上限）。
-- 想从生产视角理解：[`08-production-deployment/05-slo-and-observability.md`](../08-production-deployment/05-slo-and-observability.md)（`vllm:kv_cache_usage`、`vllm:prefix_cache_hit_rate` 等 KV 相关指标怎么看、报警阈值怎么定）。
+- 想从生产视角理解：[`08-production-deployment/05-slo-and-observability.md`](../08-production-deployment/05-slo-and-observability.md)（`vllm:kv_cache_usage_perc`，以及由 prefix cache hit/query counters 计算命中率）。
