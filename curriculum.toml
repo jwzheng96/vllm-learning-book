@@ -305,6 +305,30 @@ environments = ["cpu", "nvidia-gpu", "no-gpu"]
 source_areas = ["vllm/entrypoints/cli/**", "vllm/entrypoints/openai/**", "vllm/entrypoints/serve/**", "vllm/v1/metrics/**"]
 
 [[chapter]]
+path = "07-hands-on/06-benchmark-methodology.md"
+title = "06. Benchmark 方法论：让性能数字可复现、可比较"
+level = "beginner"
+tracks = ["quickstart", "production", "interview"]
+environments = ["cpu", "nvidia-gpu", "no-gpu"]
+source_areas = ["vllm/benchmarks/**", "vllm/entrypoints/cli/benchmark/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "07-hands-on/07-tuning-playbook.md"
+title = "07. 调优 Playbook：从症状到可回滚实验"
+level = "intermediate"
+tracks = ["production", "interview"]
+environments = ["cpu", "nvidia-gpu", "no-gpu"]
+source_areas = ["vllm/config/**", "vllm/v1/core/**", "vllm/v1/metrics/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "07-hands-on/08-production-capstone.md"
+title = "08. 生产 Capstone：交付一个可运维、可扩容、可回滚的 vLLM 服务"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["cpu", "nvidia-gpu", "no-gpu"]
+source_areas = ["vllm/entrypoints/**", "vllm/v1/core/**", "vllm/v1/metrics/**", "vllm/v1/worker/**"]
+
+[[chapter]]
 path = "08-production-deployment/01-deployment-architectures.md"
 title = "01. 大规模 vLLM 部署参考架构（2026 视角）"
 level = "advanced"
