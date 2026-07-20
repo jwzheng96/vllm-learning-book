@@ -48,6 +48,8 @@
 
 源码版本、语义锚点、影响报告和人工复核的完整流程见 [`docs/source-sync.md`](docs/source-sync.md)。每周工作流只创建候选 PR，不会自动合并或发布；红色 Upstream sync badge 表示候选尚未通过全部门禁。
 
+文中任何硬件验证徽章都必须对应可索引、可复现的运行记录（锁定 commit、硬件、命令和结果）；只有静态源码复核时，不得标注为 GPU 已验证。
+
 **每章统一的结构：**
 
 > **谁该读这一篇？** ...
@@ -70,35 +72,50 @@
 ## 学习路径
 
 ```mermaid
-flowchart LR
-    A[Week 1<br/>建立直觉<br/>~6h] --> B[Week 2<br/>吃透核心算法<br/>~8h]
-    B --> C[Week 3<br/>啃源码<br/>~10h]
-    C --> D[Week 4<br/>优化 / 分布式 / 生产<br/>~12h]
+flowchart TB
+    Start[选择你的目标] --> Q[30 分钟理解]
+    Start --> S[源码主线]
+    Start --> P[工业实战]
+    Start --> I[面试冲刺]
 
-    A -.-> A1[01-overview]
-    B -.-> B1[02-core-concepts]
-    C -.-> C1[03-code-walkthrough]
-    D -.-> D1[04-optimizations]
-    D -.-> D2[05-distributed]
-    D -.-> D3[08-production-deployment]
-    D -.-> D4[09-advanced-features]
+    Q --> Q1[前置概念 → vLLM 是什么 → 架构 → 首个 API 服务]
+    S --> S1[入口 → 输入 → 调度 / KV → Runner / Attention → Sampling → 输出]
+    P --> P1[环境 → 基准 → 调优 → 部署 / SLO → 安全 / 升级 → Capstone]
+    I --> I1[高频题 → 计算题 → 系统设计 → 排障 → 模拟面试]
 
     classDef phase fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
     classDef topic fill:#f7f8fa,stroke:#5b6573,color:#1a1f29;
-    class A,B,C,D phase;
-    class A1,B1,C1,D1,D2,D3,D4 topic;
+    class Q,S,P,I phase;
+    class Start,Q1,S1,P1,I1 topic;
 ```
 
-按章节顺序读最系统。时间紧时用"最短路径"：
+四条路径可以独立走，也可以从“30 分钟理解”起步后再分流。本轮新增章节完成前，标有“待补齐”的节点先按相邻章节继续，不影响现有内容阅读。
 
-| 投入时间 | 推荐路径 |
-| --- | --- |
-| 零基础 | 先读 [`01-overview/00-prerequisites.md`](01-overview/00-prerequisites.md)（前置概念）再走任何一条路径 |
-| 1 天（~5h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-architecture`](01-overview/02-architecture.md) → [`01-paged-attention`](02-core-concepts/01-paged-attention.md) → [`工程问答速查`](06-interview/01-common-questions.md) |
-| 1 周（~15h） | 精读 `01-overview/` + `02-core-concepts/`，跑通 `vllm` repo 的 `examples/offline_inference/basic.py` |
-| 3-4 周（~35h） | 顺序读 01 → 09，每章配合锁定 commit 的语义源码锚点对照 |
-| 核心机制快读（~8h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-core-concepts/`](02-core-concepts/) 全部 → [`06-interview/`](06-interview/) 两篇工程问答 |
-| 生产部署快读（~10h） | [`01-overview/02-architecture`](01-overview/02-architecture.md) → [`08-production-deployment/`](08-production-deployment/) 全部 |
+### 30 分钟理解
+
+适合第一次接触 vLLM、需要快速建立全局心智模型的人。
+
+[`前置知识`](01-overview/00-prerequisites.md)（按需跳读） → [`vLLM 是什么`](01-overview/01-what-is-vllm.md) → [`整体架构`](01-overview/02-architecture.md) → `serve-openai-api`（本轮待补齐，亲手启动第一个兼容 OpenAI API 的服务）
+
+### 源码主线
+
+适合准备读代码、改代码或定位引擎问题的人。顺序刻意沿一次请求的数据流展开。
+
+[`入口与主循环`](03-code-walkthrough/01-entry-points.md) → `input-processing-and-tokenization`（待补齐） → [`Scheduler`](03-code-walkthrough/02-scheduler.md) → [`KV Cache`](03-code-walkthrough/03-kv-cache-manager.md) → [`Model Runner`](03-code-walkthrough/04-model-runner.md) → [`Attention`](03-code-walkthrough/05-attention-backends.md) → [`Sampling`](09-advanced-features/01-sampling-and-logits.md) → `output-processing-and-streaming`（待补齐）
+
+### 工业实战
+
+适合要把服务从“能跑”推进到“可量化、可调优、可上线、可回滚”的工程团队。
+
+[`环境搭建`](07-hands-on/01-setup.md) → `benchmark-methodology`（待补齐） → `tuning-playbook`（待补齐） → [`部署架构`](08-production-deployment/01-deployment-architectures.md) → [`容量规划`](08-production-deployment/04-autoscaling-and-capacity.md) → [`SLO 与可观测性`](08-production-deployment/05-slo-and-observability.md) → `security-and-multi-tenancy`（待补齐） → `upgrades-rollbacks-and-compatibility`（待补齐） → `production-capstone`（待补齐）
+
+### 面试冲刺
+
+适合用可计算、可追问、可评分的方式准备推理工程面试。
+
+[`高频工程问题`](06-interview/01-common-questions.md) → `capacity-and-troubleshooting-drills`（待补齐，容量计算与故障演练） → [`系统设计`](06-interview/02-system-design.md) → `mock-interview-and-rubric`（待补齐，模拟面试与评分表）
+
+如果目标是完整掌握，仍建议按 01 → 09 顺序阅读，并在每章用锁定 commit 的语义源码锚点回到真实实现。
 
 ---
 

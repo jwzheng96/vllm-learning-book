@@ -188,6 +188,20 @@ def discover_chapters(repo_root: Path) -> Tuple[PurePosixPath, ...]:
     return tuple(sorted(paths, key=lambda item: item.as_posix()))
 
 
+def discover_chapter_files(repo_root: Path) -> Tuple[Path, ...]:
+    chapters = load_curriculum(repo_root / "curriculum.toml")
+    inventory_paths = {chapter.path for chapter in chapters}
+    discovered_paths = set(discover_chapters(repo_root))
+    errors = []
+    for path in sorted(inventory_paths - discovered_paths, key=str):
+        errors.append(f"curriculum chapter does not exist: {path}")
+    for path in sorted(discovered_paths - inventory_paths, key=str):
+        errors.append(f"chapter missing from curriculum: {path}")
+    if errors:
+        raise ValueError("; ".join(errors))
+    return tuple(repo_root / chapter.path.as_posix() for chapter in chapters)
+
+
 def _first_title(path: Path) -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("# "):

@@ -32,6 +32,8 @@ from markdown.extensions.toc import TocExtension
 from markdown.extensions.attr_list import AttrListExtension
 from markdown.extensions.sane_lists import SaneListExtension
 
+from tools.source_sync.inventory import discover_chapter_files
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 SRC = Path(os.environ.get("VLLM_LEARNING_SRC", SCRIPT_DIR))
 # Default to ./_site/ inside the repo (gitignored), suitable for GitHub Pages.
@@ -71,13 +73,9 @@ def discover_files() -> list[tuple[str, Path]]:
     readme = SRC / "README.md"
     if readme.exists():
         files.append(("README", readme))
-    for section in SECTIONS:
-        d = SRC / section
-        if not d.is_dir():
-            continue
-        for md in sorted(d.glob("*.md")):
-            rel = f"{section}/{md.stem}"
-            files.append((rel, md))
+    for md in discover_chapter_files(SRC):
+        rel = md.relative_to(SRC).with_suffix("").as_posix()
+        files.append((rel, md))
     return files
 
 
