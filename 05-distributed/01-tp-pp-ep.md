@@ -12,6 +12,8 @@
 > 3. 描述 MoE 的 EP 通信（两次 AllToAll）和 EPLB 解决的负载问题
 > 4. 对一台 8×H100，能给出 Llama-70B / Mixtral / DeepSeek-V3 的推荐并行组合
 
+> **当前源码复核（`b23bd73`）：** `ParallelConfig.world_size` 在普通 executor 内先表示 `TP × PP × PCP`；跨 DP 总规模看 `world_size_across_dp`，external launcher 又会把 DP 纳入 worker world。DCP 复用 TP ranks；EP group 跨 `TP × PCP × DP`。PCP 当前不支持与 DP>1 组合，Elastic EP 还要求 EPLB、禁用 PP>1，并限制 external/hybrid LB。
+
 一个模型一张卡装不下，怎么切？这一节讲三种主流并行 + Data Parallel 共 4 种，以及它们在 vLLM 里的进程模型与代码入口。
 
 ---
@@ -103,12 +105,25 @@ flowchart TD
 **5 句话口诀**：
 
 - 单卡塞不下 → **TP**（同机）/ **PP**（跨机）
-- MoE 模型 → **必加 EP**
+- MoE 模型 → **评估 EP**；小规模可走 TP 路径，大规模再按权重、AllToAll 与负载决定
 - 高 QPS → **DP** 横向
 - 长上下文 → **DCP/PCP** 加维度
 - 凡跨机 → 看网络：**RDMA 上 TP+PP，以太网上纯 PP**
 
 ---
+
+### 1.3 当前维度契约速查
+
+| 维度 | 切什么 | 典型 collective | 显存/延迟影响 | 关键条件 |
+| --- | --- | --- | --- | --- |
+| TP | hidden/head/intermediate | AllReduce/ReduceScatter/AllGather，依 layer 实现 | 分权重；每层同步增加 latency | heads/intermediate 与 quant/kernel 的可分性 |
+| PP | layers | stage P2P | 分权重；bubble 与 stage imbalance | layer partition、stage 输入输出兼容 |
+| DP | requests/model replicas | 普通 dense forward 可独立；wide EP 时参与 group | 复制 dense 权重与 KV；扩吞吐 | 内/外 LB 与 coordinator 模式 |
+| EP | routed experts | 逻辑 dispatch + combine（backend 可融合/改写） | 分 expert 权重；引入 all-to-all 与 straggler | `enable_expert_parallel`、expert mapping/backend |
+| PCP | prefill sequence | attention backend 特定通信 | 分长 prefill 激活/KV；进入 worker world | 当前与 DP>1 不兼容 |
+| DCP | decode context/KV sequence | `ag_rs` 或条件式 `a2a` | 复用 TP ranks，不增 worker world | `TP % DCP == 0`、backend 支持 |
+
+每个估算都写单位：worker 数、bytes/rank、collective 次数/layer、seconds/step。不要把“每层 2 次 AllReduce/AllToAll”外推到所有 fused、quantized、MLA 或 backend 路径；以实际 module 与 profiler trace 为准。
 
 ## 2. Tensor Parallel（TP）
 
@@ -718,14 +733,13 @@ flowchart TB
 ### 5.5 world_size 与组合公式
 
 ```
-world_size = TP × PP × DP × PCP
-（PCP = prefill context parallel，见后续章节）
+普通 executor 内的 worker world `= TP × PP × PCP`；跨 DP 总规模 `world_size_across_dp = worker world × DP`。external launcher 的进程 world 定义不同，必须读取解析后的配置。
 
 EP 启用时额外约束：
 ep_size = TP × DP × PCP
 （PP 不计入 EP，因为 PP 各段持有独立 expert 集合）
 
-DCP（decode context parallel）复用 TP GPU，不增 world_size。
+DCP（decode context parallel）复用 TP GPU，不增 worker world；还要求 TP 能被 DCP 整除。
 ```
 
 ### 5.6 8 卡 H100 的真实组合矩阵

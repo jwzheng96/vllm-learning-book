@@ -12,6 +12,8 @@
 > 3. 选 DCP 的通信后端：`ag_rs` vs `a2a`，以及为什么 MLA 模型用 `a2a` 能省 1/3 NCCL 调用。
 > 4. 计算 `cp_kv_cache_interleave_size` 对 KV 物理分布的影响。
 
+> **当前源码复核（`b23bd73`）：** PCP 进入 worker world，DCP 复用 TP ranks；当前校验要求 `TP % DCP == 0`，PCP 暂不支持 DP>1。`dcp_comm_backend` 默认 `ag_rs`，`a2a` 还要求 DCP>1 并受 attention/model backend 能力约束；选择表只能作为实验起点。
+
 ---
 
 ## 1. 为什么需要 Context Parallel
@@ -216,7 +218,7 @@ flowchart TD
 | 场景 | 建议 |
 | --- | --- |
 | 短上下文（< 8K） | 不开 CP，TP/PP/DP 即可 |
-| 中长上下文（8K-32K）+ MLA 模型 | DCP-2 with `a2a` backend |
+| 中长上下文（8K-32K）+ MLA 模型 | 候选 DCP-2 + `a2a`；先核对 backend 支持并基准 |
 | 中长上下文 + 非 MLA | DCP-2 with `ag_rs`（默认）或不开 |
 | 长上下文（32K-128K） | DCP-2 或 DCP-4，按 KV 显存压力定 |
 | 超长上下文（128K+） prefill 阶段塞不下 | PCP-2 或更多 + chunked prefill |
@@ -316,7 +318,7 @@ TP-8 + DCP-2：
 - `interleave_size=1` 时，命中 block 后实际 K/V 数据要跨 rank 收集 → DCP 通信路径变长
 - `interleave_size=16` 时，命中 block 后 K/V 都在本地 → 更高效
 
-→ **prefix cache 命中率不变，但每次命中后的 attention 计算效率不同**。生产推荐 `interleave_size = block_size`（默认通常 16），平衡均匀分布与本地性。
+→ **prefix cache 命中率与物理执行代价是不同问题**。`interleave_size = block_size` 可作为候选，但默认和最佳值受配置/模型影响，必须用长上下文负载验证。
 
 ---
 

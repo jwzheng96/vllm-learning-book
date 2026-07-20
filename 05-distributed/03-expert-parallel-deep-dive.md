@@ -12,11 +12,13 @@
 > 3. 解释 "EP + DP" 组合为什么比纯 EP 更常见，以及 `tp_size * dp_size * pcp_size` 怎么决定 expert 切片数。
 > 4. 判断什么时候需要 EPLB（Expert Parallel Load Balancing）；说出 vLLM 监控负载不均要看哪个 metric。
 
+> **当前源码复核（`b23bd73`）：** all2all backend 当前默认 `allgather_reducescatter`，其他后端需要依赖、平台与拓扑支持。EPLB 需要 CUDA-like 平台、`--enable-expert-parallel` 和有效 EP group；Elastic EP 还要求 EPLB 且有 PP/LB 等组合限制。在线弹性经过显式 scaling API 与 drain/weight-transfer/reshuffle，不是无条件自愈。
+
 ---
 
-## 1. 为什么 MoE 一定要 EP？
+## 1. 为什么大规模 MoE 常用 EP？
 
-DeepSeek-V3 这种 MoE 模型有 256 个 expert，每层 router 只激活 8 个（top-k=8）。如果用纯 TP 把模型切到 8 卡：
+DeepSeek-V3 这类大 MoE 每层只激活部分 expert。小模型/小规模可以不用 EP；当 expert 权重、TP 切片浪费或吞吐成为瓶颈时，EP 才把 expert 映射到更大的 rank group。以下用 256 expert/top-k=8 作为算例。
 
 - 每张卡都加载全部 256 expert 的 1/8（按权重切）
 - 每个 token 路由到 8 个 expert，**每张卡都被涉及**
