@@ -13,6 +13,8 @@
 > 4. 说出 EPLB 解决什么问题、控制平面如何动作
 > 5. 在 vLLM 源码里定位 MLA / Mamba / MoE 各自的 backend / layer / kernel 文件
 
+> **当前源码复核（`b23bd73`）：** 模型加载先由 `_ModelRegistry.inspect_model_cls/resolve_model_cls` 结合 architectures、`model_impl`、runner/convert type 解析，必要时 fallback 到 Transformers 实现。dense/GQA/MLA/MoE/Mamba 的差异最终都必须满足 runner、KV/cache 与 parallel contracts；文件数量不是兼容性证据。
+
 Llama / Qwen / GPT 都是"标准 transformer + GQA"。但生产里你会遇到 DeepSeek-V2/V3 的 MLA（latent KV）、Mamba / Mamba2 / Jamba 的 SSM 状态（非 KV）、Mixtral / DeepSeek MoE 的 Top-k expert routing。这三类把 vLLM 通用机制"拉扯"得最厉害，本节把每种的源码挂载点讲清。
 
 ---

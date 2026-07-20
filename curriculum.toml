@@ -161,6 +161,14 @@ environments = ["no-gpu", "nvidia-gpu"]
 source_areas = ["vllm/entrypoints/openai/**", "vllm/inputs/**", "vllm/renderers/**", "vllm/tokenizers/**", "vllm/v1/engine/**"]
 
 [[chapter]]
+path = "03-code-walkthrough/09-output-processing-and-streaming.md"
+title = "09. 输出处理与流式返回：从 Sampler 到 SSE"
+level = "intermediate"
+tracks = ["quickstart", "internals", "production", "interview"]
+environments = ["no-gpu", "nvidia-gpu"]
+source_areas = ["vllm/entrypoints/openai/**", "vllm/tokenizers/**", "vllm/v1/engine/**", "vllm/v1/metrics/**", "vllm/v1/sample/**", "vllm/v1/worker/**"]
+
+[[chapter]]
 path = "04-optimizations/01-quantization.md"
 title = "01. 量化（Quantization）"
 level = "advanced"

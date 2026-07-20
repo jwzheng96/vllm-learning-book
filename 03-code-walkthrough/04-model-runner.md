@@ -13,7 +13,9 @@
 > 4. 说明 InputBatch 持久化为何是 CUDA Graph 的前提条件
 > 5. 看懂 `forward_context` 如何把 attention metadata 注入到无侵入式 nn.Module
 
-文件：`vllm/v1/worker/gpu_model_runner.py`（3000+ 行，vLLM 最长的文件）。这是 Worker 进程里"每步前向 + 采样"的本体。看懂它就懂了 forward pass 的工程实现。
+> **当前源码复核（`b23bd73`）：** `GPUModelRunner.execute_model()` 仍以持久 `InputBatch`、block table、attention/sampling metadata 为中心，但 compile/CUDA Graph dispatch、spec decode 与 async output 会改变一次调用的输入输出时序。prefill/decode 是工作负载标签，Scheduler 实际按统一 computed-token 模型发出差量。
+
+文件：`vllm/v1/worker/gpu_model_runner.py`。它持续增长，行数和“最长文件”都不是接口事实；请从 `GPUModelRunner.execute_model` 与 `InputBatch` 的语义入口开始。这是 Worker 进程里“每步前向 + 采样”的本体。
 
 ---
 
@@ -40,7 +42,7 @@ GPUModelRunner 不直接接触 HTTP / 调度，它只接受 `SchedulerOutput`，
 
 ---
 
-## 2. 类的结构（line 411 起）
+## 2. 类的结构（以语义成员为导航）
 
 ```python
 class GPUModelRunner(KVConnectorModelRunnerMixin, LoraModelRunnerMixin):
@@ -119,7 +121,7 @@ def execute_model(self, scheduler_output):
 
 ---
 
-## 4. _update_states：维护 InputBatch（line 1099）
+## 4. `_update_states`：维护 InputBatch
 
 这一段是 V1 的招牌优化——**不重建 batch，只更新 diff**。
 
@@ -143,13 +145,13 @@ def _update_states(self, scheduler_output):
         self.input_batch.update_request(cached_req)
 ```
 
-效果：100 个并发请求每步只更新几行（新增/删除/增量），不是重建 100 行。**CPU overhead 从 ms 级降到 μs 级**。
+效果：100 个并发请求每步只更新新增/删除/增量行，而不是重建全部状态。具体 CPU 收益依赖请求形状、runner 版本与硬件，应通过 profiler 量化，不能把 ms→μs 当通用承诺。
 
 参考：`vllm/v1/worker/gpu_input_batch.py` 里 `InputBatch` 的实现。
 
 ---
 
-## 5. _prepare_inputs：组 forward 输入（line 1835）
+## 5. `_prepare_inputs`：组 forward 输入
 
 这一步把 InputBatch 里的逻辑数据搬到 GPU forward 需要的 tensor 形态。核心要产出：
 
@@ -190,7 +192,7 @@ FlashAttention 的 varlen 模式就吃这种打平输入。
 
 ---
 
-## 6. _build_attention_metadata（line 2146）
+## 6. `_build_attention_metadata`
 
 每种 attention backend 有自己的 metadata。GPU runner 在 init 时给每个 attention 层创建一个 builder，每步调一次：
 
@@ -298,14 +300,14 @@ else:
 
 ## 11. 推荐阅读顺序
 
-读 3000 行的文件需要策略：
+长文件需要按语义入口阅读，行号会持续漂移：
 
-1. **先读类成员**（line 411-880）：知道有哪些 buffer 和 sub-component
+1. **先读类成员**：知道有哪些 buffer 和 sub-component
 2. **跳过初始化细节**（init 各种 buffer），直奔 `execute_model`
 3. **拆五大阶段**：每个阶段单独读一遍
-   - `_update_states`（line 1099）
-   - `_prepare_inputs`（line 1835）
-   - `_build_attention_metadata`（line 2146）
+   - `_update_states`
+   - `_prepare_inputs`
+   - `_build_attention_metadata`
    - 然后是 mm encoder、forward、采样
 4. **配合**：打开 `vllm/forward_context.py`、`vllm/v1/sample/sampler.py` 一起看
 
@@ -431,4 +433,3 @@ FlashAttention varlen kernel 把所有 query 拼成 1D `[total_query_tokens, num
 - 想看源码：`vllm/v1/worker/gpu_model_runner.py`、`vllm/v1/worker/gpu_input_batch.py`、`vllm/forward_context.py`
 - 想动手：[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md)（用 nsys 看 `_prepare_inputs`、forward、sample 各自占比）
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（CUDA Graph 的 capture size 列表对吞吐/延迟的影响）
-
