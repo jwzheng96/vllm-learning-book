@@ -83,7 +83,7 @@ jobs:
             --validated-at "$validated_at" \
             --report artifacts/source-sync/latest-impact.md || gate_rc=1
           python3 -m tools.source_sync validate \
-            --profile contracts || gate_rc=1
+            --profile full || gate_rc=1
           python3 -m unittest discover -s tests/source_sync -v || gate_rc=1
           VLLM_LEARNING_DST="$RUNNER_TEMP/vllm-learning-site" \
             python3 build_html.py || gate_rc=1

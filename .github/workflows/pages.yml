@@ -46,10 +46,10 @@ jobs:
       - name: Run source-sync unit tests
         run: python3 -m unittest discover -s tests/source_sync -v
 
-      - name: Validate committed source contracts
+      - name: Validate committed source and content review
         run: >-
           python3 -m tools.source_sync validate
-          --profile contracts --require-committed
+          --profile full --require-committed
 
       - name: Build HTML
         # build_html.py defaults to <repo>/_site/, which is also where

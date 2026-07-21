@@ -1,0 +1,50 @@
+name: Manual GPU validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_id:
+        description: Model ID available to the self-hosted runner
+        required: true
+        type: string
+      tensor_parallel_size:
+        description: Tensor-parallel size
+        required: true
+        type: choice
+        default: "1"
+        options:
+          - "1"
+          - "2"
+          - "4"
+          - "8"
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-validation:
+    runs-on: [self-hosted, linux, x64, nvidia-gpu]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Run evidence-producing GPU validation
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+          TENSOR_PARALLEL_SIZE: ${{ inputs.tensor_parallel_size }}
+          VLLM_API_KEY: ${{ secrets.VLLM_API_KEY }}
+        run: >-
+          bash scripts/gpu-validation.sh
+          "$MODEL_ID" "$TENSOR_PARALLEL_SIZE"
+
+      - name: Upload GPU validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-validation-${{ github.run_id }}
+          path: artifacts/gpu-validation
+          if-no-files-found: warn
+          retention-days: 30

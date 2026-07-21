@@ -90,7 +90,7 @@ git push -u origin main
 # 4. 推完几分钟后访问 https://yourname.github.io/vllm-learning-book/
 ```
 
-每次 `git push` 自动：① 初始化锁定的 vLLM 子模块 ② 跑 source-sync 单测和 committed contracts ③ 构建 `_site/` ④ 上传并部署。任一源码契约失败都不会发布。**你永远只 commit Markdown 和契约元数据，HTML 从不进 git**。
+每次 `git push` 自动：① 初始化锁定的 vLLM 子模块 ② 跑 source-sync 单测和 committed full review ③ 构建 `_site/` ④ 上传并部署。`--profile full --require-committed` 会同时要求锁定 SHA / 子模块、语义源码锚点、60 章 inventory、零 unmanaged source line，以及 `content-review.toml` 每章 review 全部在当前 SHA 完成；任一项失败都不会发布。**你永远只 commit Markdown 和契约元数据，HTML 从不进 git**。
 
 上游版本刷新、语义源码锚点、影响报告和人工 review 的操作见 [`docs/source-sync.md`](docs/source-sync.md)。每周 `sync-upstream.yml` 只维护一个候选 PR，不会自动合并或部署。
 
@@ -111,7 +111,7 @@ python3 build_html.py
 ```
 vllm-learning-book/             ← GitHub 仓库根
 ├── README.md                   ← 书的首页（hermes 风格 hero）
-├── 01-overview/ ... 09-advanced-features/   ← 50 章源 Markdown
+├── 01-overview/ ... 09-advanced-features/   ← 60 章源 Markdown
 ├── build_html.py               ← HTML 构建脚本
 ├── build_pdf_epub.py           ← PDF + EPUB 构建脚本
 ├── deploy_gh_pages.sh          ← 手动 gh-pages 部署（备用）
@@ -120,7 +120,9 @@ vllm-learning-book/             ← GitHub 仓库根
 ├── .github/workflows/
 │   ├── validate.yml            ← PR 单测、契约与 HTML 构建
 │   ├── sync-upstream.yml       ← 每周/手动生成上游候选 PR
-│   └── pages.yml               ← 门禁通过后构建 + 部署
+│   ├── pages.yml               ← full 门禁通过后构建 + 部署
+│   └── gpu-validation.yml      ← 手动 self-hosted GPU 证据工作流
+├── scripts/gpu-validation.sh   ← 启动服务、探测 API、脱敏并归档证据
 ├── _site/                      ← 🚫 构建产物，gitignored
 │   ├── index.html
 │   ├── style.css
@@ -133,7 +135,22 @@ vllm-learning-book/             ← GitHub 仓库根
 
 ---
 
-## 5. 常见问题
+## 5. 手动 GPU 验证（可选，不属于普通 CI）
+
+`.github/workflows/gpu-validation.yml` 只有 `workflow_dispatch`，运行在带 `[self-hosted, linux, x64, nvidia-gpu]` labels 的 runner。runner contract：
+
+- 已安装与锁定子模块兼容的 vLLM、PyTorch、CUDA / driver 与 `curl`；workflow 不执行 dependency / driver install；
+- 能访问用户选择的 model ID，并有足够 GPU / storage；
+- GitHub Actions secret `VLLM_API_KEY` 已配置；
+- runner 上的 8000 端口未被其他健康服务占用。
+
+从 Actions 页面选择 model ID 和 TP `1|2|4|8`。脚本验证参数、记录 tutorial / vLLM SHA、实际 package / CUDA / PyTorch / GPU / topology，启动带 API key 的 `vllm serve`，在 300 秒内等待 `/health`，再保存 `/v1/models`、确定性 chat、streaming 和 `/metrics` 的 headers / 脱敏 body。成功或失败都会上传 `artifacts/gpu-validation/<UTC>-<source-sha>/`；API key 不进入 command evidence、response artifact 或 server log artifact。
+
+这条 workflow 不是“硬件已经验证”的声明。只有 artifact ID 被登记进最终验证报告并与当前 source SHA 一致时，相关章节才能标注 GPU verified。
+
+---
+
+## 6. 常见问题
 
 **Q: HTML 暗黑模式不切换？**
 A: 看一下浏览器 localStorage 是否被禁用。脚本通过 `localStorage.setItem('vllm-learning-theme', 'dark|light')` 持久化。
