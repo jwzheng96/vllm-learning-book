@@ -638,60 +638,60 @@ notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "09-advanced-features/01-sampling-and-logits.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "09-advanced-features/02-structured-output.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "09-advanced-features/03-multimodal.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "09-advanced-features/04-lora-serving.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
 
 [[review]]
 path = "09-advanced-features/05-embedding-and-pooling.md"
-status = "pending"
-reviewed_commit = ""
-reviewed_at = ""
-source_contracts = false
-commands_checked = false
-metrics_checked = false
-diagrams_checked = false
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
 hardware_verified = []
-notes = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
