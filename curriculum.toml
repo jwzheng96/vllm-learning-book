@@ -250,7 +250,7 @@ source_areas = ["vllm/distributed/device_communicators/**", "vllm/distributed/ep
 
 [[chapter]]
 path = "06-interview/01-common-questions.md"
-title = "vLLM 工程问答速查"
+title = "vLLM 工程面试：30 道三层回答"
 level = "intermediate"
 tracks = ["interview"]
 environments = ["no-gpu"]
@@ -258,11 +258,27 @@ source_areas = ["csrc/attention/**", "vllm/distributed/**", "vllm/distributed/ep
 
 [[chapter]]
 path = "06-interview/02-system-design.md"
-title = "LLM 推理服务设计：工程推演"
+title = "LLM 推理系统设计：先问需求，再画架构"
 level = "intermediate"
 tracks = ["interview"]
 environments = ["no-gpu"]
 source_areas = ["vllm/entrypoints/openai/**", "vllm/v1/core/**", "vllm/v1/core/sched/**"]
+
+[[chapter]]
+path = "06-interview/03-capacity-and-troubleshooting-drills.md"
+title = "容量计算与故障诊断练习：公式、单位、证据"
+level = "advanced"
+tracks = ["interview"]
+environments = ["no-gpu"]
+source_areas = ["vllm/config/**", "vllm/distributed/**", "vllm/entrypoints/**", "vllm/v1/core/**", "vllm/v1/kv_cache_interface.py"]
+
+[[chapter]]
+path = "06-interview/04-mock-interview-and-rubric.md"
+title = "vLLM 五轮模拟面试与评分 Rubric"
+level = "advanced"
+tracks = ["interview"]
+environments = ["no-gpu"]
+source_areas = ["vllm/distributed/**", "vllm/entrypoints/openai/**", "vllm/lora/**", "vllm/v1/core/**", "vllm/v1/sample/**", "vllm/v1/structured_output/**", "vllm/v1/worker/**"]
 
 [[chapter]]
 path = "07-hands-on/01-setup.md"
