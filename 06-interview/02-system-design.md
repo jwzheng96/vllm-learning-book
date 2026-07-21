@@ -1,399 +1,357 @@
-# LLM 推理服务设计：工程推演
+# LLM 推理系统设计：先问需求，再画架构
 
-> **谁该读这一篇？** 需要从 0 到 1 设计大模型推理服务的工程师；也适合技术 leader 与架构师做 capacity planning 时当检查清单。
+> **谁该读这一篇？** 需要设计或面试讲解在线 LLM inference platform 的工程师、tech lead 与容量评审者。
 >
-> **前置阅读：** [`06-interview/01-common-questions.md`](01-common-questions.md)（基础问答打底），[`05-distributed/01-tp-pp-ep.md`](../05-distributed/01-tp-pp-ep.md)（并行策略），[`05-distributed/02-disaggregated.md`](../05-distributed/02-disaggregated.md)（prefill/decode 拆分），[`02-core-concepts/04-prefix-caching.md`](../02-core-concepts/04-prefix-caching.md)（prefix cache 是关键工程变量）。
+> **前置阅读：** [`01-common-questions.md`](./01-common-questions.md)、[`05-distributed/`](../05-distributed/)、[`08-production-deployment/`](../08-production-deployment/)
 >
-> **耗时：** 约 30 分钟。
+> **耗时：** 约 45 分钟
+>
+> **难度：** 高级
+>
+> **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；示例公式用于展示方法，不代表当前 SHA 的 GPU 实测容量。
 >
 > **学完能：**
-> 1. 掌握 6 步通用设计框架，遇到新的 LLM 推理场景也能拆开分析
-> 2. 给出 4 类典型 workload（chatbot / 长上下文 RAG / agent / 突发流量）的参考方案
-> 3. 在 capacity estimation 阶段给出"模型大小 / KV per token / 并发上限"的口算
-> 4. 识别 7 个容易被忽略的工程细节和 5 个常见误区
+> 1. 在给架构前问清模型、workload、SLO、硬件、质量、安全与变更窗口
+> 2. 用单位完整的权重 / KV / service demand / replica 公式给出第一版容量边界
+> 3. 比较单节点、replica DP、TP / PP / EP 与 P/D disaggregation，而非只报一个方案
+> 4. 把 routing、cache、failure domain、observability、deployment、cost 与 rejection criteria 放进同一设计
 
-这章不是给一个固定答案，而是给一套设计推演方法。原则很简单：**先确认 requirements，再做容量估算，接着分层设计，最后把 tradeoff 和 metric 说清楚**。
+## 1. 面试开场：先拒绝无前提架构
+
+题目如果只有“设计一个能承载 1 万用户的 LLM 服务”，不要立刻画 GPU 集群。“用户数”不是请求到达率，也不是同时运行数。先把未知量变成问题。
+
+### 1.1 模型与输出契约
+
+- 模型 / tokenizer / chat template revision 是否固定？dense 还是 MoE，GQA / MLA，生成还是 pooling / multimodal？
+- dtype / quantization 是否可改？允许的质量损失和 golden set 是什么？
+- context、输入 / 输出长度的 p50 / p95 / p99 是多少？是否有 reasoning、tool call、structured output、LoRA？
+- streaming、logprobs、`n`、seed / determinism、stop 与 finish reason 的 API 契约是什么？
+
+### 1.2 Workload 与到达过程
+
+- 峰值 arrival rate 是 requests/s 还是 sessions/s？open-loop 还是 closed-loop？burst 持续多久？
+- input / output token 分布与相关性是什么？短 chat、长 RAG、batch、embedding 是否混在一个池？
+- system prompt、documents、images、LoRA 的复用比例是什么？prefix/cache locality 能否由路由保持？
+- 取消率、超时、retry 与优先级分布是什么？
+
+### 1.3 SLO 与 goodput
+
+- TTFT、TPOT / ITL、端到端 latency 分别看 p50、p95 还是 p99？
+- 什么算成功：HTTP 2xx、按时首 token、全部 token 在 deadline 内、还是 quality gate 也通过？
+- admission 允许排队多久？超载时是 429、降 max tokens、切小模型还是延迟执行？
+
+### 1.4 硬件、拓扑与平台
+
+- GPU 型号、显存、单机卡数、NVLink / PCIe、跨节点网络、CPU / RAM / storage 是什么？
+- driver、CUDA、PyTorch、vLLM SHA 与 model artifact 是否已有兼容矩阵？
+- 启动多久、镜像 / 权重从哪里拉、region / AZ / failure domain 如何划分？
+
+### 1.5 安全、成本与变更
+
+- 谁认证和限额？tenant 数据、prompt / output / trace 如何隔离和脱敏？LoRA / media URL / chat template 谁能提供？
+- 成本目标按 GPU-hour、每百万 output tokens，还是满足 SLO 的 goodput 计？
+- 维护窗口多长？能否 shadow / canary？允许多少 warm spare？回滚 RTO / RPO 是什么？
+
+> **面试信号：** 强候选人会把缺失输入列成假设表，并说明哪一个假设最可能让架构翻转；弱候选人把所有问题默认为某张 GPU、某个 70B 模型和一个平均长度。
 
 ---
 
-## 通用设计框架
+## 2. 容量估算：四张账，单位不能丢
 
-任何"设计一个 LLM 推理系统"的问题，都可以按这 6 步推进：
+### 2.1 权重与常驻内存
+
+理论权重下界：
+
+$$M_{weights}=N_{params}\times b_{weight}$$
+
+其中 `N_params` 是实际加载参数数，`b_weight` 是每参数字节。量化还要加 scale / zero point / padding，某些 layer 仍保留高精度。每 rank 的近似权重：
+
+$$M_{weights,rank}\approx\frac{M_{sharded}}{TP\times PP}+M_{replicated,rank}$$
+
+这不是总显存：还要加 CUDA context、NCCL、activation、workspace、graph capture、LoRA slot、encoder cache 与安全余量。`gpu_memory_utilization` 是分配政策，不是这些项的替代公式。
+
+### 2.2 KV cache
+
+常见 decoder attention 的逻辑 KV：
+
+$$B_{KV/token}=2\times L\times H_{kv}\times D_{head}\times b_{kv}$$
+
+请求 KV：
+
+$$M_{KV,request}=B_{KV/token}\times (T_{prompt}+T_{generated})$$
+
+再按 TP / PP 的实际 cache spec 修正。MLA、hybrid attention、cross-attention、encoder-only runner 与 KV offload 不能套同一公式。最后用 `vllm/v1/kv_cache_interface.py` 的实际 page size / page count 和启动日志校验。
+
+### 2.3 算力与显存带宽服务时间
+
+prefill 与 decode 分开：
+
+- prefill 处理大量 input tokens，attention 随 context 增长，通常更偏 compute / 大矩阵；
+- decode 每 step 产生少量 token，却反复读取 weights 与历史 KV，常更偏 memory bandwidth / communication。
+
+不要用理论 FLOPS 直接算 QPS。先从目标硬件 benchmark 得到按长度桶的 service demand：
+
+$$D_{req}=T_{prefill}(T_{in})+\sum_{i=1}^{T_{out}}T_{decode}(T_{in}+i, batch_i)$$
+
+### 2.4 Replica 与故障余量
+
+若单 replica 在目标 SLO 下的 sustainable arrival rate 是 `μ_good`，峰值输入是 `λ_peak`，目标利用率上限 `ρ_target<1`，预留 `R_failure` 个失效副本：
+
+$$R_{steady}=\left\lceil\frac{\lambda_{peak}}{\mu_{good}\rho_{target}}\right\rceil$$
+
+$$R_{total}=R_{steady}+R_{failure}+R_{rollout}$$
+
+`μ_good` 必须来自**满足 TTFT / TPOT / quality / error SLO 的请求**，不是峰值 tokens/s。若单副本 fail 后剩余副本的 `ρ` 超过门禁，N+1 设计不成立。
+
+### 2.5 一个带单位的示例
+
+假设仅用于演算：模型实际加载 `32×10^9` 参数、BF16 权重 `2 byte/param`；目标 GPU 每张 `80 GiB`，但平台实测允许模型、non-KV 与 KV 的预算另算。
+
+1. 权重下界：`32e9 param × 2 byte/param = 64e9 byte ≈ 59.6 GiB`。
+2. 不能据此断言单卡可服务：还没有给 activation、workspace、graph 与 KV 留空间。
+3. 若模型 config 为 `L=64, H_kv=8, D_head=128, BF16 KV`：
+   `2 × 64 × 8 × 128 × 2 = 262,144 byte/token = 256 KiB/token`。
+4. 一个 `2,000 input + 500 output` 请求的逻辑 KV 约：
+   `2,500 token × 256 KiB/token = 640,000 KiB ≈ 625 MiB`。
+5. 这仍不是“每卡并发 = 空闲 GiB / 625 MiB”：TP 分片、block 尾部、prefix sharing、运行时余量与调度上限都要实测。
+
+**sanity check：** 单请求 context 翻倍，逻辑 KV 应近似翻倍；若估算没有这个趋势，公式或单位错了。
+
+---
+
+## 3. 从最小架构开始，再给扩展路径
+
+```mermaid
+flowchart LR
+    C["Clients"] --> G["Gateway<br/>auth · quota · request limits"]
+    G --> R["Router / Admission<br/>model · prefix · LoRA · load"]
+    R --> P1["vLLM replica A"]
+    R --> P2["vLLM replica B"]
+    R --> PN["vLLM replica N"]
+    P1 --> M["Metrics / logs / traces"]
+    P2 --> M
+    PN --> M
+    CP["Control plane<br/>artifact · rollout · inventory"] -.-> R
+    CP -.-> P1
+    CP -.-> P2
+    CP -.-> PN
+
+    classDef edge fill:#fef3c7,stroke:#b45309,color:#1a1f29;
+    classDef data fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
+    classDef ctl fill:#dcfce7,stroke:#15803d,color:#1a1f29;
+    class C,G,R edge;
+    class P1,P2,PN data;
+    class M,CP ctl;
+```
+
+### 3.1 单 GPU / 单节点
+
+先问模型是否能在一个 failure domain 内放下并满足 SLO：
+
+- 单 GPU：最少通信和组件，适合小模型 / pooling / 开发验证；容量和故障域最小。
+- 单节点 TP：用高速互联跨卡放模型；collective 增加，但运维边界清晰。
+- 单节点 TP×PP：当纯 TP 不合适或层放置需要 PP；要量 stage balance。
+- 单节点多 replica：模型单卡 / 小 TP 可放下时，replica DP 常比扩大 TP 更利于吞吐和故障隔离。
+
+**拒绝条件：** 权重能放下但最大请求 / graph capture 无余量；或 TP 扩大后 collective 让 p99 反而越线。
+
+### 3.2 多节点 replica DP
+
+每个 replica 是独立 engine / cache，用路由横向扩展。优点是 failure domain 与 rollout 粒度小；代价是 prefix / LoRA / encoder cache 分散。
+
+路由输入应区分：
+
+- hard constraints：model / tokenizer / LoRA version、modality、tenant、region、健康状态；
+- soft scores：queue / estimated work、prefix locality、adapter active、cache warmth、failure-zone balance；
+- backpressure：无 replica 能在 deadline 内接单时，排队 / 降级 / 429，而不是无界 retry。
+
+**拒绝条件：** 路由只看连接数，不看 token work；或 sticky routing 无上限，热点 session 能压垮单 Pod。
+
+### 3.3 跨节点 TP / PP / EP
+
+只有单节点放不下或目标 latency / MoE 布局要求时才跨节点。设计必须给：rank-to-GPU map、process groups、链路、collective、failure handling 与 topology-aware placement。
+
+- TP 跨慢网络：层内同步频繁，先用 trace 证明收益。
+- PP：降低层内 group 范围，但有 stage bubble / imbalance。
+- EP：expert dispatch / all-to-all，必须量 router skew 与 straggler。
+
+**拒绝条件：** 只写 `TP=16`，不写两节点间带宽、collective time 和任一 rank 失败后的恢复路径。
+
+### 3.4 Prefill / Decode disaggregation
+
+P/D 拆分允许分别扩容和选择硬件，但增加 KV transfer 与跨池 queue：
+
+$$T_{transfer}\ge\frac{M_{KV,to\ transfer}}{BW_{effective}}+T_{setup}+T_{queue}$$
+
+设计要给 connector timeout、backpressure、version compatibility、partial transfer cleanup 和聚合模式 fallback。
+
+**拒绝条件：** KV transfer p99 接近或超过拆分节省的 compute time；或 connector 故障会让请求悬挂且不能回到聚合池。
+
+---
+
+## 4. 四类 workload 如何让设计翻转
+
+### 4.1 短对话 / 高并发 chat
+
+优先变量：output tokens、TPOT、取消率与 system-prefix locality。
+
+- 用 admission 控制 active sequences，不让 retry 代替容量。
+- prefix-aware / session-aware routing 只能作为 soft score，并有负载上限。
+- 小 TP + 多 replica 可能比大 TP 更高 aggregate goodput；延迟门禁决定。
+- speculative decoding 只有在 target workload 接受率与端到端 goodput通过时启用。
+
+失败域：热点租户、长输出、客户端断开未 abort、rollout 冷 cache。
+
+### 4.2 长上下文 RAG
+
+优先变量：input p99、retrieval docs、KV bytes/token、prefill time 与 prefix 重用。
+
+- 在 gateway 限制 tokens / documents，不只限制字符。
+- chunked prefill 控制 step 抖动，但不会消除总 attention 成本。
+- 先比较 GQA / MLA 模型、KV dtype、context truncation 与检索质量；不能只“加 KV cache”。
+- 超长请求可独立 pool，避免把短 chat 的 TPOT p99拖垮。
+
+失败域：retriever 返回暴涨、template 变化导致 cache hit collapse、上下文截断破坏质量。
+
+### 4.3 Agent / Structured output / LoRA
+
+优先变量：多轮 turn、tool schema、grammar compile、adapter working set 与安全授权。
+
+- structured output 只保证语法边界；工具执行仍需服务端授权 / schema semantic validation。
+- `auto` backend 可能随版本改变，upgrade gate 要覆盖真实 schema。
+- LoRA-aware route 可减少 active-slot miss，但必须限制任意 path / runtime update。
+- tool description 的 cache locality 要与 tenant isolation / salt 一起设计。
+
+失败域：schema complexity DoS、tool prompt 泄露、adapter thrash、同名版本漂移。
+
+### 4.4 Multimodal / Pooling / Batch
+
+这三类不要默认与生成流量混池：
+
+- multimodal 还有 media IO、processor cache、encoder budget / cache 与 URL 安全；
+- pooling 没有 autoregressive decode，sequence / token output 的网络成本不同；
+- offline batch 更关心截止时间与成本，可接受不同 admission / priority。
+
+失败域：损坏媒体、token-level 巨大响应、encoder OOM、batch job 饿死在线请求。
+
+---
+
+## 5. SLO、可观测与证据链
+
+### 5.1 指标不是名字清单
+
+先从当前服务 `/metrics` 和锁定 SHA 的 registration code 建 inventory，再定义：
+
+- traffic：requests/s、input / output tokens/s、长度分布、tenant / model；
+- queue：waiting / running、admission reject、deadline miss；
+- latency：E2E、TTFT、TPOT / ITL，均用 histogram 分位数；
+- engine：KV usage、preemption、prefix hit tokens、batch / iteration work；
+- platform：GPU memory / bandwidth / power、CPU、network、NCCL / link error；
+- quality：golden success、schema / tool validation、retrieval / ranking metric。
+
+不要在设计里发明 metric 名；可以写“从当前 inventory 选择对应 counter / gauge”。
+
+### 5.2 一个排障关联图
 
 ```mermaid
 flowchart TD
-    S1["1. Clarify Requirements<br/>· QPS / 并发数<br/>· 模型大小 / 上下文长度<br/>· SLO（TTFT、TPOT、p99）<br/>· 业务类型（chat / RAG / agent / batch）"]
-    S2["2. Capacity Estimation<br/>· 模型大小 vs 单卡显存<br/>· KV cache 总量<br/>· 算力需求（prefill TFLOPs / decode tok/s）"]
-    S3["3. High-Level Architecture<br/>· Router / LB<br/>· Inference Cluster<br/>· KV / Prefix Cache 层级<br/>· Storage（模型 / 用户数据）"]
-    S4["4. Inference Engine Choice<br/>· vLLM / SGLang / TRT-LLM 选哪个<br/>· 并行策略 TP / PP / EP / DP<br/>· 量化、投机、prefix caching"]
-    S5["5. Reliability & Scaling<br/>· 故障切换、灰度、Canary<br/>· 水平扩展 / 缩容<br/>· 模型热更新"]
-    S6["6. Observability<br/>· TTFT/TPOT 直方图、p99<br/>· preempt 次数 / prefix hit rate<br/>· 监控、报警、debug 工具"]
-
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6
-
-    classDef step fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
-    class S1,S2,S3,S4,S5,S6 step;
+    A["SLO breach"] --> B{"TTFT or TPOT?"}
+    B -->|TTFT| C["queue · tokenization · prefill · cold state"]
+    B -->|TPOT| D["step work · KV/preemption · kernel/collective"]
+    C --> E["correlate workload buckets"]
+    D --> E
+    E --> F["single-variable canary"]
+    F --> G{"SLO + quality recovered?"}
+    G -->|yes| H["document evidence"]
+    G -->|no| I["rollback / isolate"]
 ```
 
----
+### 5.3 Alert 与 action 的边界
 
-## 题 1：设计一个 ChatGPT-like 服务，10k 并发 in-flight 用户
-
-### 阶段 1：Clarify
-先确认：
-
-- 模型多大？（假设 Llama-3 70B）
-- 输入长度 / 输出长度分布？（假设 prompt 1k、output 500 tokens）
-- TTFT 目标？（假设 < 500ms）
-- TPOT 目标？（假设 < 50ms）
-- 是否需要多轮对话历史？（是 → 大量 prefix 复用）
-
-### 阶段 2：Capacity
-- 70B FP16 = 140GB
-- 单 H100 80GB 装不下 → TP=2 起步
-- KV per token：约 320KB（70B 配置）
-- 单用户上下文 (1k+500)×320KB ≈ 480MB
-- 10k 并发 → 4.8 TB KV！显然不能全在 GPU
-- 实际"in-flight"瞬时活跃约 200-1000 个，其他在 prefix cache 里
-
-→ **结论**：单实例 8×H100 TP=8，配合 prefix cache + 多实例。
-
-### 阶段 3：架构
-
-```mermaid
-flowchart TD
-    LB["Router / Load Balancer<br/>基于 conversation_id 路由<br/>提高 prefix cache 命中"]
-    V1["vLLM 实例 1<br/>8×H100 · TP=8"]
-    V2["vLLM 实例 2<br/>8×H100 · TP=8"]
-    Vn["vLLM 实例 N<br/>8×H100 · TP=8"]
-    Cache["Prefix Cache 层级<br/>L1: GPU HBM<br/>L2: CPU DRAM<br/>L3: LMCache"]
-
-    LB --> V1
-    LB --> V2
-    LB --> Vn
-    V1 -.-> Cache
-    V2 -.-> Cache
-    Vn -.-> Cache
-
-    classDef lb     fill:#fef3c7,stroke:#b45309,color:#1a1f29;
-    classDef pod    fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
-    classDef cache  fill:#dcfce7,stroke:#15803d,color:#1a1f29;
-    class LB lb;
-    class V1,V2,Vn pod;
-    class Cache cache;
-```
-
-### 阶段 4：Engine 选择
-**vLLM 是首选**：
-
-- 模型支持广（70B 一键跑）
-- continuous batching 成熟
-- prefix caching 默认开（chatbot 收益大）
-- chunked prefill 默认开（长 prompt 不卡 decode）
-
-并行：
-
-- TP=8 单实例（一台 8 卡 H100）
-- 模型实例间 DP（每实例独立模型副本）
-
-量化：H100 用 **FP8**（精度损失 < 1%，吞吐 ×1.5）。
-投机解码：开 **EAGLE**，对 chat 接受率 75-85%，吞吐再 ×1.5-2。
-
-### 阶段 5：可靠性
-- **路由**：基于 `conversation_id` 哈希到固定实例，保证同一用户的 prefix cache 命中
-- **故障切换**：实例死了，路由到其他实例（cache miss 一次，重 prefill）
-- **金丝雀部署**：新模型先 5% 流量
-- **模型热更新**：vLLM 的 `sleep + wake_up`（卸载权重 → 加载新版本）
-
-### 阶段 6：监控
-关键面板：
-
-- TTFT p50/p99
-- TPOT p50/p99
-- `vllm:kv_cache_usage_perc`
-- `vllm:prefix_cache_hits_total / vllm:prefix_cache_queries_total`（目标 > 60%）
-- `vllm:num_preemptions_total`（目标接近 0）
-- GPU util、NVLink 带宽
+Alert 应指向 runbook 和 owner，不应直接执行有风险的集群 mutation。自动动作只做经过批准、幂等、有上限、可回滚的操作；证据不足 fail closed。生产诊断见 [`09-vllm-doctor-skill.md`](../08-production-deployment/09-vllm-doctor-skill.md)。
 
 ---
 
-## 题 2：长上下文（200k tokens）的 RAG 服务
+## 6. Reliability、部署与成本
 
-### 关键挑战
-- 200k 上下文 → 单请求 KV 占用极大
-- prefill 极慢（200k×200k attention 二次方）
-- decode 单步要读所有 KV，访存巨大
+### 6.1 Failure domain 表
 
-### 设计要点
+| 故障 | 隔离 | 检测 | 缓解 | 恢复证据 |
+| --- | --- | --- | --- | --- |
+| 单 worker / GPU | replica / node | health + request failures | stop route, drain | golden + SLO |
+| NCCL / link | topology domain | rank logs + link telemetry | drain whole group | multi-rank soak |
+| model artifact | immutable version | load / hash / quality gate | rollback artifact | signature + golden |
+| cache / connector | cache namespace | hit / transfer / timeout | bypass or aggregate pool | no stale reuse |
+| gateway / auth | redundant edge | 4xx/5xx + auth audit | fail closed | policy tests |
+| retry storm | admission boundary | attempts / queue growth | retry budget + shedding | queue drains |
 
-1. **Chunked prefill 默认开**，避免 200k prefill 阻塞所有人
-2. **KV cache FP8**：让 num_blocks ×2
-3. **prefix caching**：RAG 模板部分（system + 检索文档头）共享
-4. **Disaggregated prefill/decode**：
-   - prefill 集群：用算力强的卡（H200 / B200）
-   - decode 集群：用 HBM 大的卡（更多 KV 容量）
-   - NIXL RDMA 传 KV
-5. **模型选 GQA/MLA**：KV 占用降一个数量级
-   - DeepSeek MLA：KV/token 约 1/10 普通 Transformer
-   - Llama-3 GQA（KV head 8 vs Q head 32）：KV/token 约 1/4
-6. **限流**：单实例同时只跑 N 个 200k 请求（防 KV 爆掉）
+### 6.2 Rollout 状态机
 
----
+`artifact verified → shadow → small canary → expand → drain old → remove old`。每一步都有 duration、sample size、quality / SLO gate 和 rollback owner。缩容先停止新流量，再等 active 请求 / connector state / stream 完成；不能只杀 Pod。
 
-## 题 3：Agent 框架（工具调用 + 结构化输出）
+### 6.3 成本模型
 
-### 特点
-- 每轮 prompt 包含工具描述（重复）→ 强 prefix caching
-- 输出需要 JSON / function call 格式 → structured output
-- 一次会话多次 prefill+decode（工具返回后续接）
+至少报告：
 
-### 设计要点
+$$Cost_{per\ 1M\ good\ output\ tokens}=\frac{GPU\ hours\times price+platform\ cost}{good\ output\ tokens}\times10^6$$
 
-1. **Structured Output**：vLLM 用 `xgrammar` / `outlines`，按 schema mask logits
-2. **Prefix Caching**：工具描述是大头（5k tokens 常见）
-3. **保证 prefix 对齐**：tool description block_size 对齐
-4. **会话 stickiness**：同一会话路由到同一实例
-5. **Speculative Decoding**：function call 格式高度可预测，draft 模型接受率 80%+
-6. **响应 schema 校验**：客户端二次验证，避免 LLM 输出非法 JSON（即使 structured output 也偶尔异常）
+把 rejected、deadline miss、重试重复计算、idle warm spare、rollout overlap 和 P/D 网络算进去。低每 token 成本若靠更差质量或更高 p99 得到，不是可比方案。
 
 ---
 
-## 题 4：怎么处理"突发流量"？
+## 7. 一份完整答题骨架
 
-### 思路
-
-1. **入场准入控制**：超过 max_num_seqs → 401 / 排队
-2. **优先级队列**：付费用户高优先级，必要时 preempt 免费用户
-3. **自动扩缩容**：HPA 基于 `num_requests_waiting` 触发
-4. **降级策略**：
-   - 流量过高 → 强制 max_tokens 上限
-   - 进一步过高 → 关投机解码（吞吐有限收益但稳定性 up）
-   - 极端 → 拒绝部分请求
-5. **缓存兜底**：对热门 prompt 完全缓存 response（不进推理）
-
----
-
-## 题 5：单实例 vs 多实例的取舍
-
-**单实例（一个大实例）**：
-
-- 优点：prefix cache 集中命中率高、TP 内通信快
-- 缺点：故障域大、扩容粒度粗
-
-**多实例（多个小实例）**：
-
-- 优点：故障域小、能精细扩缩、水平扩展
-- 缺点：prefix cache 分散（除非路由 sticky）
-
-**生产推荐**：多实例 + sticky routing。每实例 4-8 GPU，靠模型实例级 DP 扩展。
+1. **复述目标**：用户体验、质量、availability、security、cost。
+2. **列假设表**：模型、长度、arrival、SLO、硬件、change window；标出最敏感三项。
+3. **算四张账**：weights、KV、service demand、replicas + N+1 / rollout reserve。
+4. **给最小方案**：单节点 / 小 TP + replicas；说明为什么此时够用。
+5. **给翻转条件**：何时需要 PP / EP / disaggregation / workload split。
+6. **画 data plane + control plane**：auth、admission、routing、engine、telemetry、artifact / rollout。
+7. **讲三个 tradeoff**：latency vs throughput、cache locality vs balance、efficiency vs failure domain。
+8. **列 failure table**：detect、mitigate、recover、evidence。
+9. **定义 reject / rollback**：哪些指标越线立即停止。
+10. **说明未知**：需要 benchmark / profile 的量，不编数字。
 
 ---
 
-## 容易被忽略的工程细节
+## 8. 设计练习与失败证据
 
-这些细节能把设计从泛泛而谈拉回工程现场：
+为下面三个场景各写两页，不允许复用同一架构：
 
-1. **"基于 conversation_id sticky"** —— 不是随便 LB
-2. **"启动时 profile run 确定 num_blocks"** —— 知道 vLLM 内部
-3. **"GPU memory utilization 0.9 + 缓冲"** —— 知道为什么不能 0.95
-4. **"chunked prefill 让单 step 时长稳定"** —— 知道 TPOT 抖动来源
-5. **"H100 用 FP8 比 A100 用 INT4 好"** —— 量化与硬件匹配
-6. **"NIXL RDMA disaggregated"** —— 跟得上当下前沿
-7. **"用 vLLM 的 Prometheus metric 监控 preempt"** —— 工程实践
+1. 短 chat：output-heavy，TPOT p99 严格，有共享 system prompt。
+2. 长 RAG：input-heavy，长度长尾明显，retrieval quality 不可降。
+3. 多租户 LoRA + tools：adapter working set 大，需要强隔离与审计。
 
----
+每份必须附：assumption table、单位完整的容量公式、一个 alternative、三个 rejection criteria、一次故障演练和 rollback。失败证据包括：用“并发用户”代替 arrival / active sequences；把 theoretical memory 当可分配显存；没有 N+1；metric 不存在；只画 data plane 不画 artifact / rollout；没有 quality / security gate。
 
-## 常见误区
+> **生产取舍：** 架构复杂度必须由可量化瓶颈购买。未证明单节点 / replica 方案失败前，不要用跨节点 TP 或 P/D disaggregation装饰答案。
 
-尽量避免：
-
-1. "我会自己实现 PagedAttention" —— 已是开源标准，重造没意义
-2. "我会用 HF Transformers 部署" —— 暴露不懂行
-3. "用 Redis 缓存所有结果" —— LLM 输出几乎不重复
-4. 跳过 capacity estimation 直奔架构 —— 没数字就是空谈
-5. 一上来就讲技术细节 —— 不问 requirements 是大忌
-
----
-
-## 自己练习的方式
-
-设计 3 个不同 workload，每个写一份 1-2 页的设计：
-
-- "服务 1k 并发的客服 chatbot"
-- "服务 100 个 50k-token RAG 请求"
-- "批量处理 10M 条文档摘要"
-
-对比三种 workload 下你的设计差异——这就是 system design 的真正能力。
-
----
+> **硬件验证状态：** 当前 SHA 未做 GPU system-design 容量实测；所有 `μ_good`、service demand 与 connector bandwidth 必须由目标环境补齐。
 
 ## 小结
 
-- 6 步通用框架：Clarify → Capacity → Architecture → Engine 选择 → 可靠性 → 可观测。少一步，设计就容易漂。
-- 4 类典型 workload 各有重点：chatbot 重 prefix cache 与 sticky 路由、长上下文 RAG 必须认真拆 prefill/decode、agent 强 structured output、突发流量靠准入控制 + HPA + 降级。
-- 关键是 capacity estimation 出数字、引用 vLLM 内部细节（profile run / chunked prefill / NIXL）、用 Prometheus metric 名讨论监控。
-- 常见误区：跳过 requirements、自造 PagedAttention、用 HF 部署生产服务、Redis 缓存 LLM 输出、不问 workload 就上架构。
+- Requirements 不是开场礼貌，而是决定模型、并行、cache、routing 与 SLO 是否成立的输入。
+- 容量必须同时算权重、KV、服务时间和 failure / rollout reserve。
+- 从最小架构开始，用明确翻转条件引出复杂方案。
+- routing、observability、security、deployment、cost 与 rollback 都是 inference system 的一部分。
 
 ## 自检
 
-> 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
-
-**1. 10k 并发 chatbot + 200B 模型 + 2k 输入 / 1k 输出 + 单卡 80GB，capacity 怎么算？**
-
-**Step 1 · 模型显存**：
-
-- 200B × 2 (BF16) = 400 GB → 单卡 80GB **塞不下，必须 TP ≥ 8**
-- TP=8（单机 H100×8 = 640GB）：每卡装 50GB 模型 + KV 预算
-- 若用 FP8 量化：200B × 1 = 200GB → TP=4 即可
-
-**Step 2 · KV cache 容量**：
-
-- 假设 200B GQA: hidden=12288, num_kv_heads=16, head_dim=128（推测）, layers=80
-- 单 token KV = 2 × 16 × 128 × 80 × 2 = **655 KB**（远大于 70B 的 320 KB）
-- 单请求 (2K+1K)=3K token → 1.9 GB / 请求
-
-**Step 3 · 单实例并发能力**：
-
-- TP=8 BF16：每卡剩余 30GB KV → 8 × 30 / 1.9 ≈ **126 个并发请求 / 实例**
-- 但实际有 active vs total batch 区别——running 通常占 max_num_seqs 50%。安全估 **64 active**
-
-**Step 4 · 实例数**：
-
-- 10000 并发 / 64 = **157 个实例**，每个 8 卡 H100 → **1256 张 H100**！
-
-**Step 5 · 优化建议**（这数太大）：
-
-- **量化**：FP8 减半显存 → 80 实例 × 4 卡 = **320 张 H100**（仍多但可行）
-- **disaggregated**：prefill 集群 32 节点 + decode 集群 80 节点
-- **prefix caching**：若 system prompt 长（如 1K token）且共享，命中率 70% → 等效减少 70% prefill 算力
-- **重新讨论 SLO**：能不能放宽 TTFT 到 2s？支持 5k 并发就够了？
-
-并行策略：**TP=8 + FP8 + EP（若 200B 是 MoE）**。
-
-→ 真正做容量评审时，先给出**第一个数（1256 H100）+ 减法路径（FP8 → 320）**，比直接说"用 FP8 + TP=8"更能说明你真的会算 capacity。
-
----
-
-**2. 自出题："500 并发多模态助手"按 6 步框架。**
-
-**Step 1 · Requirements**：
-
-- 500 并发，图像 + 文本
-- 文本 prompt 1K token + 图像 1024×1024（≈1024 image tokens）+ 输出 500 token
-- TTFT < 800ms（用户上传图后等回答）, TPOT < 100ms
-
-**Step 2 · 模型选型**：Qwen2-VL 72B 或 Llama-3-VL 90B
-
-**Step 3 · Capacity**：
-
-- 72B BF16 = 144GB → TP=2 (H100×2=160GB)
-- 每个请求 KV = (1024 + 1024 + 500) × ~256KB = 650 MB
-- 图像 encoder 输出（mm_embeddings）= 1024 × 4096 × 2 = 8 MB / image，需要 encoder cache
-- 80GB H100 单卡剩 50GB → 单实例 (TP=2) 并发约 80 个
-- 500 并发 → 7 实例 × 2 卡 = **14 张 H100**
-
-**Step 4 · 路由层**：
-
-- **图像 hash 路由**：相同图像打到同一实例（encoder cache 共享，省 8MB embed 重算）
-- prefix cache aware：相同 system prompt 打同一实例
-
-**Step 5 · SLO 与监控**：
-
-- TTFT p99 < 800ms，单独监控 mm_encoder time
-- `vllm:mm_cache_hits / vllm:mm_cache_queries` 命中率 > 60%
-- `vllm:kv_cache_usage_perc` < 0.85
-
-**Step 6 · 失效模式**：
-
-- Encoder OOM：限制 `--mm-encoder-cache-size`
-- 大图爆 token：限制图像分辨率（API 层 resize 到 1024×1024）
-- 文本长 prefill 卡死：开 chunked prefill
-
-→ 完整推演约 5 分钟，配 1 张架构图。
-
----
-
-**3. 题 5（单实例 vs 多实例）细化判断 + 引用 metric 与故障域。**
-
-| 维度 | 单实例（大 TP）| 多实例（小 TP × N） |
-| --- | --- | --- |
-| **`prefix_cache_hits / prefix_cache_queries`** | 高（cache 集中）| **低**（N 个独立 cache）| 单实例胜：高 system prompt 共享 workload |
-| **延迟（TTFT）** | 单 query 低（大 TP 提速）| 单 query 中（小 TP）| 单实例胜：code completion / agent |
-| **吞吐峰值** | 受限（单卡 KV 容量）| 高（独立并发）| 多实例胜：高 QPS workload |
-| **故障域** | 大（一挂全挂）| 小（一实例挂只影响 1/N）| 多实例胜：高可用要求 |
-| **运维复杂度** | 低（一个 deployment）| 高（N 个 + LB）| 单实例胜：小团队 |
-| **冷启动恢复** | 慢（NCCL 重建 + 大模型加载）| 快（小模型 + 部分降级）| 多实例胜 |
-
-**判断条件**：
-
-- **prefix cache 命中率 > 50% + 单 query 延迟敏感 → 单实例**（例：chatbot 长 system prompt、agent 工具调用）
-- **prefix cache 命中率 < 20% + 高 QPS + 强可用要求 → 多实例**（例：RAG 每问不同、batch 推理）
-- **平衡区**：多实例 + cache-aware routing（路由层做 prefix awareness 弥补命中率，又保留多实例的故障域优势）
-
-→ 看 `prefix_cache_hits / prefix_cache_queries` 一个指标就能缩小决策空间。这是做系统设计选型时很关键的证据。
-
----
-
-**4. 题 1（10k 并发 chatbot）架构图。**
-
-```
-                         ┌────────────────────────────┐
-                         │     Prometheus + Grafana    │  ← 监控面板
-                         │  - TTFT p99 / TPOT p99      │     · 4 大金信号
-                         │  - kv_cache_usage_perc      │     · alert 规则
-                         │  - prefix cache hit rate     │
-                         └──────────────▲──────────────┘
-                                        │ scrape /metrics
-                                        │
-                    ┌───────────────────┴────────────────────┐
-                    │                                        │
-                    ▼                                        ▼
-    ┌─────────────────────┐  cache-aware routing   ┌─────────────────────┐
-    │    Sticky LB        │ ─────────────────────► │    Sticky LB        │
-    │  (Envoy + ExtProc)  │  (按 session_id hash)   │  (备份)              │
-    │                     │                        │                     │
-    │ - hash(session_id)  │                        └─────────────────────┘
-    │ - prefix-aware fall │
-    │ - failure detect    │
-    └─────┬───────────────┘
-          │
-          │ 路由到 vLLM pod
-          ▼
-   ┌──────────────────────────────────────────────────┐
-   │            vLLM 实例池（TP=8 × N pods）          │
-   │  ┌──────────────┐  ┌──────────────┐  ┌────────┐ │
-   │  │ Pod 1 (TP=8) │  │ Pod 2 (TP=8) │  │ ...    │ │
-   │  │ L1: GPU HBM  │  │ L1: GPU HBM  │  │        │ │
-   │  │ prefix cache │  │ prefix cache │  │        │ │
-   │  └─────┬────────┘  └─────┬────────┘  └────────┘ │
-   │        │                  │                     │
-   └────────┼──────────────────┼─────────────────────┘
-            │                  │ KV connector
-            ▼                  ▼
-   ┌──────────────────────────────────────────────────┐
-   │     L2: 共享 CPU DRAM Cache (LMCache)            │  ← Prefix Cache 层级
-   │     (跨 pod 共享冷 prefix)                         │
-   └──────────┬───────────────────────────────────────┘
-              │
-              ▼
-   ┌──────────────────────────────────────────────────┐
-   │     L3: NVMe / S3 Object Store                    │
-   │     (超长 system prompt、历史多轮对话 cache)        │
-   └──────────────────────────────────────────────────┘
-```
-
-**4 部分要点**：
-
-1. **Sticky LB**：用 session_id hash 让同用户落同 pod（L1 cache 命中）；prefix-aware fallback（即使首次访问，按 prompt prefix hash 路由）
-2. **vLLM 实例**：TP=8 单机部署，每实例独立 L1 cache
-3. **Prefix Cache 层级**：L1 GPU HBM（每 pod 本地）、L2 CPU DRAM（LMCache 跨 pod 共享）、L3 NVMe（超长冷 cache）
-4. **监控面板**：Prometheus scrape 所有 pod 的 `/metrics`，Grafana 显示 4 大金信号 + 告警规则触发 PagerDuty
-
-补充：图上额外标注 KV connector 走 RDMA（pod ↔ LMCache），HPA 按 `vllm:num_requests_running` 扩缩容。
+1. 哪三个未知量最可能让“单节点 TP”翻转为“多 replica / disaggregation”？
+2. 为什么 `total users / per-GPU concurrency` 不是可靠 replica 公式？
+3. prefix-aware routing 如何同时避免热点和跨 tenant 错误复用？
+4. 若 canary 的 tokens/s 提升但 TPOT p99 和 quality 变差，应如何裁决？
 
 ## 下一步
 
-- 下一节：[`07-hands-on/01-setup.md`](../07-hands-on/01-setup.md)（把上面讲的概念真跑一遍，留下可复现的实验记录）
-- 想看源码：`vllm/v1/core/sched/scheduler.py`、`vllm/v1/core/kv_cache_manager.py`、`vllm/entrypoints/openai/api_server.py`
-- 想动手：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md)（5 个实验配出数字，反过来校准设计判断）
-- 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)、[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)、[`08-production-deployment/07-incident-playbook.md`](../08-production-deployment/07-incident-playbook.md)（突发流量与故障真实 case）
+- [`03-capacity-and-troubleshooting-drills.md`](./03-capacity-and-troubleshooting-drills.md)：把公式和故障树做成有解练习
+- [`04-mock-interview-and-rubric.md`](./04-mock-interview-and-rubric.md)：按五轮评分模拟完整面试
+- [`08-production-capstone.md`](../07-hands-on/08-production-capstone.md)：把设计落到可复现证据包
+
+## Source trail
+
+- `vllm/config/{model,cache,scheduler,parallel}.py`
+- `vllm/v1/core/sched/scheduler.py`、`vllm/v1/core/kv_cache_manager.py`
+- `vllm/v1/kv_cache_interface.py`、`vllm/v1/attention/backends/`
+- `vllm/distributed/parallel_state.py`、`vllm/distributed/eplb/`
+- `vllm/v1/engine/`、`vllm/entrypoints/openai/`

@@ -1,32 +1,36 @@
 ---
 name: vllm-doctor
-description: 诊断并自动整改运行中的 vLLM 集群常见稳定性问题（KV 抢占、NCCL hang、OOM、重试雪崩、prefix cache 塌方、冷启动、输出乱码、LoRA 抖动）。按 Golden 3 指标自动路由 playbook，分级执行整改（L1/L2 直接做，L3 弹确认）。
-allowed-tools: [Bash, Read, Write, AskUserQuestion]
+description: Use when a running vLLM service has latency, queue, KV-cache, worker-stall, OOM, retry, prefix-cache, cold-start, output-quality, or LoRA instability symptoms.
 ---
 
 # vLLM Production Stability Doctor
 
-把 vllm-learning notebook 里散落的 incident playbook 编成 agent 可以自动跑的诊断+整改流程。
+把 vllm-learning notebook 里的 incident playbook 编成 fail-closed 的证据收集与整改建议流程。
+
+**Core safety rule: Every cluster mutation requires explicit user approval.** Read-only external evidence collection may run automatically. Local artifacts may only be written under the newly disclosed `$INCIDENT_DIR`; changes to any other filesystem path, Kubernetes, gateway, model, node, process, or external state are mutations regardless of L1/L2/L3 label.
 
 ## 何时使用
 
 - 线上 vLLM Pod 出现 TTFT/TPOT 抖动、5xx 飙升、卡 worker、OOMKilled、prefix cache 命中率塌方
-- 客户反馈输出质量异常或非 ASCII
+- 客户反馈输出质量或业务字符策略异常
 - 滚动升级、扩容后行为退化
 - 例行健康巡检
 
 ## 调用前置条件
 
-shell 里必须 export 以下变量（不全也能跑，会在 Phase 0 提示）：
+线上分类必须从本服务的 SLO 与容量实验显式提供阈值；缺失时 fail closed。下列值是占位符，不是默认建议：
 
 ```bash
 export VLLM_NAMESPACE=vllm                                  # k8s namespace
 export VLLM_SERVICE_LABEL=app.kubernetes.io/name=vllm       # pod selector
 export PROM_URL=http://prometheus.monitoring:9090           # Prometheus 入口
 export KUBECONFIG=$HOME/.kube/config                        # 默认值，可省
-export TTFT_SLO_MS=2000                                     # 决策树阈值，可省
-export QUEUE_HIGH=50
-export KV_HIGH=0.9
+export TTFT_SLO_MS="REPLACE_WITH_APPROVED_SLO_MS"
+export QUEUE_HIGH="REPLACE_WITH_VALIDATED_QUEUE_WATERLINE"
+export KV_HIGH="REPLACE_WITH_VALIDATED_KV_WATERLINE"
+export PREEMPT_HIGH_PER_SEC="REPLACE_WITH_VALIDATED_PREEMPT_RATE"
+export PREFIX_CACHE_DROP_FROM="REPLACE_WITH_VERSIONED_WORKLOAD_BASELINE"
+export RUNNING_LOW="REPLACE_WITH_VALIDATED_LOW_RUNNING_BOUNDARY"
 # 可选：跑离线 dry-run
 export VLLM_DOCTOR_FIXTURE=/path/to/golden3.json
 ```
@@ -54,7 +58,7 @@ bash "$CLAUDE_SKILL_DIR/scripts/connect_probe.sh" > "$INCIDENT_DIR/connect.json"
 bash "$CLAUDE_SKILL_DIR/scripts/golden3.sh" > "$INCIDENT_DIR/golden3.json"
 ```
 
-输出 schema：
+输出 schema（以下数字只是离线 fixture）：
 
 ```json
 {
@@ -88,30 +92,33 @@ python3 "$CLAUDE_SKILL_DIR/scripts/triage.py" \
 
 读取 `playbooks/<playbook>.md`，按其 "Triage Commands" 节执行。所有命令输出写到 `$INCIDENT_DIR/evidence/`。
 
-判定 root cause：playbook 文件里 "Root Cause 判定" 节给的是 if/then 表，按表落定。
+把 playbook 的 if/then 表当作假设生成器。只有相互独立的 runtime evidence 支持时才记录 root cause；否则写 `unconfirmed` 和下一条只读检查。
 
-### Phase 4  整改执行（三级授权）
+### Phase 4  整改建议与逐条授权
 
 每个 playbook 的 "Remediate" 节按 L1/L2/L3 分级：
 
-- **L1（只读/旁路）**：拉 dump、抓日志、记录基线 → 直接做
-- **L2（受控扰动）**：改 env、调 `max_num_seqs`、加 replica、改 gateway rate limit → 直接做，但执行前先把命令和**回滚命令**写进 `$INCIDENT_DIR/actions.log`
-- **L3（高破坏性）**：`kubectl delete pod`、`taint node`、`kubectl set image` 回滚、`kubectl scale --replicas=0` → 用 **AskUserQuestion** 弹一条确认，options = ["执行", "跳过"]，附 30 字内的 blast radius 说明
+- **L1（只读）**：拉取经过脱敏的 metrics、describe、logs、stack 与配置基线，可直接做
+- **L2（有状态变更）**：改 env、replica、gateway policy 或 rollout 参数，必须逐条征得显式批准
+- **L3（破坏性变更）**：delete/restart/taint/rollback/scale-to-zero，必须逐条征得显式批准，并说明 blast radius 与恢复门槛
+
+整改脚本只生成计划，绝不执行 mutation。对每条 L2/L3，先解析唯一 target、读取 current state、写 command/rollback/stop condition，再询问用户；批准只覆盖该条已展示命令。用户跳过、目标变化或 current state 漂移时重新生成计划。
 
 每条 action 用一致格式落 log：
 
 ```
-2026-05-29T12:05:30Z  L2  kubectl set env deploy/vllm MAX_NUM_SEQS=32
-  rollback: kubectl set env deploy/vllm MAX_NUM_SEQS-
+<timestamp>  L2  <exact approved command>
+  rollback: <restore captured current state>
 ```
 
-调用 playbook 提供的 `scripts/remediate_<id>.sh`（如存在），它内部已经按级别分好块；没有专用脚本的 playbook 则按其 markdown 里给出的命令逐条执行。
+调用 `scripts/remediate_<id>.sh`（如存在）只生成候选计划；没有专用脚本时也只从 playbook 生成建议，不直接执行。
 
 ### Phase 5  恢复验证
 
 ```bash
+: "${VERIFY_INTERVAL_SECONDS:?set from the playbook observation window}"
 for i in 1 2 3; do
-  sleep 60
+  sleep "$VERIFY_INTERVAL_SECONDS"
   bash "$CLAUDE_SKILL_DIR/scripts/golden3.sh" > "$INCIDENT_DIR/verify-$i.json"
 done
 python3 "$CLAUDE_SKILL_DIR/scripts/triage.py" --verify \
@@ -120,7 +127,7 @@ python3 "$CLAUDE_SKILL_DIR/scripts/triage.py" --verify \
   "$INCIDENT_DIR/verify-3.json" > "$INCIDENT_DIR/verify.json"
 ```
 
-三个采样点都满足该 playbook 的 "Verification" 表达式 → `status: RESOLVED`。否则：
+`triage.py --verify` 只会返回 `NO_ACTIVE_ROUTE`、`NOT_RESOLVED` 或 `INSUFFICIENT_EVIDENCE`，不会单独宣告事故恢复。只有三个采样点和 playbook 的全部 Verification gate 都通过，报告才可写 `RESOLVED`。否则：
 - 命中其他 playbook → 链式进入下一条
 - 命中相同 playbook 且整改已用尽 → `status: NEEDS_HUMAN`，把证据包路径告诉用户
 
@@ -144,7 +151,7 @@ python3 "$CLAUDE_SKILL_DIR/scripts/triage.py" --verify \
 （actions.log 内容渲染成表格）
 
 ## 恢复结果
-RESOLVED / NEEDS_HUMAN
+RESOLVED / NOT_RESOLVED / INSUFFICIENT_EVIDENCE / NEEDS_HUMAN
 （verify-1/2/3 表）
 
 ## 长期改进建议
@@ -157,9 +164,10 @@ RESOLVED / NEEDS_HUMAN
 
 ## 关键约束
 
-- **不要并行跑 L2/L3 整改**：vLLM rollout 期间再改 env 会触发二次重启，先做完再观察。
+- **任何 mutation 都先问**：不得因为“低风险”“可回滚”“事故紧急”或标成 L2 而跳过批准。
+- **不要并行跑 L2/L3 整改**：每次批准并执行一条，完成恢复验证后再建议下一条。
 - **每次只走一条 playbook**：决策树命中多个 → 取 confidence 最高，其余写入 `triage.json.alternatives` 供报告引用。
-- **AskUserQuestion 不能批量**：L3 整改需要一条一条问，不要打包成多选。
+- **批准不能批量**：L2/L3 都一条一条问，不把不同 target/action 打包。
 - **不要覆盖证据**：`$INCIDENT_DIR` 每次新建，命名含时间戳，不复用。
 - **不要碰 vllm 子模块**：本 skill 只读子模块（如果需要参考源码行号），从不修改。
 
@@ -173,11 +181,11 @@ python3 -c "import yaml; print(yaml.safe_load(open('SKILL.md').read().split('---
 
 # 2. 喂 mock 数据测决策树分支
 echo '{"ttft_p99_ms":9000,"queue":80,"kv_usage":0.95,"throughput":100,"running":50,"prefix_cache_hit_rate":0.8,"preempt_rate_per_sec":0.6,"request_failed_rate":0,"format_compliance_rate":1}' \
-  | python3 scripts/triage.py
+  | VLLM_DOCTOR_USE_EXAMPLE_THRESHOLDS=1 python3 scripts/triage.py
 # 期望：playbook=01-preempt-cascade
 
 echo '{"ttft_p99_ms":500,"queue":0,"kv_usage":0.5,"throughput":0,"running":8,"prefix_cache_hit_rate":0.8,"preempt_rate_per_sec":0,"request_failed_rate":0,"format_compliance_rate":1}' \
-  | python3 scripts/triage.py
+  | VLLM_DOCTOR_USE_EXAMPLE_THRESHOLDS=1 python3 scripts/triage.py
 # 期望：playbook=02-nccl-hang
 
 # 3. shellcheck
@@ -190,7 +198,7 @@ shellcheck scripts/*.sh
 
 skill 自包含，但需要更细的背景时读：
 
-- `playbooks/` 下每份对应的 incident 原案例
+- `playbooks/` 下每份对应一个合成 incident 场景
 - `reference/promql-cheatsheet.md` — 全部用到的 PromQL
 - `reference/nccl-env.md` — NCCL_* 环境变量影响
 - `reference/checklist-prelaunch.md` — 防患于未然的 15 条上线前检查

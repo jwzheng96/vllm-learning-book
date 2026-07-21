@@ -13,7 +13,9 @@
 > 4. 按压测矩阵复现实验，从低 QPS、小 batch、长上下文、KV 贴顶、prefix miss 五类场景里定位问题。
 > 5. 系统列出长尾延迟的根因，并对每个根因给出 vLLM 里的具体处置手段。
 
-理论上限（roofline）告诉你这张卡**最多**能跑多快；这章讲的是为什么实测**总是**比理论低，以及差距藏在链路的哪一段。生产里大部分"GPU 很贵但不够用"的问题，根因不在卡，而在调度、KV、队列、通信和入口流量形态。
+> **当前复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** perf counters 是运行时估算量，MFU/MBU 还需要硬件峰值与 workload 假设；必须标 estimated 与 measured。当前 queue/KV/prefix 指标名按 V1 metrics 注册核对，任何固定“正常比例”只作演示。
+
+理论上限（roofline）告诉你这张卡在特定精度、功耗和实现条件下**最多**能跑多快；这章讲的是为什么实测通常低于这个上限，以及差距藏在链路的哪一段。生产里的“GPU 很贵但不够用”既可能来自硬件上限，也可能来自调度、KV、队列、通信和入口流量形态，不能先入为主。
 
 ---
 
@@ -21,7 +23,7 @@
 
 最常见的误判：`nvidia-smi` 显示 `GPU-Util 100%`，于是认定"GPU 已经满了，只能加卡"。
 
-`GPU-Util` 的真实含义接近 **"过去采样窗口内，至少有一个 kernel 在 GPU 上跑的时间占比"**。它只回答"GPU 闲没闲着"，**不回答"算力/带宽用了几成"**。一个 batch=1 的 decode kernel 可以让 Util 接近 100%，但实际有效算力可能只有 1% 以下，因为 decode 的算术强度太低，SM 大部分时间在等 HBM。
+按 NVIDIA 对 utilization sample 的定义，`GPU-Util` 表示采样周期内 GPU 上有 kernel 执行的时间比例。它只回答“设备是否忙”，**不回答“有效算力或显存带宽用了几成”**。小 batch 的 decode 也可能让它很高，而有效吞吐仍受低算术强度和 HBM 访问限制。解释该值前要同时记录采样周期、MIG/MPS 配置和功耗/时钟状态。
 
 生产上真正要看两个"打满率"：
 
@@ -30,7 +32,14 @@
 | **MFU**（Model FLOPs Utilization） | 实际有效 FLOPs / 峰值 FLOPs | `rate(estimated_flops) / peak_flops` | prefill 和大 batch |
 | **MBU**（Model Bandwidth Utilization） | 实际内存读写带宽 / 峰值 HBM 带宽 | `rate(estimated_read_bytes + estimated_write_bytes) / peak_bandwidth` | decode 和长上下文 |
 
-vLLM 当前已经有近似 perf 估算指标，不必完全手算。源码在 `vllm/vllm/v1/metrics/perf.py:1265` 的 `PerfMetricsProm`，Prometheus 计数器分别是 `vllm:estimated_flops_per_gpu_total`、`vllm:estimated_read_bytes_per_gpu_total`、`vllm:estimated_write_bytes_per_gpu_total`（注册点见 `vllm/vllm/v1/metrics/perf.py:1287`、`:1299`、`:1311`）。代码注释给出的 PromQL 原型在 `vllm/vllm/v1/metrics/perf.py:1271` 和 `:1275`。
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm","anchor":"rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1554)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm.__init__","anchor":"counter_flops = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1570)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1548)
+
+vLLM 当前可以暴露近似 perf 估算指标，但它们**默认不开启**：启动时要显式传 `--enable-mfu-metrics`，并且不能关闭 stats。源码在 `vllm/v1/metrics/perf.py` 的 `PerfMetricsProm`；Prometheus 计数器分别是 `vllm:estimated_flops_per_gpu_total`、`vllm:estimated_read_bytes_per_gpu_total`、`vllm:estimated_write_bytes_per_gpu_total`。上线前先在测试池测量采集开销，并确认目标部署的 `/metrics` 真有这些序列。
 
 ```promql
 # 每 GPU 估算 TFLOPS
@@ -43,20 +52,20 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12
 ) / 1e9
 ```
 
-把上面的值再除以硬件峰值，就得到近似 MFU / MBU。比如 H100 SXM BF16 峰值约 990 TFLOPS、HBM 带宽约 3350 GB/s：
+把上面的值除以**当前设备、精度与功耗模式对应的经过核验的峰值**，可得到近似 MFU / MBU。不要把某个产品页的稀疏峰值或另一种形态的 GPU 数字直接抄进面板；把分母作为部署参数：
 
 ```promql
-# H100 BF16 近似 MFU
-rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
+# 近似 MFU；PEAK_TFLOPS 由当前设备规格与本地基准共同确认
+rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / PEAK_TFLOPS
 
-# H100 近似 MBU
+# 近似 MBU；PEAK_GBPS 同样是部署参数
 (
   rate(vllm:estimated_read_bytes_per_gpu_total[1m])
   + rate(vllm:estimated_write_bytes_per_gpu_total[1m])
-) / 1e9 / 3350
+) / 1e9 / PEAK_GBPS
 ```
 
-**判据**来自上一章的存算比：decode 是 memory-bound，健康标志是 MBU 高，而不是 MFU 高；prefill 是 compute-bound，健康标志是 MFU 高。如果 decode 的 MBU 只有 20%-30%，说明带宽没喂满，要查 batch、CPU bubble、CUDA Graph、KV 压力或路由，而不是立刻加卡。
+**判据**来自上一章的存算比：常见 dense decode 更偏 memory-bound，prefill 更偏 compute-bound，但 MoE、长上下文、量化与并行策略会改变边界。若 decode 的 MBU 明显低于同模型同配置的健康基线，要查 batch、CPU bubble、CUDA Graph、KV 压力或路由，而不是套用一个跨硬件的固定“正常比例”。
 
 > 注意：这些是基于模型结构和 scheduled token 的估算指标，不是硬件 PMU 直接采样。它们适合做趋势和归因，最终确认仍要用 `nsys` / `torch.profiler` 看 kernel 级 DRAM throughput、launch gap、achieved occupancy。
 
@@ -66,22 +75,54 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 
 读源码时先记住三层来源：
 
-1. **Scheduler 状态**：running / waiting / KV 使用率 / prefix cache / preemption。注册在 `vllm/vllm/v1/metrics/loggers.py:451` 到 `:625`。
-2. **请求完成统计**：TTFT、ITL、TPOT、队列时间、prefill/decode 时间。注册在 `vllm/vllm/v1/metrics/loggers.py:754` 到 `:881`，观测逻辑在 `vllm/vllm/v1/metrics/loggers.py:1173` 到 `:1211`。
-3. **Perf 估算**：每步按 `SchedulerOutput` 区分 prefill/decode，估算 FLOPs 和 bytes。入口是 `vllm/vllm/v1/metrics/perf.py:1056`，新请求按 prefill 记（`:1068`），cached request 通常按 decode 记（`:1080` 到 `:1094`）。
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_running = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L493)
+
+1. **Scheduler 状态**：running / waiting / KV 使用率 / prefix cache / preemption。注册在 `PrometheusStatLogger.__init__`。
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.record","anchor":"for ttft in iteration_stats.time_to_first_tokens_iter:"} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.record](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L1216)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_time_to_first_token = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L796)
+
+2. **请求完成统计**：TTFT、ITL、TPOT、队列时间、prefill/decode 时间。注册和观测逻辑都在 `PrometheusStatLogger`，以语义锚点为准，不依赖易漂移的手写行号。
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"ModelMetrics.get_step_perf_stats_per_gpu"} -->
+[源码锚点：vllm/v1/metrics/perf.py · ModelMetrics.get_step_perf_stats_per_gpu](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1339)
+
+3. **Perf 估算**：启用 MFU metrics 后，每步根据 `SchedulerOutput` 与模型配置估算 FLOPs 和 bytes。入口是 `ModelMetrics.get_step_perf_stats_per_gpu`；它不是 GPU PMU 实测值。
+
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_running = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L493)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_scheduler_waiting = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L503)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_waiting_by_reason = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L513)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"gauge_kv_cache_usage = self._gauge_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L561)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"counter_num_preempted_reqs = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L661)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"counter_prefix_cache_queries = self._counter_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L584)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_time_to_first_token = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L796)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_inter_token_latency = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L829)
+<!-- vllm-source: {"path":"vllm/v1/metrics/loggers.py","symbol":"PrometheusStatLogger.__init__","anchor":"histogram_queue_time_request = self._histogram_cls("} -->
+[源码锚点：vllm/v1/metrics/loggers.py · PrometheusStatLogger.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/loggers.py#L922)
+<!-- vllm-source: {"path":"vllm/v1/metrics/perf.py","symbol":"PerfMetricsProm"} -->
+[源码锚点：vllm/v1/metrics/perf.py · PerfMetricsProm](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/metrics/perf.py#L1548)
 
 | 你想判断什么 | 先看 metric | 源码锚点 | 解释 |
 | --- | --- | --- | --- |
-| batch 是否够大 | `vllm:num_requests_running` | `vllm/vllm/v1/metrics/loggers.py:451` | 当前进入 model execution batch 的请求数 |
-| 是否在排队 | `vllm:num_requests_waiting` | `vllm/vllm/v1/metrics/loggers.py:461` | waiting + skipped waiting 会被写入这个 gauge，更新见 `:1070` |
-| 为什么排队 | `vllm:num_requests_waiting_by_reason` | `vllm/vllm/v1/metrics/loggers.py:471` | `capacity` 是容量不够，`deferred` 是 LoRA/KV transfer/blocked 等约束 |
-| KV 是否贴顶 | `vllm:kv_cache_usage_perc` | `vllm/vllm/v1/metrics/loggers.py:519` | 1.0 表示 KV cache 100% 占用，更新见 `:1081` |
-| 是否发生抢占 | `rate(vllm:num_preemptions_total[5m])` | `vllm/vllm/v1/metrics/loggers.py:619` | 源码 Counter 名是 `vllm:num_preemptions`，Prometheus 暴露时有 `_total` 后缀 |
-| prefix 是否命中 | `prefix_cache_hits / prefix_cache_queries` | `vllm/vllm/v1/metrics/loggers.py:542` | 本地 prefix cache，外部 KV connector 指标见 `:566` |
-| TTFT 是否坏 | `vllm:time_to_first_token_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:754` | 从请求进入到第一个 token |
-| TPOT/ITL 是否坏 | `request_time_per_output_token_seconds_bucket`、`inter_token_latency_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:787`、`:817` | ITL 是 token 间隔，TPOT 是请求级输出 token 平均 |
-| 队列贡献多少 | `vllm:request_queue_time_seconds_bucket` | `vllm/vllm/v1/metrics/loggers.py:880` | WAITING 阶段时间 |
-| 近似 MFU/MBU | `estimated_flops/read_bytes/write_bytes` | `vllm/vllm/v1/metrics/perf.py:1265` | 基于每步 scheduled token 和模型配置估算 |
+| batch 是否够大 | `vllm:num_requests_running` | `vllm/v1/metrics/loggers.py` | 当前进入 model execution batch 的请求数 |
+| 是否在排队 | `vllm:num_requests_waiting` | `vllm/v1/metrics/loggers.py` | 当前等待进入 model execution 的请求数 |
+| 为什么排队 | `vllm:num_requests_waiting_by_reason` | `vllm/v1/metrics/loggers.py` | `capacity` 是容量不够，`deferred` 是 LoRA/KV transfer/blocked 等约束 |
+| KV 是否接近容量线 | `vllm:kv_cache_usage_perc` | `vllm/v1/metrics/loggers.py` | 1.0 表示分配给 vLLM 的 KV cache block 已占满；不是整卡显存占比 |
+| 是否发生抢占 | `rate(vllm:num_preemptions_total[5m])` | `vllm/v1/metrics/loggers.py` | 源码 Counter 名是 `vllm:num_preemptions`，Prometheus 暴露时有 `_total` 后缀 |
+| prefix 是否命中 | `prefix_cache_hits / prefix_cache_queries` | `vllm/v1/metrics/loggers.py` | 本地 prefix cache；先核对 counter 的 token 口径和标签 |
+| TTFT 是否坏 | `vllm:time_to_first_token_seconds_bucket` | `vllm/v1/metrics/loggers.py` | 从请求进入到第一个 token |
+| TPOT/ITL 是否坏 | `request_time_per_output_token_seconds_bucket`、`inter_token_latency_seconds_bucket` | `vllm/v1/metrics/loggers.py` | ITL 是 token 间隔，TPOT 是请求级输出 token 平均 |
+| 队列贡献多少 | `vllm:request_queue_time_seconds_bucket` | `vllm/v1/metrics/loggers.py` | WAITING 阶段时间 |
+| 近似 MFU/MBU | `estimated_flops/read_bytes/write_bytes` | `vllm/v1/metrics/perf.py` | 基于每步 scheduled token 和模型配置估算 |
 
 一个容易踩的坑：老资料里常见 `vllm:gpu_cache_usage_perc`，当前源码对应的是 **`vllm:kv_cache_usage_perc`**。看当前代码时以后者为准。
 
@@ -91,20 +132,30 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 
 性能问题最后都会落到三个 budget：
 
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_batched_tokens: int = Field(default=DEFAULT_MAX_NUM_BATCHED_TOKENS, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L49)
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_seqs: int = Field(default=DEFAULT_MAX_NUM_SEQS, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L63)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"# Schedule newly needed KV blocks for the request."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L557)
+
 | budget | 配置/状态 | 源码 | 典型症状 |
 | --- | --- | --- | --- |
-| token budget | `max_num_batched_tokens` / `max_num_scheduled_tokens` | `vllm/vllm/config/scheduler.py:49`、`:56` | 每步 token 太少，prefill 被切太碎或 decode batch 太小 |
-| seq budget | `max_num_seqs` | `vllm/vllm/config/scheduler.py:63` | running 达上限，waiting 增长，但 KV 未必满 |
-| KV budget | block pool 可用块 | `vllm/vllm/v1/core/sched/scheduler.py:441` | allocate slots 失败，触发 preemption |
+| token budget | `max_num_batched_tokens` / `max_num_scheduled_tokens` | `vllm/config/scheduler.py` | 每步 token 太少，prefill 被切太碎或 decode batch 太小 |
+| seq budget | `max_num_seqs` | `vllm/config/scheduler.py` | running 达上限，waiting 增长，但 KV 未必满 |
+| KV budget | block pool 可用块 | `vllm/v1/core/sched/scheduler.py` | allocate slots 失败，触发 preemption |
 
-`Scheduler.schedule()` 的注释很关键：它不硬分"prefill 阶段"和"decode 阶段"，而是让每个 request 的 `num_computed_tokens` 去追 `num_tokens_with_spec`，同一套逻辑覆盖 chunked prefill、prefix caching、speculative decoding（`vllm/vllm/v1/core/sched/scheduler.py:329`）。每步先拿到 `token_budget`（`:348`），然后：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
 
-1. 先调度 running 请求（`:364`），保证已经在跑的 decode 不被新 prefill 随便打断。
-2. 为请求分配新 KV block（`:441` 到 `:448`）。
-3. 如果 KV 不够，按策略 preempt 一个 running 请求（`:454` 到 `:483`）。
-4. 再从 waiting 队列拉新请求（`:548`），检查 local/external prefix cache（`:590` 到 `:623`）。
-5. 如果 chunked prefill 允许，就把新请求的 token 数裁到剩余 budget（`:659` 到 `:669`）。
-6. 分配成功后进入 running（`:762` 到 `:803`）。
+`Scheduler.schedule()` 的注释很关键：它不硬分“prefill 阶段”和“decode 阶段”，而是让每个 request 的 `num_computed_tokens` 去追 `num_tokens_with_spec`，同一套逻辑覆盖 chunked prefill、prefix caching、speculative decoding。其顺序概括如下；具体控制流以锚点源码为准：
+
+1. 先处理 running 请求，避免新 prefill 无约束地挤占既有 decode。
+2. 根据本步所需 token 为请求分配新 KV block。
+3. 如果 KV 不够，按配置策略选择是否 preempt running 请求。
+4. 再从 waiting 队列拉新请求，并检查 local/external prefix cache 状态。
+5. 如果 chunked prefill 允许，就把新请求的 token 数裁到剩余 budget。
+6. 分配成功后把请求纳入本步 running 集合。
 
 这解释了很多线上现象：
 
@@ -113,7 +164,10 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 - `max_num_batched_tokens` 调太小，TTFT 可能变稳但 prefill 被切碎；调太大，长 prefill 又可能让 decode TPOT 抖。
 - `max_num_seqs` 不是越大越好，它会提高并发上限，也会提高 KV 压力和 preemption 风险。
 
-`SchedulerConfig` 里几个线上常调旋钮值得背下来：`max_num_partial_prefills` 控制可并发 chunked prefill 数（`vllm/vllm/config/scheduler.py:70`），`max_long_partial_prefills` 允许短 prompt 在某些场景跳过长 prompt（`:74` 到 `:78`），`enable_chunked_prefill` 默认开启（`:84`），`policy` 支持 `fcfs` 和 `priority`（`:109`），`async_scheduling` 用来减少 GPU 利用率空洞（`:146`）。
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"max_num_partial_prefills: int = Field(default=1, ge=1)"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L70)
+
+`SchedulerConfig` 里几个线上常调旋钮值得理解：`max_num_partial_prefills` 控制可并发 chunked prefill 数，`max_long_partial_prefills` 可允许短 prompt 在特定配置下越过长 prompt，`policy` 支持 `fcfs` 和 `priority`。当前类字段的 `enable_chunked_prefill` 默认是 `True`，但注释明确说明真实运行值由 `EngineArgs.create_engine_config` 组装；`async_scheduling` 的字段默认是 `None`，是否启用也要检查最终配置与兼容限制，不能只看 dataclass 字段。
 
 ---
 
@@ -140,11 +194,17 @@ flowchart LR
 
 黄色段全是 CPU / 网络 / 控制面，只有绿色段是 GPU 真正干活。如果黄色段加起来的时间能和绿色段相比，GPU 就会出现 bubble：算完一步，等 CPU 准备下一步。这在小模型、小 batch、低并发、复杂 logits processor、结构化输出、LoRA 多租户时尤其明显。
 
-vLLM 针对这条链路的关键武器：
+vLLM 针对这条链路提供了这些可选机制；是否有效要通过 A/B 压测确认：
 
-- **Async scheduling**：减少调度带来的 GPU gap。配置注释直接写着它能避免 GPU utilization gaps（`vllm/vllm/config/scheduler.py:146`）。
+<!-- vllm-source: {"path":"vllm/config/scheduler.py","symbol":"SchedulerConfig","anchor":"async_scheduling: bool | None = None"} -->
+[源码锚点：vllm/config/scheduler.py · SchedulerConfig](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/config/scheduler.py#L158)
+
+- **Async scheduling**：减少调度带来的 GPU gap。配置注释直接写着它能避免 GPU utilization gaps（`vllm/config/scheduler.py`）。
 - **CUDA Graph**：把稳定 shape 的 decode forward 捕获成图，降低 Python 到 CUDA launch 开销，见 [`04-optimizations/03-cudagraph-and-compile.md`](../04-optimizations/03-cudagraph-and-compile.md)。
-- **持久化 InputBatch**：`InputBatch` 预分配 token、block table、sampling 参数等张量（`vllm/vllm/v1/worker/gpu_input_batch.py:91`、`:133`、`:170`），步间增量更新，不每步重建。
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_input_batch.py","symbol":"InputBatch"} -->
+[源码锚点：vllm/v1/worker/gpu_input_batch.py · InputBatch](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_input_batch.py#L92)
+
+- **持久化 InputBatch**：`InputBatch` 管理 token、block table、sampling 参数等批状态，并支持步间增量更新，减少重复准备工作；具体字段以该类的语义锚点为准。
 - **chunked prefill**：把大 prefill 切进多个 step，让 decode 不被一个长 prompt 长时间阻塞。
 
 ---
@@ -175,10 +235,13 @@ MBU 低 = decode 步里 HBM 没在满速读。常见原因按出现频率排：
 
 ### 5.3 KV 容量不足，running batch 上不去
 
-KV block 不够时，scheduler 在 `allocate_slots` 失败后会 preempt running 请求（`vllm/vllm/v1/core/sched/scheduler.py:441` 到 `:483`）。指标组合：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"# Schedule newly needed KV blocks for the request."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L557)
+
+KV block 不够时，scheduler 在分配失败后可能 preempt running 请求。不要用单个阈值直接下结论，先观察经过容量测试确定的 KV 安全水位、抢占 counter 与队列是否同时变化：
 
 ```text
-vllm:kv_cache_usage_perc > 0.90
+vllm:kv_cache_usage_perc > VALIDATED_KV_WATERLINE
 rate(vllm:num_preemptions_total[5m]) > 0
 vllm:num_requests_waiting 上涨
 ```
@@ -253,7 +316,7 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12
 | `running` 长期低，`waiting` 也低 | 流量太少或 router 分散 | 合并流量、缩容、提高单实例 batch |
 | `waiting` 高，`running` 达到 `max_num_seqs`，KV 不满 | seq budget 卡住 | 提高 `max_num_seqs`，检查业务限并发 |
 | `waiting_by_reason{reason="deferred"}` 高 | LoRA/KV transfer/blocked constraint | 查 LoRA 数、远端 KV、结构化输出或多模态 encoder |
-| `kv_cache_usage_perc` > 0.9，preemption rate 上涨 | KV 不够 | 降入场并发、KV 量化、缩上下文、扩容 |
+| KV 越过本池安全水位，preemption rate 同时上涨 | KV 容量压力 | 降入场并发、验证 KV 量化、缩上下文或扩容 |
 | TTFT p99 高，TPOT 正常，queue time 高 | 排队或 prefill 拥塞 | 队列驱动扩容、chunked prefill、P/D 分离 |
 | TTFT 正常，TPOT p99 高 | decode 侧问题 | 查 KV、batch 抖动、通信、长 prefill 插队 |
 | `prefix_cache_hits / queries` 掉，TTFT 同步涨 | prefix 亲和失效 | session/prefix-aware routing |
@@ -272,24 +335,26 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12
 | 实验 | 变量 | 看什么 | 结论 |
 | --- | --- | --- | --- |
 | 最大吞吐 | `request_rate=inf`，逐步加 `max_concurrency` | token/s、TPOT、MBU | 找吞吐天花板和 MBU 上限 |
-| 低 QPS | 固定小 QPS，如 1/5/10 RPS | running、MBU、单用户 TPOT | 判断是否需要缩容/合流 |
+| 低 QPS | 取容量点以下的若干业务代表值 | running、MBU、单用户 TPOT | 判断是否需要缩容/合流 |
 | burst | Poisson 或 Gamma 到达，带突刺 | queue time、TTFT p99 | 检查 admission 和 autoscaling |
-| 长 prompt sweep | prompt 1K/8K/32K/128K | TTFT、TPOT、attention 占比 | 找 KV 墙拐点 |
-| KV 压力 | 提高并发直到 `kv_cache_usage_perc` > 0.9 | preemption rate、p99 | 设置安全水位 |
+| 长 prompt sweep | 覆盖业务长度分位数和模型上限附近样本 | TTFT、TPOT、attention 占比 | 找 KV 墙拐点 |
+| KV 压力 | 逐步加并发直到出现抢占或 SLO 拐点 | KV usage、preemption、p99 | 反推本池安全水位 |
 | prefix 亲和 | sticky vs random routing | hit rate、TTFT | 验证路由策略收益 |
 
 每组都保留相同四类数据：
 
 1. vLLM Prometheus 指标。
 2. 客户端 latency 分布和请求长度分布。
-3. `nsys` 或 `torch.profiler` 的 30-60 秒采样。
+3. `nsys` 或 `torch.profiler` 的足够长稳定窗口，并记录采样开销。
 4. 实例配置：模型、精度、TP/PP/EP/DP、`max_num_seqs`、`max_num_batched_tokens`、chunked prefill、CUDA Graph。
 
 没有请求长度分布的 benchmark 基本不可复现。LLM 推理的性能不是单一 QPS 函数，而是 prompt 长度、output 长度、到达过程、prefix 重复率和并行配置的联合函数。
 
 ---
 
-## 9. 三个典型案例
+## 9. 三个合成案例
+
+以下数字是帮助练习推理链的 fixture，不是告警默认值或跨硬件基线。
 
 ### 案例 A：GPU-Util 99%，token/s 只有峰值 1/3
 
@@ -336,13 +401,13 @@ vllm:num_requests_waiting: sawtooth
 
 结论：KV 贴顶导致抢占级联。V1 默认 preempt 后会让请求回 waiting，后续重算或恢复，TPOT 出现大台阶。
 
-处理：立刻限流或降 `max_num_seqs`，把 `kv_cache_usage_perc` 拉回 0.85 以下；随后用 KV FP8、缩 `max_model_len`、prefix-aware routing 或扩容解决容量。
+处理：按已审批的过载流程限流或降低 admission，把 KV 拉回本池压测得到的安全区间；随后分别验证 KV FP8、收紧请求长度、prefix-aware routing 或扩容的收益与质量影响。
 
 ---
 
 ## 10. 长尾（p99）请求怎么治
 
-p50 好看是常态，p99 才是向产品 commit 的数字。LLM 的长尾几乎不是随机抖动，而是结构性的。
+p50 与 p99 都有诊断价值；面向产品承诺时还要同时定义可用性、超时和质量条件。LLM 长尾常有结构性原因，但也可能来自硬件降频、网络抖动或下游依赖，因此要用分段耗时验证。
 
 ### 10.1 队头阻塞：一个长 prefill 拖死一整步
 
@@ -354,7 +419,7 @@ p50 好看是常态，p99 才是向产品 commit 的数字。LLM 的长尾几乎
 
 KV 贴顶时，scheduler 会 preempt 请求释放 block。低优先级请求的 TPOT 出现大台阶，释放和重抢又可能产生级联。
 
-治法：保留 KV 余量，不要把 `gpu-memory-utilization` 顶到 0.98；监控 `vllm:kv_cache_usage_perc` 和 `rate(vllm:num_preemptions_total[5m])`；必要时 admission control 先拒新请求。
+治法：按容量实验保留 KV 余量，不要仅凭更高 `gpu-memory-utilization` 追求吞吐；监控 `vllm:kv_cache_usage_perc` 和 `rate(vllm:num_preemptions_total[5m])`，并用经审批的 admission control 保护在途请求。
 
 ### 10.3 排队：到达突刺打满入场
 
@@ -395,7 +460,7 @@ FCFS 下长输出长期占着 slot，短交互被压在后面；反过来，如�
 ## 小结
 
 - `nvidia-smi` 的 GPU-Util 只说"忙没忙"，不说"用了几成"。decode 看 **MBU**，prefill 看 **MFU**。
-- 当前 vLLM 已经暴露 `estimated_flops/read_bytes/write_bytes` 估算指标，可直接算近似 MFU/MBU；它们来自 `vllm/vllm/v1/metrics/perf.py`。
+- 当前 vLLM 在显式启用 `--enable-mfu-metrics` 且 stats 开启时可暴露 `estimated_flops/read_bytes/write_bytes` 估算指标；分母和采集开销必须按部署校准。
 - 调度瓶颈可以拆成 token budget、seq budget、KV budget。`waiting`、`running`、`kv_cache_usage_perc`、`num_preemptions_total` 的组合比 GPU-Util 更有用。
 - 带宽打不满最常见是 batch 太小和 CPU bubble；带宽打满但吞吐仍低，常见是长上下文 KV 墙、通信墙或理论上限。
 - 长尾几乎全是结构性的：HOL、抢占、排队、公平性、prefix 波动、重试雪崩、冷启动。chunked prefill、队列驱动扩容、prefix-aware routing、admission control、P/D 分离是主力工具。

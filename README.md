@@ -1,12 +1,22 @@
 # vLLM 学习手册
 
+<!-- vllm-version:start -->
+- Validated vLLM: `b23bd73f540175f9e117eaee5029cd7d8df63964`
+- Upstream committed: `2026-07-20T15:32:54+00:00`
+- Validated: `2026-07-20T17:53:34Z`
+- Latest candidate: `b23bd73f540175f9e117eaee5029cd7d8df63964`
+- Candidate lag: `2268` commits
+- Impact report: [artifacts/source-sync/latest-impact.md](artifacts/source-sync/latest-impact.md)
+<!-- vllm-version:end -->
+
 [![Pages](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml)
+[![Upstream sync](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/sync-upstream.yml)
 [![Site](https://img.shields.io/badge/site-jwzheng96.github.io%2Fvllm--learning--book-8b1538)](https://jwzheng96.github.io/vllm-learning-book/)
-[![vLLM](https://img.shields.io/badge/vllm-27b85d2_(2026--05--15)-1a4d80)](https://github.com/vllm-project/vllm/tree/27b85d2084c48f9b12f8cfd6638a56fe9b257635)
+[![vLLM](https://img.shields.io/badge/vllm-b23bd73_(2026--07--20)-1a4d80)](https://github.com/vllm-project/vllm/tree/b23bd73f540175f9e117eaee5029cd7d8df63964)
 
 > 一份写给大模型推理工程入门者的源码教程。
-> **49 章 · 21K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
-> 每章都对照 vLLM 源码（`file_path:line_number`），可以"读笔记 ↔ 跳源码"无缝切换。
+> **60 章 · 24K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
+> 每章都用可刷新语义锚点对照锁定 commit 的 vLLM 源码，可以“读笔记 ↔ 跳源码”无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**
 
@@ -32,9 +42,13 @@
 | 方式 | 入口 | 适合 |
 | --- | --- | --- |
 | **Markdown 直接读** | 本 README.md → 按章节文件名跳转 | IDE 内阅读、对照源码、想在 GitHub 上读 |
-| **HTML 在线版** | `python3 build_html.py` 后开 `vllm-learning-html/index.html` | 想要侧栏 + 全文搜索 + Mermaid 渲染 + 暗色主题 + 阅读时间提示 |
+| **HTML 在线版** | `python3 build_html.py` 后开 `_site/index.html` | 想要侧栏 + 全文搜索 + Mermaid 渲染 + 暗色主题 + 阅读时间提示 |
 
 所有跨章链接、内嵌 Mermaid、代码块都在两种模式下都能用。HTML 版额外有 lunr.js 全文搜索和阅读时间估算。
+
+源码版本、语义锚点、影响报告和人工复核的完整流程见 [`docs/source-sync.md`](docs/source-sync.md)。这里的“已验证”是 fail-closed 语义门禁：锁定 SHA 与子模块一致、源码锚点可解析、60 章 inventory 完整、没有 unmanaged source line，而且 `content-review.toml` 的每一章都在该 SHA 上完成 source / command / metric / diagram review。PR 与 Pages 使用 `validate --profile full --require-committed`；每周工作流只创建候选 PR，不会自动合并或发布。
+
+文中任何硬件验证徽章都必须对应可索引、可复现的运行记录（锁定 commit、硬件、命令和结果）；只有静态源码复核时，不得标注为 GPU 已验证。手动 GPU workflow 见 `.github/workflows/gpu-validation.yml`：它只在预置 vLLM / driver 的 self-hosted NVIDIA runner 上运行 `scripts/gpu-validation.sh`，并归档脱敏证据；普通 CI 不安装或假装拥有 GPU toolchain。
 
 **每章统一的结构：**
 
@@ -58,35 +72,50 @@
 ## 学习路径
 
 ```mermaid
-flowchart LR
-    A[Week 1<br/>建立直觉<br/>~6h] --> B[Week 2<br/>吃透核心算法<br/>~8h]
-    B --> C[Week 3<br/>啃源码<br/>~10h]
-    C --> D[Week 4<br/>优化 / 分布式 / 生产<br/>~12h]
+flowchart TB
+    Start[选择你的目标] --> Q[30 分钟理解]
+    Start --> S[源码主线]
+    Start --> P[工业实战]
+    Start --> I[面试冲刺]
 
-    A -.-> A1[01-overview]
-    B -.-> B1[02-core-concepts]
-    C -.-> C1[03-code-walkthrough]
-    D -.-> D1[04-optimizations]
-    D -.-> D2[05-distributed]
-    D -.-> D3[08-production-deployment]
-    D -.-> D4[09-advanced-features]
+    Q --> Q1[前置概念 → vLLM 是什么 → 架构 → 首个 API 服务]
+    S --> S1[入口 → 输入 → 调度 / KV → Runner / Attention → Sampling → 输出]
+    P --> P1[环境 → 基准 → 调优 → 部署 / SLO → 安全 / 升级 → Capstone]
+    I --> I1[高频题 → 计算题 → 系统设计 → 排障 → 模拟面试]
 
     classDef phase fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
     classDef topic fill:#f7f8fa,stroke:#5b6573,color:#1a1f29;
-    class A,B,C,D phase;
-    class A1,B1,C1,D1,D2,D3,D4 topic;
+    class Q,S,P,I phase;
+    class Start,Q1,S1,P1,I1 topic;
 ```
 
-按章节顺序读最系统。时间紧时用"最短路径"：
+四条路径可以独立走，也可以从“30 分钟理解”起步后再分流。
 
-| 投入时间 | 推荐路径 |
-| --- | --- |
-| 零基础 | 先读 [`01-overview/00-prerequisites.md`](01-overview/00-prerequisites.md)（前置概念）再走任何一条路径 |
-| 1 天（~5h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-architecture`](01-overview/02-architecture.md) → [`01-paged-attention`](02-core-concepts/01-paged-attention.md) → [`工程问答速查`](06-interview/01-common-questions.md) |
-| 1 周（~15h） | 精读 `01-overview/` + `02-core-concepts/`，跑通 `vllm` repo 的 `examples/offline_inference/basic.py` |
-| 3-4 周（~35h） | 顺序读 01 → 09，每章配合源码对照（每章都标 `file_path:line_number`） |
-| 核心机制快读（~8h） | [`01-what-is-vllm`](01-overview/01-what-is-vllm.md) → [`02-core-concepts/`](02-core-concepts/) 全部 → [`06-interview/`](06-interview/) 两篇工程问答 |
-| 生产部署快读（~10h） | [`01-overview/02-architecture`](01-overview/02-architecture.md) → [`08-production-deployment/`](08-production-deployment/) 全部 |
+### 30 分钟理解
+
+适合第一次接触 vLLM、需要快速建立全局心智模型的人。
+
+[`前置知识`](01-overview/00-prerequisites.md)（按需跳读） → [`vLLM 是什么`](01-overview/01-what-is-vllm.md) → [`整体架构`](01-overview/02-architecture.md) → [`启动 OpenAI-Compatible API`](07-hands-on/05-serve-openai-api.md)
+
+### 源码主线
+
+适合准备读代码、改代码或定位引擎问题的人。顺序刻意沿一次请求的数据流展开。
+
+[`入口与主循环`](03-code-walkthrough/01-entry-points.md) → [`输入与 Tokenization`](03-code-walkthrough/08-input-processing-and-tokenization.md) → [`Scheduler`](03-code-walkthrough/02-scheduler.md) → [`KV Cache`](03-code-walkthrough/03-kv-cache-manager.md) → [`Model Runner`](03-code-walkthrough/04-model-runner.md) → [`Attention`](03-code-walkthrough/05-attention-backends.md) → [`Sampling`](09-advanced-features/01-sampling-and-logits.md) → [`输出与 Streaming`](03-code-walkthrough/09-output-processing-and-streaming.md)
+
+### 工业实战
+
+适合要把服务从“能跑”推进到“可量化、可调优、可上线、可回滚”的工程团队。
+
+[`环境搭建`](07-hands-on/01-setup.md) → [`Benchmark 方法论`](07-hands-on/06-benchmark-methodology.md) → [`调优 Playbook`](07-hands-on/07-tuning-playbook.md) → [`部署架构`](08-production-deployment/01-deployment-architectures.md) → [`容量规划`](08-production-deployment/04-autoscaling-and-capacity.md) → [`SLO 与可观测性`](08-production-deployment/05-slo-and-observability.md) → [`安全与多租户`](08-production-deployment/11-security-and-multi-tenancy.md) → [`升级与回滚`](08-production-deployment/12-upgrades-rollbacks-and-compatibility.md) → [`生产 Capstone`](07-hands-on/08-production-capstone.md)
+
+### 面试冲刺
+
+适合用可计算、可追问、可评分的方式准备推理工程面试。
+
+[`30 道三层回答`](06-interview/01-common-questions.md) → [`容量与故障练习`](06-interview/03-capacity-and-troubleshooting-drills.md) → [`系统设计`](06-interview/02-system-design.md) → [`五轮模拟面试`](06-interview/04-mock-interview-and-rubric.md)
+
+如果目标是完整掌握，仍建议按 01 → 09 顺序阅读，并在每章用锁定 commit 的语义源码锚点回到真实实现。
 
 ---
 
@@ -111,16 +140,18 @@ flowchart LR
 - [`04-prefix-caching.md`](02-core-concepts/04-prefix-caching.md) — Merkle 链式 hash + extra_keys，多卡 / LoRA / 多模态怎么算。
 - [`05-chunked-prefill.md`](02-core-concepts/05-chunked-prefill.md) — 长 prompt 怎么切才不卡 decode，`max-num-batched-tokens` 怎么调。
 
-### 3. 源码走读 · `03-code-walkthrough/` — 8 章
+### 3. 源码走读 · `03-code-walkthrough/` — 10 章
 
 - [`01-entry-points.md`](03-code-walkthrough/01-entry-points.md) — `LLM` / `AsyncLLM` / `EngineCore` 的调用链。
-- [`02-scheduler.md`](03-code-walkthrough/02-scheduler.md) — `Scheduler.schedule()` 2300+ 行完整走读，token budget + preemption。
+- [`02-scheduler.md`](03-code-walkthrough/02-scheduler.md) — `Scheduler.schedule()` 完整走读，token budget + preemption。
 - [`02b-scheduling-policies.md`](03-code-walkthrough/02b-scheduling-policies.md) — FCFS vs PRIORITY、优先级反演、抢占代价量化。
 - [`03-kv-cache-manager.md`](03-code-walkthrough/03-kv-cache-manager.md) — `allocate` / `free` / `hash` 的代码级细节。
 - [`04-model-runner.md`](03-code-walkthrough/04-model-runner.md) — `execute_model`：输入拼装 / forward / sampler。
 - [`05-attention-backends.md`](03-code-walkthrough/05-attention-backends.md) — FlashAttn / FlashInfer / Triton / MLA 怎么选。
 - [`06-cuda-kernels.md`](03-code-walkthrough/06-cuda-kernels.md) — PagedAttention v1/v2、RoPE、RMSNorm CUDA 实现。
 - [`07-model-architectures.md`](03-code-walkthrough/07-model-architectures.md) — MLA / Mamba / MoE / GQA 在源码层的差异。
+- [`08-input-processing-and-tokenization.md`](03-code-walkthrough/08-input-processing-and-tokenization.md) — 从 OpenAI 请求、chat template、tokenizer 到 EngineCoreRequest。
+- [`09-output-processing-and-streaming.md`](03-code-walkthrough/09-output-processing-and-streaming.md) — 从 sampler / detokenizer 到 SSE、finish reason 与取消传播。
 
 ### 4. 优化 · `04-optimizations/` — 5 章
 
@@ -138,19 +169,25 @@ flowchart LR
 - [`04-context-parallel.md`](05-distributed/04-context-parallel.md) — PCP / DCP 双维度长上下文切分；MLA 模型 `a2a` backend 省 NCCL。
 - [`05-large-scale-cluster-inference.md`](05-distributed/05-large-scale-cluster-inference.md) — 🆕 千卡/万卡实战：通信墙/故障墙/长尾墙、EP 同步长尾、AllToAll 撞网络、blast radius、6 类规模化故障 runbook。
 
-### 6. 工程问答 · `06-interview/` — 2 章
+### 6. 工程问答 · `06-interview/` — 4 章
 
-- [`01-common-questions.md`](06-interview/01-common-questions.md) — 30 个核心问题，把概念、源码入口和工程取舍串起来。
-- [`02-system-design.md`](06-interview/02-system-design.md) — "设计一个推理服务"的容量估算、架构拆分与取舍推演。
+- [`01-common-questions.md`](06-interview/01-common-questions.md) — 30 个问题按结论、机制、取舍、验证 / 回滚和追问展开。
+- [`02-system-design.md`](06-interview/02-system-design.md) — 需求优先的容量、架构、故障域、发布与成本推演。
+- [`03-capacity-and-troubleshooting-drills.md`](06-interview/03-capacity-and-troubleshooting-drills.md) — 8 道带单位计算题 + 8 类证据优先故障题。
+- [`04-mock-interview-and-rubric.md`](06-interview/04-mock-interview-and-rubric.md) — 概念 / 源码 / 计算 / 设计 / 事故五轮评分与项目叙事模板。
 
-### 7. 实操 · `07-hands-on/` — 4 章
+### 7. 实操 · `07-hands-on/` — 8 章
 
 - [`01-setup.md`](07-hands-on/01-setup.md) — uv 环境 / 预编译 vs 源码 / GPU 检查。
 - [`02-trace-a-request.md`](07-hands-on/02-trace-a-request.md) — debugger 跟一个请求从 HTTP 到 token。
 - [`03-mini-experiments.md`](07-hands-on/03-mini-experiments.md) — 5 个动手实验（block_size / prefix hit / batching / 量化等）。
 - [`04-profiling-and-debugging.md`](07-hands-on/04-profiling-and-debugging.md) — torch.profiler / NVTX / py-spy / 显存泄漏。
+- [`05-serve-openai-api.md`](07-hands-on/05-serve-openai-api.md) — 从零启动、健康检查、鉴权、streaming 与失败证据。
+- [`06-benchmark-methodology.md`](07-hands-on/06-benchmark-methodology.md) — 固定变量、quality gate、goodput 与可复现 benchmark。
+- [`07-tuning-playbook.md`](07-hands-on/07-tuning-playbook.md) — 从症状到单变量、可回滚调优实验。
+- [`08-production-capstone.md`](07-hands-on/08-production-capstone.md) — 交付可运维、可扩容、可回滚的证据包。
 
-### 8. 生产部署 · `08-production-deployment/` — 10 章
+### 8. 生产部署 · `08-production-deployment/` — 12 章
 
 - [`01-deployment-architectures.md`](08-production-deployment/01-deployment-architectures.md) — vLLM Production Stack / llm-d / AIBrix 三套参考栈对比。
 - [`02-smart-routing-and-load-balancing.md`](08-production-deployment/02-smart-routing-and-load-balancing.md) — prefix-cache aware / session sticky / 负载打分。
@@ -162,11 +199,13 @@ flowchart LR
 - [`08-monitoring-cookbook.md`](08-production-deployment/08-monitoring-cookbook.md) — 可直接抄走的 PromQL / 告警规则 YAML / Grafana dashboard 骨架。
 - [`09-vllm-doctor-skill.md`](08-production-deployment/09-vllm-doctor-skill.md) — 把 06-07-08 章人工流程编成 agent 自动跑：7 阶段工作流 + 决策树 + 三级整改 + 离线 dry-run。
 - [`10-gpu-utilization-and-tail-latency.md`](08-production-deployment/10-gpu-utilization-and-tail-latency.md) — 🆕 全链路性能诊断：GPU-Util 为何是谎言、MBU/MFU、带宽/利用率为何打不满、长尾 8 类根因与处置。
+- [`11-security-and-multi-tenancy.md`](08-production-deployment/11-security-and-multi-tenancy.md) — 威胁模型、auth、quota、artifact / LoRA trust、脱敏与 tenant isolation。
+- [`12-upgrades-rollbacks-and-compatibility.md`](08-production-deployment/12-upgrades-rollbacks-and-compatibility.md) — 兼容矩阵、golden、shadow / canary、drain 与 rollback。
 
 ### 9. 应用特性 · `09-advanced-features/` — 5 章
 
-- [`01-sampling-and-logits.md`](09-advanced-features/01-sampling-and-logits.md) — top-k/p / temperature / DRY / logprobs / penalties。
-- [`02-structured-output.md`](09-advanced-features/02-structured-output.md) — xgrammar / llguidance / outlines 后端对比 + JSON schema。
+- [`01-sampling-and-logits.md`](09-advanced-features/01-sampling-and-logits.md) — 当前 sampling 顺序、backend、seed 边界、logprobs 与投机兼容性。
+- [`02-structured-output.md`](09-advanced-features/02-structured-output.md) — `auto` / 显式后端、grammar compile / bitmask、fallback 与错误边界。
 - [`03-multimodal.md`](09-advanced-features/03-multimodal.md) — 图像/视频/音频编码器、encoder cache、Qwen2-VL。
 - [`04-lora-serving.md`](09-advanced-features/04-lora-serving.md) — LoRAModelManager / Punica / 多 LoRA batching。
 - [`05-embedding-and-pooling.md`](09-advanced-features/05-embedding-and-pooling.md) — BGE / E5 / BGE-M3 / 复用 vLLM 引擎做 embedding。
@@ -175,17 +214,20 @@ flowchart LR
 
 ## vLLM 仓库地标速查
 
+<!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+
 | 想知道什么 | 去哪里看 |
 | --- | --- |
 | 用户怎么调用 vLLM | `vllm/entrypoints/llm.py`、`vllm/entrypoints/openai/api_server.py` |
 | 引擎主循环 | `vllm/v1/engine/core.py`、`vllm/v1/engine/llm_engine.py` |
-| 调度器（决定本步跑哪些请求） | `vllm/v1/core/sched/scheduler.py`（2300+ 行，全核心） |
+| 调度器（决定本步跑哪些请求） | `vllm/v1/core/sched/scheduler.py` |
 | KV cache 块管理 | `vllm/v1/core/kv_cache_manager.py`、`block_pool.py` |
-| Prefix caching hash | `vllm/v1/core/kv_cache_utils.py:541` (`hash_block_tokens`) |
+| Prefix caching hash | `vllm/v1/core/kv_cache_utils.py` (`hash_block_tokens`) |
 | Model runner（前向） | `vllm/v1/worker/gpu_model_runner.py` |
 | Attention 后端选择 | `vllm/v1/attention/backends/`（FlashAttn / FlashInfer / Triton / MLA） |
 | PagedAttention CUDA | `csrc/attention/` |
-| 模型实现 | `vllm/model_executor/models/`（llama.py、qwen.py … 共 292 个） |
+| 模型实现 | `vllm/model_executor/models/`（按当前 registry 核准架构支持） |
 | 张量并行 / 集合通信 | `vllm/distributed/parallel_state.py` |
 | 量化 | `vllm/model_executor/layers/quantization/` |
 | 投机解码 | `vllm/v1/spec_decode/` |
@@ -210,11 +252,11 @@ flowchart LR
 
 读完整套笔记后，下面每个问题应该能在 1-2 分钟内讲清，并指出对应源码位置：
 
-- 为什么 PagedAttention 能把吞吐提升 24×？瓶颈在哪？
-- vLLM 的 KV block 默认 16 token 是怎么选的？太大太小各有什么问题？
+- Paged KV cache、continuous batching 与 prefix caching 分别解决什么，代价是什么？
+- KV block size 太大太小各有什么问题？如何在目标 backend / workload 上验证？
 - Continuous batching 和 static batching 的本质区别？为什么 GPU 利用率提升？
 - Prefix caching 的 hash 怎么算？怎么避免冲突？多模态怎么处理？
-- Chunked prefill 解决了什么？为什么 V1 默认开启？
+- Chunked prefill 解决了什么？如何核准目标版本默认值与模型限制？
 - Tensor parallel 在 MLP 用 column → row 的原因？AllReduce 落在哪？
 - Speculative decoding 的接受率怎么算？拒绝采样的数学推导写一遍。
 - FP8 / INT8 / INT4 各自的精度损失主要发生在哪？
@@ -254,7 +296,7 @@ python3 build_pdf_epub.py  # → ../vllm-learning-html/vllm-learning.pdf + .epub
 
 ## 自动排障 Skill：`vllm-doctor`
 
-仓库内置了一个 Claude Code skill `vllm-doctor`，把第 06-07-08 章里散落的 incident playbook 编成 agent 可以自动跑的 7 阶段流程：环境探测 → 拉 Golden 3 指标 → 决策树路由 → 深度诊断 → 分级整改（L1/L2 自动跑，L3 弹确认）→ 恢复验证 → 输出报告。
+仓库内置了一个 Claude Code skill `vllm-doctor`，把第 06-07-08 章里散落的 incident playbook 编成 agent 可以自动跑的 7 阶段流程：环境探测 → 拉 Golden 3 指标 → 决策树路由 → 深度诊断 → 生成整改计划 → 显式审批后执行 mutation → 恢复验证与报告。缺少当前 metric、threshold 或证据时 fail closed，不把“没有 active route”误报为恢复。
 
 **安装到本地 Claude Code**：
 

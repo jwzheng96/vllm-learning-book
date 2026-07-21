@@ -1,0 +1,721 @@
+# Semantic review ledger for the commit in source.lock.json.
+
+[[review]]
+path = "01-overview/00-prerequisites.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "01-overview/01-what-is-vllm.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "01-overview/02-architecture.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "01-overview/03-v0-vs-v1.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "01-overview/04-project-structure.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "01-overview/05-process-and-ipc-internals.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "02-core-concepts/01-paged-attention.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "02-core-concepts/02-continuous-batching.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "02-core-concepts/03-kv-cache-management.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "02-core-concepts/04-prefix-caching.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "02-core-concepts/05-chunked-prefill.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/01-entry-points.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/02-scheduler.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/02b-scheduling-policies.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/03-kv-cache-manager.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/04-model-runner.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/05-attention-backends.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/06-cuda-kernels.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/07-model-architectures.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/08-input-processing-and-tokenization.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "03-code-walkthrough/09-output-processing-and-streaming.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "04-optimizations/01-quantization.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "04-optimizations/02-speculative-decoding.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "04-optimizations/03-cudagraph-and-compile.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "04-optimizations/04-compilation-internals.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "04-optimizations/05-roofline-and-arithmetic-intensity.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "05-distributed/01-tp-pp-ep.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "05-distributed/02-disaggregated.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "05-distributed/03-expert-parallel-deep-dive.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "05-distributed/04-context-parallel.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "05-distributed/05-large-scale-cluster-inference.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "06-interview/01-common-questions.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:32:35Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "06-interview/02-system-design.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:32:35Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "06-interview/03-capacity-and-troubleshooting-drills.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:32:35Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "06-interview/04-mock-interview-and-rubric.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:32:35Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/01-setup.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/02-trace-a-request.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/03-mini-experiments.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/04-profiling-and-debugging.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/05-serve-openai-api.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/06-benchmark-methodology.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/07-tuning-playbook.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "07-hands-on/08-production-capstone.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-20T18:13:06Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/01-deployment-architectures.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/02-smart-routing-and-load-balancing.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/03-gateway-and-service-mesh.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/04-autoscaling-and-capacity.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/05-slo-and-observability.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/06-reliability-and-failure-modes.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/07-incident-playbook.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/08-monitoring-cookbook.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/09-vllm-doctor-skill.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/10-gpu-utilization-and-tail-latency.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/11-security-and-multi-tenancy.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/12-upgrades-rollbacks-and-compatibility.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T04:27:09Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "09-advanced-features/01-sampling-and-logits.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "09-advanced-features/02-structured-output.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "09-advanced-features/03-multimodal.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "09-advanced-features/04-lora-serving.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "09-advanced-features/05-embedding-and-pooling.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-07-21T05:18:05Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source review complete; current-SHA GPU run not performed"]

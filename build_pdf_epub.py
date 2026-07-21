@@ -21,6 +21,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tools.source_sync.inventory import discover_chapter_files
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 SRC = Path(os.environ.get("VLLM_LEARNING_SRC", SCRIPT_DIR))
 DST = Path(os.environ.get("VLLM_LEARNING_DST", SCRIPT_DIR / "_site"))
@@ -48,12 +50,7 @@ def discover_files() -> list[Path]:
     readme = SRC / "README.md"
     if readme.exists():
         files.append(readme)
-    for section in SECTIONS:
-        d = SRC / section
-        if not d.is_dir():
-            continue
-        for md in sorted(d.glob("*.md")):
-            files.append(md)
+    files.extend(discover_chapter_files(SRC))
     return files
 
 
@@ -70,10 +67,16 @@ def preprocess(md_text: str) -> str:
 def combine_files(files: list[Path]) -> str:
     # files[0] is README.md; the remaining entries are the actual chapters.
     chapter_count = max(0, len(files) - 1)
+    source_line_count = sum(
+        len(path.read_text(encoding="utf-8").splitlines()) for path in files
+    )
     parts: list[str] = []
     parts.append("---\n")
     parts.append('title: "vLLM 学习手册"\n')
-    parts.append(f'subtitle: "源码教程 · {chapter_count} 章 · 15K+ 行"\n')
+    parts.append(
+        f'subtitle: "源码教程 · {chapter_count} 章 · '
+        f'{source_line_count} 行"\n'
+    )
     parts.append('author: "整理自 vllm-learning"\n')
     parts.append('lang: zh-CN\n')
     parts.append('documentclass: report\n')

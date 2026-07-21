@@ -12,6 +12,8 @@
 > 3. 写出生产必看的 5-10 条 PromQL 与 dashboard 面板
 > 4. 用 OTel trace 直接定位 TTFT/TPOT 突增的根因
 
+> **当前复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** 当前核心 histogram 为 `time_to_first_token_seconds`、`inter_token_latency_seconds`、`request_time_per_output_token_seconds`、`e2e_request_latency_seconds`；请求完成 counter 是带 `finished_reason` 的 `request_success_total`。API/gateway 层 4xx/5xx 需要 HTTP 指标补齐，不能从 engine finished counter 推导全部 availability。
+
 一个 LLM 推理服务"挂了"不像 web 服务那样明显——常常是延迟悄悄上升、token 输出变慢、用户体验下滑。没好的 observability，你只会从用户投诉得知。本节讲清楚 LLM 的 SLO 模型、4 大金信号、metric/log/trace 实战。
 
 ---
@@ -46,7 +48,9 @@ TTLT = TTFT + (输出 token 数 - 1) × TPOT。
 
 ---
 
-## 2. SLO 怎么定？（按业务场景）
+## 2. SLO 怎么定？（从产品等待预算反推）
+
+下面的数值只是一份**待替换的练习表**，不是行业默认值：
 
 | 场景 | TTFT (p99) | TPOT (p99) | TTLT (p99) |
 | --- | --- | --- | --- |
@@ -57,18 +61,18 @@ TTLT = TTFT + (输出 token 数 - 1) × TPOT。
 | batch 摘要 | n/a | n/a | ≤ 120 s |
 | 代码补全 | ≤ 100 ms | ≤ 30 ms | ≤ 3 s |
 
-这些只是参考。**最重要的是定 p99 / p99.9，不是 p50**。
+用用户研究、客户端 deadline、长度分布和容量成本填写目标；同时保留 p50/p95/p99 以区分整体回归和尾部回归。
 
 ### 为什么死磕 p99？
 LLM 推理延迟是经典 "tail at scale" 问题：
 
 - 大部分请求都不错
-- 但 1% 的请求碰上 GC、preempt、KV 不够等，延迟可能 10×
+- 尾部请求可能遇到更长 prompt、queue、preemption、网络或硬件异常，倍数以观测为准
 - 用户对 worst case 体验最敏感
 
-p99 是你向产品 commitable 的数字。p50 没什么用。
+p99 常用于对外尾延迟目标，p50 仍用于基线、成本与整体回归分析。
 
-### 报错率 SLO
+### 报错率 SLO 示例（必须替换）
 - `5xx error rate < 0.1%`
 - `timeout rate < 0.5%`
 - `model output empty rate < 0.01%`（结构化输出场景）
@@ -86,15 +90,15 @@ p99 是你向产品 commitable 的数字。p50 没什么用。
 - gateway 端的 HTTP request_duration_seconds（含网络）
 
 ### 3.2 Traffic（流量）
-- `vllm:request_success_total` / `vllm:request_failed_total`
+- `vllm:request_success_total{finished_reason=...}`（engine 完成原因）；HTTP 总量/4xx/5xx 来自 gateway/API 指标
 - `vllm:prompt_tokens_total` / `vllm:generation_tokens_total`
 - `vllm:num_requests_running` / `vllm:num_requests_waiting`
 
 ### 3.3 Errors（错误）
 - HTTP 5xx rate
-- `vllm:num_aborted_requests_total`（客户端断开）
+- `vllm:request_success_total{finished_reason="abort"}`（进入 engine 后 abort；标签值以当前 `/metrics` 为准）
 - timeout 比例
-- `vllm:num_preemptions_total`（增速过快 = KV 压力）
+- `vllm:num_preemptions_total`（与 queue/KV/TPOT 联合判断；不能单独等同故障）
 
 ### 3.4 Saturation（饱和度）
 - `vllm:kv_cache_usage_perc`（最关键的饱和度信号）
@@ -111,8 +115,8 @@ p99 是你向产品 commitable 的数字。p50 没什么用。
 
 ```promql
 # === 业务层 SLI ===
-histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, model))
-histogram_quantile(0.99, sum(rate(vllm:request_time_per_output_token_seconds_bucket[5m])) by (le, model))
+histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, model_name))
+histogram_quantile(0.99, sum(rate(vllm:request_time_per_output_token_seconds_bucket[5m])) by (le, model_name))
 histogram_quantile(0.99, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le))
 
 # === 吞吐 ===
@@ -127,16 +131,18 @@ sum(rate(vllm:prefix_cache_hits_total[5m])) by (instance)
 sum(rate(vllm:prefix_cache_queries_total[5m])) by (instance)
 
 # === 调度健康 ===
-sum(vllm:num_requests_running) by (model)
-sum(vllm:num_requests_waiting) by (model)
+sum(vllm:num_requests_running) by (model_name)
+sum(vllm:num_requests_waiting) by (model_name)
 sum(rate(vllm:num_preemptions_total[5m])) by (instance)
 
 # === Scheduler ===
-histogram_quantile(0.99, rate(vllm:iteration_tokens_total_bucket[5m]))
-histogram_quantile(0.99, rate(vllm:request_queue_time_seconds_bucket[5m]))
+histogram_quantile(0.99, sum by (le) (rate(vllm:iteration_tokens_total_bucket[5m])))
+histogram_quantile(0.99, sum by (le) (rate(vllm:request_queue_time_seconds_bucket[5m])))
 
 # === 投机解码（开了才有）===
-vllm:spec_decode_num_accepted_tokens_total / vllm:spec_decode_num_draft_tokens_total
+sum(rate(vllm:spec_decode_num_accepted_tokens_total[5m]))
+/
+clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total[5m])), 1)
    ↑ 接受率
 ```
 
@@ -170,7 +176,7 @@ vllm serve <model> \
     --otlp-traces-endpoint http://otel-collector:4317
 ```
 
-每个请求会产生 span：
+当前 V1 在请求完成时记录一个 `llm_request` server span，并把 TTFT、E2E、queue、prefill、decode 与 token usage 作为 span attributes；它不是默认生成下图中每个内部阶段的独立 child span。Gateway/EPP/mesh spans 由对应组件接入：
 
 ```mermaid
 gantt
@@ -183,13 +189,8 @@ gantt
     gateway.auth_check        :b, 1, 1
     extproc.epp.pick_endpoint :c, 2, 1
     mesh.istio_forward        :d, 3, 1
-    section vLLM Pod 7
-    engine.add_request        :e, 4, 1
-    scheduler.queue_wait      :f, 4, 46
-    model.prefill             :g, 50, 150
-    sampler.first_token (TTFT):milestone, after g, 0
-    model.decode_step (×N)    :h, 200, 2850
-    engine.finish             :milestone, 3050, 0
+    section vLLM
+    llm_request span · queue/prefill/decode attributes :e, 4, 3046
     section Edge
     gateway.response_complete :i, 3050, 5
 ```
@@ -200,14 +201,14 @@ gantt
 
 ## 7. Logging：不是越多越好
 
-LLM Pod 的 INFO log 量大（每步可能几 KB）。生产建议：
+日志量和内容随配置变化。先做分类、敏感字段审查与 retention budget：
 
 | 级别       | 内容                                | 采样率   |
 | -------- | --------------------------------- | ----- |
-| ERROR    | 异常、preempt、OOM、NCCL fail          | 100%  |
-| WARN     | TPOT 偶发抖动、cache hit 跌、单 step 慢 | 100%  |
-| INFO     | 启动信息、stat logger（每 5s 一次汇总）       | 100%  |
-| DEBUG    | 调度每步、token 写入                     | 0%（生产关）|
+| ERROR    | 异常、OOM、collective failure | 全留并脱敏 |
+| WARN     | fallback、恢复、异常状态 | 按事件留存 |
+| INFO     | 启动、版本、周期 stats | 按容量设 retention |
+| DEBUG    | 高体积诊断 | 临时、精确 scope、到期关闭 |
 
 **Per-request log 不要打全 prompt**：①隐私敏感 ②单条 log 几十 KB。
 要打就脱敏 + 截断（前 100 字符）。
@@ -218,19 +219,19 @@ LLM Pod 的 INFO log 量大（每步可能几 KB）。生产建议：
 
 ## 8. 关键告警
 
-告警宁缺勿滥。我列一份"必须有"的：
+下面是 alert inventory 模板；阈值与 `for` 都由 SLO burn、基线和恢复时间填写：
 
 | 告警                           | 触发条件                            | 严重度 |
 | ---------------------------- | ------------------------------- | --- |
 | TTFT p99 超 SLO              | 持续 5 分钟                         | P1  |
 | TPOT p99 超 SLO              | 持续 5 分钟                         | P1  |
-| 5xx error rate > 1%          | 持续 1 分钟                         | P1  |
-| Pod restart 异常             | 任一 vLLM Pod 1h 内重启 > 3 次       | P1  |
-| Preempt 率突增              | rate(preemptions) > 0 持续 10 分钟  | P2  |
-| Prefix cache hit rate 跌     | < 50%（chat workload），持续 30 分钟 | P3  |
-| GPU memory util 不稳         | kv_cache_usage_perc 抖动 > 0.5  | P3  |
-| Inference Pod 失联          | scrape failed > 30s             | P2  |
-| Queue depth 持续高          | num_requests_waiting > 10 持续 5m | P2  |
+| HTTP availability burn       | multi-window burn policy            | P1  |
+| Pod restart 异常             | 超出 rollout/节点事件基线             | P1/P2 |
+| Preempt 率突增              | 高于 workload baseline 且 SLO/queue 恶化 | P2  |
+| Prefix cache hit rate 变化   | 相对同类 workload 基线显著回退         | P3  |
+| KV 压力                     | KV + queue + preemption 联合条件      | P2  |
+| Inference Pod 失联          | 超过 scrape/readiness 容忍窗口         | P2  |
+| Queue depth 持续高          | queue-time burn 的 leading threshold | P2  |
 
 注意：**TTFT/TPOT 飙升时，先看 cache hit + preempt + queue 三件套**，多半是其中之一。
 
@@ -247,9 +248,9 @@ LLM Pod 的 INFO log 量大（每步可能几 KB）。生产建议：
 ### 9.2 OTel trace 采样
 高 QPS 下全量采样不现实。采样策略：
 
-- 头部采样：random 1%
+- 头部采样：按流量与预算设置固定比例
 - 尾部采样：先采全，最后看是否慢/错决定丢不丢
-- 关键路径采样：error / 慢请求 100% 留下，正常 1%
+- 关键路径采样：错误/慢请求优先，正常流量按预算；验证 collector overload 时降级
 
 ### 9.3 log 收集 sidecar 抢 CPU
 Fluent-bit / Filebeat 在 LLM Pod 上抢 CPU 会让 Python 调度变慢。Pod 设 `cpuset` 隔离观测进程。
@@ -262,26 +263,25 @@ LLM Pod 启动慢，metrics endpoint 几分钟才 ready。scrape 在那期间 do
 
 ## 10. SLO 仪表盘示例（PromQL）
 
-把这套查询贴 Grafana 直接用：
+把下面当模板；先核对 metric、label、bucket 与 gateway 指标再录入 dashboard：
 
 ```promql
-# TTFT SLO compliance (期望 < 500ms)
-1 - (
-  rate(vllm:time_to_first_token_seconds_bucket{le="0.5"}[5m]) /
-  rate(vllm:time_to_first_token_seconds_count[5m])
-)
-# 越接近 0 越好。1 - 0.001 = 99.9% 在 SLO 内
+# TTFT SLO compliance（示例阈值 500ms；跨副本按目标标签聚合）
+sum(rate(vllm:time_to_first_token_seconds_bucket{le="0.5"}[5m]))
+/
+sum(rate(vllm:time_to_first_token_seconds_count[5m]))
+# 越接近 1 越好
 
 # Error budget burn rate (1-hour vs 30-day)
 # 30-day SLO 99.9% → budget 0.1%
 # 如果 1h error rate > 0.1% × 24 × 30 / 1 = 7.2x burn → 报警
 (
-  rate(vllm:request_failed_total[1h]) /
-  rate(vllm:request_total[1h])
+  sum(rate(gateway_http_requests_total{status=~"5.."}[1h])) /
+  sum(rate(gateway_http_requests_total[1h]))
 ) > (0.001 * 24 * 30)
 
-# Top noisy users (高 QPS 用户)
-topk(10, sum by (user_id) (rate(vllm_gateway_request_total[5m])))
+# Top tenant 只能来自受控的 gateway 低基数/聚合指标；不要给 vLLM metric 加 user_id
+topk(10, sum by (tenant_tier) (rate(gateway_http_requests_total[5m])))
 ```
 
 ---
@@ -308,14 +308,13 @@ LLM 还有一类质量指标，传统服务没有：
 - `queue_wait` 一直 > 2s ← 队列长
 - 同时 `num_preemptions_total` 上涨 ← KV 压力
 **结论**：流量上来了，KV 不够，请求排队。
-**动作**：HPA 阈值降低 / 立即扩容 / 临时上量化。
+**动作候选**：若 load test 证明容量不足，再扩容或 admission control；量化属于需质量/兼容验证的版本变更，不是事故中的即时开关。
 
 ### 案例 2：TPOT 抖动严重
 看 metric：
 
 - `iteration_tokens_total` 单 step 偶发尖峰
-**结论**：长 prefill 没切片，混进 decode。
-**动作**：调小 `max_num_batched_tokens`，确认 chunked prefill 开。
+**假设**：step token 分布变化可能来自长 prefill；再用 request mix 与 trace/profile 验证。一次只改 `max_num_batched_tokens`/chunked-prefill 配置之一，观察 TTFT/TPOT/goodput 后决定保留或回滚。
 
 ### 案例 3：prefix cache hit rate 突跌
 - 模型升级了？tokenizer 变了？
@@ -329,10 +328,10 @@ LLM 还有一类质量指标，传统服务没有：
 ## 小结
 
 - LLM 的 SLI 至少 4 个：TTFT / TPOT / TTLT / Throughput，错误率和质量类指标也要进 SLO。
-- 业务对外承诺用 p99 / p99.9，不要承诺 p50；tail at scale 才是用户感知的真实体验。
+- 对外目标通常关注 p99/p99.9；p50/p95 仍用于基线、整体回归与容量分析。
 - vLLM 的 `kv_cache_usage_perc`、`num_preemptions_total`、`prefix_cache_hits_total / prefix_cache_queries_total` 是排障三件套。
 - Dashboard 最少 5 个面板：SLO 合规、流量构成、饱和度、cache 效果、稳定性。
-- OTel trace 把 gateway → EPP → engine → prefill → decode 串成时间线，是定位 TTFT/TPOT 异常的最快路径。
+- OTel 可串 gateway/EPP/vLLM request span；当前 vLLM 把 queue/prefill/decode 记录为 request span attributes，需结合 metrics/profile 深挖内部阶段。
 
 ## 自检
 
@@ -365,7 +364,7 @@ histogram_quantile(0.99,
 
 但 B 不直接给"合规率"，只能判断 p99 是否 < 0.5。
 
-**最佳实践**：启动 vLLM 时配 bucket 包含 SLO 边界（如 `--prometheus-histogram-buckets 0.05,0.1,0.2,0.5,1,2,5`），让方案 A 可用。
+当前锁定 CLI 没有 `--prometheus-histogram-buckets` 这一公共参数。先检查 exposition 是否已有目标边界；没有时在 recording rule/OTel/gateway 层建立可验证的 SLI，而不是写入不存在的 flag。
 
 ---
 
@@ -377,11 +376,11 @@ histogram_quantile(0.99,
 TPOT p99 抖动
 │
 ├─ 1. vllm:num_preemptions_total       ← 排除 "KV 不够导致 preempt"
-│      rate > 0.5/s 表明频繁抢占；
+│      与历史 baseline 和 SLO 同时比较；
 │      抢占触发的请求重新 prefill → TPOT 抖
 │
 ├─ 2. vllm:kv_cache_usage_perc          ← 排除 "KV 接近满"
-│      持续 > 0.9 + preempt 不多 = 即将 OOM
+│      高水位是否危险取决于长度分布、headroom 与 preemption
 │
 ├─ 3. vllm:iteration_tokens_total       ← 排除 "step token 数不稳定"
 │      histogram 尾部重 = 有些 step 算几千 token（长 prefill 没切）
@@ -401,7 +400,7 @@ TPOT p99 抖动
        某层突然慢（如某个 attention kernel 异常）
 ```
 
-**实战**：90% 的 TPOT 抖动 root cause 是 1-3 之一。直接看这三个，不用全跑完。
+**实战顺序**：先看 1-3 建立方向；若证据不足再继续到 trace/profile，不能用固定覆盖率替代归因。
 
 ---
 
@@ -411,8 +410,8 @@ TPOT p99 抖动
 
 **Prometheus metric label = 笛卡尔积维度**。每多一个 unique label value，metric 就多一个 time series。
 
-- 100 万用户 × 80 个 vllm metric = **8 千万 time series**
-- Prometheus 内存爆（每 series ~3KB → 240 GB 内存）
+- 用户数 × metric/label 组合会形成数量级很高的 time series
+- 实际内存取决于 Prometheus 版本、采样与 churn，但 cardinality 风险确定存在
 - query 慢得离谱（GROUP BY 上百万 series）
 - Cardinality explosion 是 Prometheus 部署最常见的事故
 
@@ -421,13 +420,13 @@ TPOT p99 抖动
 | 需求 | 方案 |
 | --- | --- |
 | 计费（按用户 token 数） | **OpenTelemetry trace** 或 **直接写日志 / Kafka**，由数据仓库（BigQuery / ClickHouse）聚合；不进 metric |
-| 用户级 SLO 监控 | 选 **top user**（top 100）作为 label，其他归到 `user_id="other"` |
+| 用户级 SLO 监控 | 在日志/trace/数仓聚合；Prometheus 只保留预先定义的低基数 tenant tier |
 | 排查某用户问题 | trace 用 `user_id` 作 span attribute（trace 系统支持高基数），按需查询 |
 | 用户级限流 | Redis / 内存 counter，不进 Prometheus |
 
 **Prometheus label 选什么**：
 
-- 低基数：`model_name`（< 10 个）、`finished_reason`（< 5 个）、`backend`（< 5 个）、`pod`（< 100 个）
+- 低基数候选：`model_name`、`finished_reason`、`backend`、`pod`；具体上限由监控容量预算决定
 - **绝对不要**：user_id、request_id、prompt（hash 也不行，hash 仍是高基数）
 
 → **Prometheus 用于聚合趋势，trace / log 用于个体定位**。两套互补。

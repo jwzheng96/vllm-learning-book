@@ -6,25 +6,34 @@
 >
 > **耗时：** 约 25 分钟
 >
+> **难度：** 进阶
+>
+> **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；模型支持、processor 参数与 encoder 并行能力必须以目标模型在该版本的 registry / model implementation 为准。
+>
 > **学完能：**
 > 1. 画出 image → placeholder token → encoder embed → LLM 的完整数据流
 > 2. 解释 EncoderCacheManager 的 LRU + ref_cnt 设计与 KV BlockPool 的相似/不同
 > 3. 描述 mm_hash 如何融入 prefix caching 的 block hash
 > 4. 说出视频与音频在调度、内存、encoder budget 上的差异
 
-Qwen2-VL / Llama-3.2-Vision / Phi-3.5-Vision / Whisper 等模型在 vLLM 里能跑，靠的是一整套**多模态输入处理 + 编码器缓存 + token 占位符替换**系统。涉及代码：`vllm/multimodal/`、`vllm/v1/core/encoder_cache_manager.py`、`vllm/model_executor/models/qwen2_vl.py` 等。
+多模态模型接入 vLLM，靠的是一整套**输入处理 + 编码器缓存 + placeholder 与 embedding 对齐**系统。不同模型支持的模态、输入限制、placeholder 规则和 encoder 并行方式并不相同；涉及的共用代码主要在 `vllm/multimodal/`、`vllm/v1/core/encoder_cache_manager.py` 与模型实现目录。
 
 ---
 
 ## 1. 数据流：图片如何变成 token
+
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._execute_mm_encoder"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._execute_mm_encoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L2963)
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._gather_mm_embeddings"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._gather_mm_embeddings](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L3172)
 
 ```mermaid
 flowchart TD
     U["用户输入<br/>prompt = 'Describe &lt;|image|&gt; in detail'<br/>multi_modal_data = {image: PIL.Image / bytes / URL}"]
     P["1. Processor (每模型一份)<br/><sub>vllm/multimodal/processing/</sub><br/>· 调用 HF Processor 把 image → pixel_values<br/>· 决定 image 占多少 token（Qwen2-VL: grid_thw → N）<br/>· 把 &lt;|image|&gt; 替换为 N 个 placeholder token id"]
     Q["2. 进 Scheduler 队列<br/>token_ids = [...&lt;IMG&gt;&lt;IMG&gt;...&lt;IMG&gt;...]<br/>mm_features = [MultiModalFeatureSpec(...mm_hash)]"]
-    E["3. Vision Encoder forward<br/><sub>ModelRunner._execute_mm_encoder</sub><br/><sub>gpu_model_runner.py:2813</sub><br/>pixel_values → ViT/SigLIP<br/>→ image_embeds [N, hidden]<br/>缓存到 EncoderCacheManager (mm_hash)"]
-    G["4. _gather_mm_embeddings<br/><sub>gpu_model_runner.py:3024</sub><br/>把 placeholder 位置替换为 image_embeds"]
+    E["3. Vision Encoder forward<br/><sub>ModelRunner._execute_mm_encoder</sub><br/><sub>gpu_model_runner.py</sub><br/>pixel_values → ViT/SigLIP<br/>→ image_embeds [N, hidden]<br/>缓存到 EncoderCacheManager (mm_hash)"]
+    G["4. _gather_mm_embeddings<br/><sub>gpu_model_runner.py</sub><br/>把 placeholder 位置替换为 image_embeds"]
     F["5. LLM forward(inputs_embeds=...)<br/>不传 input_ids，直接吃 embed"]
 
     U --> P --> Q --> E --> G --> F
@@ -43,9 +52,9 @@ flowchart TD
 
 ```
 vllm/multimodal/
-├── inputs.py        ← MultiModalKwargs / FieldElem / PlaceholderRange (1015 行)
+├── inputs.py        ← MultiModalKwargs / FieldElem / PlaceholderRange
 ├── image.py         ← image 输入解析（PIL/np/bytes/URL）
-├── video.py         ← video 帧抽样 / 时序重采样（1055 行）
+├── video.py         ← video 帧抽样 / 时序重采样
 ├── audio.py         ← waveform 加载与切片
 ├── hasher.py        ← mm 内容哈希（影响 prefix caching）
 ├── cache.py         ← 输入侧 cache（vs encoder 输出 cache）
@@ -58,7 +67,10 @@ vllm/multimodal/
 
 ## 3. PlaceholderRange：核心数据结构
 
-`vllm/multimodal/inputs.py:119`：
+<!-- vllm-source: {"path":"vllm/multimodal/inputs.py","symbol":"PlaceholderRange"} -->
+[源码锚点：vllm/multimodal/inputs.py · PlaceholderRange](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/multimodal/inputs.py#L119)
+
+`vllm/multimodal/inputs.py`：
 
 ```python
 @dataclass
@@ -68,7 +80,7 @@ class PlaceholderRange:
     is_embed: torch.Tensor | None = None  # 哪些位置真的填 embed（部分模型有 padding）
 ```
 
-例：Qwen2-VL 一张 224×224 图片占 16 个 token，prompt 长 100 token 时图片在位置 10-25：
+例如某模型的 processor 把一项图片映射成 16 个 embedding 位置，并把它放在 prompt 的第 10 个位置：
 
 ```
 PlaceholderRange(offset=10, length=16, is_embed=None)
@@ -83,11 +95,14 @@ PlaceholderRange(offset=10, length=16, is_embed=None)
 
 ## 4. EncoderCacheManager：编码器输出缓存
 
-`vllm/v1/core/encoder_cache_manager.py:17` 一个 EngineCore 一份。结构：
+<!-- vllm-source: {"path":"vllm/v1/core/encoder_cache_manager.py","symbol":"EncoderCacheManager"} -->
+[源码锚点：vllm/v1/core/encoder_cache_manager.py · EncoderCacheManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/encoder_cache_manager.py#L17)
+
+`vllm/v1/core/encoder_cache_manager.py` 一个 EngineCore 一份。结构：
 
 ```python
 class EncoderCacheManager:
-    cache_size: int             # 容量（按 encoder embed token 数算）
+    cache_size: int             # 容量（按 encoder embedding 数算）
     num_free_slots: int
 
     # mm_hash → 引用它的 request_id 集合
@@ -103,12 +118,12 @@ class EncoderCacheManager:
 关键方法：
 
 - `check_and_update_cache(req, input_id)`：命中则 ref_cnt++
-- `can_allocate(req, input_id)`：还有空间放新的吗
+- `can_allocate(req, input_id, compute_budget, scheduled)`：计算预算与可回收容量是否都允许；必要时按最旧可释放项驱逐
 - `allocate(req, input_id)`：占用 slot
 - `free(req)`：请求结束，所有 mm input 引用 -1
 - `get_freed_mm_hashes()`：返回 + 清空 freed 列表
 
-**核心思路与 KV BlockPool 一样**：LRU + ref_cnt，只是单位从 KV block 变成 mm encoder embed 数。
+**相似点**是“被运行中请求引用的项不能驱逐，零引用项按旧到新回收”；**不同点**是这里按单个多模态 item 的 encoder embedding 数记账，并用 request ID 集合表达引用，而不是复用 KV block 的数据结构。`free()` 只把零引用项放进 `freeable`，真正驱逐发生在后续 `can_allocate()` 需要腾空间时。
 
 ---
 
@@ -117,12 +132,11 @@ class EncoderCacheManager:
 vision encoder forward 也耗 GPU 算力。Scheduler 给它独立 budget：
 
 ```
-vllm/multimodal/encoder_budget.py
-  ↓
-SchedulerConfig.max_num_encoder_input_tokens   # 单 step 上限
+SchedulerConfig.max_num_encoder_input_tokens  # 单 step encoder compute budget
+SchedulerConfig.encoder_cache_size            # encoder cache space budget
 ```
 
-每步 `_schedule_waiting` 在加入新请求前检查 encoder budget。超了就 defer。
+当前默认两者都从 `max_num_batched_tokens` 初始化；预算计算还会确保单个允许的多模态 item 能放得下。Scheduler 每步扣减 compute budget，并让 `EncoderCacheManager` 同时检查 cache space；不满足就推迟相应输入。
 
 **为什么需要独立 budget？** 一张大图可能产生几百 token 的 embed，几张图就占满 prefill 算力。隔离后 prefill 与 vision encoder 各自有上限，调度可预测。
 
@@ -143,13 +157,13 @@ block_hash = hash(prev_block_hash, tuple(token_ids), extra_keys)
 
 这样**同一张图 hash 一致** → 跨请求 cache 命中。但**不同图 placeholder 相同** → hash 不同，正确隔离。
 
-mm_hash 在 `vllm/multimodal/hasher.py` 里计算：图片用 `(width, height, pixel sample)`、视频用 `(frames_hash, fps)`，audio 用 `(sample_rate, waveform_hash)`。
+`MultiModalHasher` 对模型 ID、输入 item 与 processor kwargs 等组成部分做确定性序列化后哈希；图片可使用原始 bytes，或包含 mode / 像素数组 / palette，tensor 与 ndarray 还包含 dtype 和 shape。具体 hash 输入由处理路径决定，并不是“抽样部分像素再量化”。encoder cache 的 `identifier` 还可能包含 LoRA 前缀，而 processor cache 可使用不带 LoRA 前缀的 `mm_hash`。
 
 ---
 
 ## 7. 一个具体模型例子：Qwen2-VL
 
-`vllm/model_executor/models/qwen2_vl.py`（1829 行），简化看 forward：
+以 `vllm/model_executor/models/qwen2_vl.py` 的接口形态为例，简化看 forward：
 
 ```python
 class Qwen2VLForConditionalGeneration(nn.Module):
@@ -215,26 +229,25 @@ def execute_model(self, scheduler_output):
 - 输出 audio embedding 序列
 - 与 image 类似插入到 LLM input
 
-视频是**算量最大的模态**——一个 1 分钟视频 30 fps → 1800 帧。生产配置常常限制帧数或降采样。
+视频通常会因帧数、分辨率与 encoder token 数带来更高开销，但不能仅用“原视频 fps × 时长”估算：media loader、`media_io_kwargs`、processor 与模型可能先抽帧、缩放、合并或剪枝。生产入口应同时限制 item 数与每项的帧数 / 尺寸，并以处理后的 encoder embedding 数做容量测量。
 
 ---
 
 ## 9. 工程要点
 
-### 9.1 Pixel preprocessing 在哪做？
-HF Processor 是 CPU bound（PIL + numpy）。
-vLLM 把 preprocessing 放在**Frontend 进程**（API server），不阻塞 EngineCore。
+### 9.1 Preprocessing 与两层 cache
+API server 路径可在进入 EngineCore 前完成 media IO 与 processor 工作，并通过 processor cache 避免重复处理；配置中的 `mm_processor_cache_gb` 会按 API 进程与 DP engine core 复制，不能当成集群共享 cache。encoder cache 则保存模型 encoder 输出，两者的对象、容量单位和失效条件不同。
 
 ### 9.2 多模态请求的 input batch
-batch 内不同请求 mm 数量不同。`mm_features` 是 list[list]，per-request 长度不一。
-ModelRunner 的 `_extract_mm_kwargs`（line 1583）把它们打平 + 标记哪个 mm 属于哪个请求。
+batch 内不同请求的 item 数、模态与 shape 可以不同。`MultiModalFeatureSpec` 为每项携带 data、modality、identifier 与 `PlaceholderRange`；runner 只收集本步需计算的特征，按模型字段规则批处理，再把输出映射回 placeholder。能否混合某些模态或 shape 仍由模型 processor / model implementation 决定。
 
-### 9.3 内存开销
-图片 embed 比 KV cache 占的还多。例：Qwen2-VL 一张 1024×1024 = 1024 token × 4096 dim × BF16 = 8MB。100 张 = 800MB。
-所以 encoder_cache 容量要规划（默认按 `--mm-encoder-cache-size`）。
+### 9.3 内存与输入限制
+encoder embedding 的实际字节数取决于 item 的 embedding 数、hidden size、dtype、副本与并行布局，不能从原始像素数直接推出。当前 cache 的调度容量按 embedding **个数**记账，物理 GPU 内存还要从 profile 与运行指标验证。
 
-### 9.4 跨 Pod 复用？
-encoder cache 默认 per-Pod。要跨 Pod 复用：通过 KV connector 把 mm_hash → embed 也上传到 L2/L3。不是常规配置。
+入口用 `--limit-mm-per-prompt` 限制每模态 item 数，并可为 image / video / audio 配置尺寸、帧数或长度选项；`--media-io-kwargs` 与 `--mm-processor-kwargs` 控制 loader / processor 的模型相关行为。`--skip-mm-profiling` 会缩短启动，却把 encoder activation 与 cache 峰值估算责任交给操作者。
+
+### 9.4 并行与隔离边界
+encoder cache 是 engine 内状态，不能据此假定跨 replica / Pod 复用。多模态 encoder 的 TP 模式由 `mm_encoder_tp_mode` 控制：`weights` 按层权重切分；`data` 在每个 TP rank 放完整 encoder 权重、按 batch 分数据，而且只对明确支持的模型生效，否则回退到 `weights`。部署容量必须把 encoder 权重副本和通信方式算进去。
 
 ---
 
@@ -246,31 +259,48 @@ A: 三步：①Processor 把字符 placeholder 换成 N 个特殊 token id；②
 **Q: 同一张图给两个请求，怎么不重复算？**
 A: EncoderCacheManager 用 mm_hash 索引 encoder 输出。命中则 ref_cnt++，跳过 ViT forward。跟 prefix caching 在 KV 上的复用是同一套思路。
 
-**Q: 长视频（10000 帧）怎么部署？**
-A: ①降帧（每 5-10 帧采 1）；②分段 prefill（chunked prefill 配合）；③encoder cache 必须大；④可能需要 dedicated decode pool（KV 占用大）。生产常把视频任务隔离到单独 Pod 池。
+**Q: 长视频怎么部署？**
+A: 先用 `limit_mm_per_prompt`、`media_io_kwargs` 与模型 processor 限制帧数 / 尺寸，再测处理后 placeholder / embedding 数、encoder latency、activation 峰值与 LLM prefill。是否启用 chunked MM、扩大 batch token budget或单独建池，要由 SLO 和 profile 决定；“把 cache 调大”本身可能直接耗尽显存。
 
 **Q: 多模态 + prefix caching 有坑吗？**
-A: 有。mm_hash 必须稳定（同一图每次 hash 一致），否则 cache 命中失败。常见 bug：图像 preprocessing 引入随机性（resize / normalize 浮点误差）→ hash 不一致 → cache miss。hasher.py 会下采样 + 量化避免。
+A: 有。hash 必须覆盖会改变 processor / encoder 结果的输入，并保持序列化稳定；否则可能无效 miss，漏掉差异则更危险。当前 hasher 对 bytes、PIL image、tensor、ndarray 与通用对象走不同序列化路径，并把多模态 identifier 与相对 block offset 放进 KV block 的 extra keys。不要假定它通过像素下采样或量化稳定 hash。
 
 **Q: vision encoder 与 LLM 怎么协同 TP？**
-A: ViT 通常**不 TP**（小），所有 TP rank 各自跑完整 ViT；image_embeds 通过 AllGather 同步。LLM 部分按常规 TP 切。少数大 ViT（如 InternVL-6B）也支持 TP。
+A: 不能用“ViT 通常不 TP”概括。当前 `mm_encoder_tp_mode=weights` 是默认，`data` 模式则复制完整 encoder 权重并按 batch 分片；模型若不支持 data 模式会回退。应检查目标模型实现和启动日志，再用每 rank 显存与通信 trace 验证实际布局。
+
+---
+
+## 11. 最小可复现实验与失败证据
+
+准备可按内容 hash 去重的 image / video / audio 样本，并固定模型、processor kwargs、并行配置和服务版本：
+
+1. 同一 item 连续请求两次，再改变一个会影响处理结果的字段；记录 processor cache、encoder cache 与 prefix cache 的 hit / miss。
+2. 从小到大扫描 item 数、图片尺寸、视频帧数和音频长度；记录处理后 placeholder 数、encoder embedding 数、TTFT、encoder latency、峰值显存和吞吐。
+3. 混合纯文本与不同模态请求，观察 encoder budget 不足时的排队、公平性与文本 SLO。
+4. 若目标模型支持，分别验证 `weights` / `data` encoder TP；记录每 rank 权重与 activation、通信量及输出一致性。
+
+失败证据至少覆盖：超过 `limit_mm_per_prompt`、单 item embedding 数超过 cache capacity、损坏 / 超时 URL、processor 输出与 placeholder 长度不匹配、缓存驱逐后重算。保存原始媒体 hash、解析后的模态元数据、processor 配置、`MultiModalFeatureSpec` 摘要、错误响应和 engine 日志；URL 来源与预计算 embedding 都应按不可信输入处理，安全边界见 [`11-security-and-multi-tenancy.md`](../08-production-deployment/11-security-and-multi-tenancy.md)。
+
+> **生产取舍：** 更大的 processor / encoder cache 能提高重复媒体命中率，但会增加 CPU / 共享内存或 GPU 常驻占用；更严格的尺寸和帧数限制保护尾延迟，却可能降低任务质量。限制、cache、encoder TP 与请求池隔离必须作为同一套容量决策验证。
+
+> **硬件验证状态：** 本章完成锁定 SHA 的静态源码复核；未在当前 SHA 上执行 GPU 多模态基准，所有容量与并行结论都应在目标模型、目标卡型上重新测量。
 
 ---
 
 ## 小结
 
 - Multimodal 输入用 `<|image|>` 等占位符 token 占位，先经 Processor 算出占多少 token，再由 ViT/SigLIP 算 embed，最后插回 input_embeds。
-- EncoderCacheManager 用 LRU + ref_cnt 缓存 encoder 输出，单位是 embed token 数，思想与 KV BlockPool 一致。
+- EncoderCacheManager 用 request ID 集合保护在用项，并按最旧零引用项回收；调度单位是 encoder embedding 数。
 - Encoder 有独立 budget，避免大图/视频抢走 prefill 算力；这是调度可预测的关键。
 - mm_hash 进入 block_hash 的 extra_keys，使得"同图复用、异图隔离"在 prefix caching 层正确表达。
-- 视频比图像贵几个数量级（帧数线性放大），生产中常隔离到专门 Pod 池。
+- 输入 item 数、尺寸 / 帧数、processor 配置和 encoder 并行共同决定成本；生产入口必须限流并保留失败证据。
 
 ## 自检
 
 1. 一张图在 EncoderCacheManager 里被多个请求共用时，引用计数何时归零？归零后多久才真正释放？
-2. 为什么 ViT 通常不做 TP，而 LLM 部分按常规 TP 切？要让它们配合需要哪一步同步？
-3. mm_hash 一旦不稳定会导致什么现象？hasher.py 用什么手段稳住浮点 preprocessing？
-4. 你要支持 1 分钟 30fps 的视频问答，要在 SchedulerConfig 哪些字段上做手脚？
+2. `mm_encoder_tp_mode=weights` 与 `data` 分别复制 / 切分什么？为什么必须看目标模型是否支持？
+3. mm hash 漏掉 processor 参数与 hash 不稳定分别会造成什么风险？
+4. 上线长视频前，入口限制、encoder budget、cache space 与 profile 分别要验证什么？
 
 ## 下一步
 
@@ -282,11 +312,22 @@ A: ViT 通常**不 TP**（小），所有 TP rank 各自跑完整 ViT；image_em
 
 ## Sources
 
-- `vllm/multimodal/inputs.py:119`（PlaceholderRange）、`:854,882`（MultiModalKwargs）
+<!-- vllm-source: {"path":"vllm/multimodal/inputs.py","symbol":"PlaceholderRange"} -->
+[源码锚点：vllm/multimodal/inputs.py · PlaceholderRange](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/multimodal/inputs.py#L119)
+
+- `vllm/multimodal/inputs.py`（PlaceholderRange / MultiModalFeatureSpec / MultiModalKwargs）
 - `vllm/multimodal/processing/`（每模型一份）
 - `vllm/multimodal/hasher.py`、`cache.py`、`encoder_budget.py`
-- `vllm/v1/core/encoder_cache_manager.py:17`
-- `vllm/v1/worker/gpu_model_runner.py:2813,3024`（_execute_mm_encoder / _gather_mm_embeddings）
+<!-- vllm-source: {"path":"vllm/v1/core/encoder_cache_manager.py","symbol":"EncoderCacheManager"} -->
+[源码锚点：vllm/v1/core/encoder_cache_manager.py · EncoderCacheManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/encoder_cache_manager.py#L17)
+
+- `vllm/v1/core/encoder_cache_manager.py`
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._execute_mm_encoder"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._execute_mm_encoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L2963)
+<!-- vllm-source: {"path":"vllm/v1/worker/gpu_model_runner.py","symbol":"GPUModelRunner._gather_mm_embeddings"} -->
+[源码锚点：vllm/v1/worker/gpu_model_runner.py · GPUModelRunner._gather_mm_embeddings](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/worker/gpu_model_runner.py#L3172)
+
+- `vllm/v1/worker/gpu_model_runner.py`（_execute_mm_encoder / _gather_mm_embeddings）
 - `vllm/model_executor/models/qwen2_vl.py`、`llava.py`、`phi3v.py`、`internvl.py`
 
 ---

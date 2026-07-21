@@ -13,6 +13,8 @@
 > 4. 在白板上画出 query_len / context_len / seq_len 的关系
 > 5. 描述 cascade attention 何时启用、解决什么问题
 
+> **当前源码复核（`b23bd73`）：** backend 选择先经过 selector 与 platform capability 检查；模型类型（MHA/GQA/MLA）、KV layout、dtype、head size、compute capability、compile/CUDA Graph 与显式 override 都能改变结果。下文不再把 FlashAttention、FlashInfer 或 Triton 写成跨环境静态排名。
+
 目录：`vllm/v1/attention/backends/`。vLLM 把"怎么算 attention"完全抽象成可插拔后端。本节看 backend 接口 + FlashAttention 实现。
 
 ---
@@ -75,9 +77,12 @@ class AttentionBackend(abc.ABC):
 
 ---
 
-## 3. FlashAttentionBackend：默认后端
+## 3. FlashAttentionBackend：一个重要 CUDA 候选
 
-`vllm/v1/attention/backends/flash_attn.py:69`
+<!-- vllm-source: {"path":"vllm/v1/attention/backends/flash_attn.py","symbol":"FlashAttentionBackend"} -->
+[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/attention/backends/flash_attn.py#L71)
+
+`vllm/v1/attention/backends/flash_attn.py`
 
 ```python
 class FlashAttentionBackend(AttentionBackend):
@@ -103,7 +108,10 @@ class FlashAttentionBackend(AttentionBackend):
 
 ## 4. FlashAttentionMetadata：每步的"地图"
 
-`flash_attn.py:226`，注释画了精彩的一图：
+<!-- vllm-source: {"path":"vllm/v1/attention/backends/flash_attn.py","symbol":"FlashAttentionMetadata"} -->
+[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionMetadata](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/attention/backends/flash_attn.py#L232)
+
+`flash_attn.py`，注释画了精彩的一图：
 
 ```python
 @dataclass
@@ -226,9 +234,8 @@ CPU          : CPU_ATTN
 
 ### 7.1 FlashAttention vs FlashInfer
 - 都支持 paged KV、varlen、causal、GQA
-- **FlashAttention v3** 在 H100 上 prefill 大 batch 最快
-- **FlashInfer** 在 decode 小 batch、长 seq 上略优（更激进的 split-KV）
-- vLLM 默认 FlashAttention，benchmark 后可切 FlashInfer
+- FlashAttention 与 FlashInfer 都有各自支持矩阵和快速路径；同一 H100 上也会随 prefill/decode 比例、GQA、batch、dtype 与版本改变结果。
+- 先让 selector 给出兼容候选，再用真实请求分布 benchmark；不要从模型名或 GPU 名直接断言谁更快。
 
 ### 7.2 普通 Attention vs MLA
 - 普通：每层每头 K、V 单独存
@@ -236,9 +243,9 @@ CPU          : CPU_ATTN
 - DeepSeek-V2/V3 用 MLA。代码：`vllm/v1/attention/backends/mla/`
 
 ### 7.3 FlashAttention vs Triton attn
-- FlashAttention：CUDA C++，性能最强
-- Triton attn：Python 写的 Triton kernel，可读性好、易扩展（如加新 mask 类型）
-- vLLM 提供 Triton 实现作为 fallback 和 prototype
+- FlashAttention：预编译/专用 kernel，能力与 wheel/设备版本相关
+- Triton attn：Python DSL，便于扩展，也可能在特定 shape 走优化路径
+- fallback 只能在满足数值、布局和功能约束时发生，不保证任意后端互换
 
 ---
 
@@ -258,7 +265,7 @@ CPU          : CPU_ATTN
 
 1. `vllm/v1/attention/backend.py`：基类
 2. `vllm/v1/attention/backends/registry.py`：后端注册表
-3. `vllm/v1/attention/backends/flash_attn.py`（默认后端）：
+3. `vllm/v1/attention/backends/flash_attn.py`（重要候选后端）：
    - `class FlashAttentionBackend`：静态方法
    - `class FlashAttentionMetadata`：那张精彩注释
    - `class FlashAttentionMetadataBuilder.build`：每步怎么造 metadata
@@ -371,9 +378,9 @@ slot_id = physical_block_id * block_size + (new_token_idx % block_size)
 5. 返回 FlashAttentionBackend
 ```
 
-如果某一步 fail → 降级到 FlashInfer，再降到 Triton paged_attention，再到自家 paged_attention CUDA kernel。
+如果某一步不支持，selector 会继续尝试平台允许的候选；不存在跨版本固定的“FlashInfer → Triton → 自家 kernel”总顺序，必须以当前 selector 与启动日志为准。
 
-**H100 + 普通 Llama-3 = FlashAttention v3**（最优路径）。
+**H100 + 普通 Llama-3 也不能只凭名称断言结果**：必须读取启动日志/最终 backend，并核对 dtype、head size、wheel 能力、环境变量与 compile 配置。
 
 补充细节：FlashInfer 在某些场景（特别是 GQA + 极大 batch）比 FlashAttention v3 还快；可通过 `VLLM_ATTENTION_BACKEND=FLASHINFER` 强制覆盖默认选择。
 
@@ -420,4 +427,3 @@ MLA KV cache shape：`[num_blocks, block_size, kv_lora_rank + qk_rope_head_dim]`
 - 想看源码：`vllm/v1/attention/backends/flash_attn.py`、`vllm/v1/attention/backends/mla/flashmla.py`、`vllm/v1/attention/selector.py`
 - 想动手：[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md)（切换 `--attention-backend` 看 forward 时间变化）
 - 想从生产视角理解：[`08-production-deployment/04-autoscaling-and-capacity.md`](../08-production-deployment/04-autoscaling-and-capacity.md)（不同 backend 在不同 batch size 下吞吐差异，对容量规划的影响）
-

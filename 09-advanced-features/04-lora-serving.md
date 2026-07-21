@@ -1,10 +1,14 @@
 # 04. LoRA Serving：一个 base model 服务多个微调版本
 
-> **谁该读这一篇？** 做多租户微调服务、希望同一 GPU 同时跑几十个 adapter 的应用工程师；想理解 Punica batched kernel 的引擎贡献者。
+> **谁该读这一篇？** 做多租户微调服务、希望同一 base model 复用多个 adapter 的应用工程师；想理解 Punica batched kernel 的引擎贡献者。
 >
 > **前置阅读：** [`04-model-runner.md`](../03-code-walkthrough/04-model-runner.md)、[`02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)（LoRA-aware routing）
 >
 > **耗时：** 约 25 分钟
+>
+> **难度：** 进阶
+>
+> **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；支持的 target module、rank、量化 / MoE / 多模态组合与 kernel 路径需按目标模型和硬件重测。
 >
 > **学完能：**
 > 1. 解释 Punica 思想如何让多 LoRA batching 仍然高效
@@ -12,20 +16,19 @@
 > 3. 在白板上画出 LoRA-wrapped Linear 的 forward
 > 4. 选择 `max_loras` 与了解 LoRA 与量化、投机解码、prefix caching 的关系
 
-同一台 H100 上同时跑 base model + 50 个 LoRA 适配器，每个用户用自己的版本。这就是 vLLM 的 multi-LoRA serving，靠 **LoRAModelManager + Punica batched kernel** 撑起。目录：`vllm/lora/`（最大、最复杂的子系统之一）。
+vLLM 的 multi-LoRA serving 让同一 base model 的 batch 可以路由到不同 adapter，核心是 **LoRAModelManager + Punica wrapper**。能装多少、能同时激活多少、性能是否接近 base-only，都取决于 adapter 形状、`max_loras` / `max_cpu_loras`、目标模块、batch 构成与硬件，不能用固定“每卡几十个”概括。
 
 ---
 
 ## 1. LoRA 基础（30 秒回顾）
 
-LoRA = Low-Rank Adaptation。微调时不动 base weight $W \in \mathbb{R}^{d \times d}$，而是新增两个小矩阵 $B \in \mathbb{R}^{d \times r}$、$A \in \mathbb{R}^{r \times d}$，$r \ll d$（常 8–64）：
+LoRA = Low-Rank Adaptation。微调时不动 base weight $W$，而是新增两个低秩矩阵 $A$、$B$，rank $r$ 远小于主维度：
 
 $$\Delta W = B A, \quad W_{\text{eff}} = W + \frac{\alpha}{r} \, B A$$
 
 $$\text{output} = x \, W_{\text{eff}} = x W + \frac{\alpha}{r} \, x B A$$
 
-只需要存 $B, A$（几十 MB / adapter，远小于 base 模型几十 GB）。
-推理时把 $\Delta$ 加上去就成另一个"模型"。
+adapter 参数量通常小于 base model，但实际字节数由 target module、层数、rank、dtype、embedding / lm-head 扩展和分片方式决定；必须从真实 checkpoint 与加载后的 slot buffer 测量。
 
 ---
 
@@ -33,7 +36,7 @@ $$\text{output} = x \, W_{\text{eff}} = x W + \frac{\alpha}{r} \, x B A$$
 
 ```
 vllm/lora/
-├── model_manager.py        ← LoRAModelManager (1057 行) — 主入口
+├── model_manager.py        ← LoRAModelManager — 主入口
 ├── worker_manager.py       ← Worker 侧的代理
 ├── lora_model.py           ← 解析单个 adapter 文件
 ├── lora_weights.py         ← Adapter 权重容器
@@ -74,7 +77,10 @@ vllm/lora/
 
 ## 4. LoRAModelManager：核心数据结构
 
-`vllm/lora/model_manager.py:64`，关键属性：
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L71)
+
+`vllm/lora/model_manager.py`，关键属性：
 
 ```python
 class LoRAModelManager:
@@ -87,19 +93,19 @@ class LoRAModelManager:
         self.punica_wrapper: PunicaWrapperBase             # GPU/CPU/TPU 一份
 ```
 
-注意 **lora_slots ≠ adapter 数**：可以注册 100 个 adapter，但同时只有 N 个在 GPU slot 里（按 LRU 换入换出）。
+注意 **GPU slot 数不等于可注册 adapter 数**：`max_loras` 是单 batch 可用的 LoRA 数 / 活跃 slot 容量，默认 1；`max_cpu_loras` 是注册 cache 容量，默认等于 `max_loras` 且不得更小。只有使用 LRU manager 时，超过活跃 slot 的时间局部性才通过换入换出处理。
 
-### 4.1 activate_adapter（line 266）
+### 4.1 activate_adapter
 
 ```python
 def activate_adapter(self, lora_id, ...):
     if lora_id in self._active_adapters:
         return False  # 已激活
 
-    # 找空 slot，没空就 evict LRU
+    # 基类只找空 slot；没有空 slot就报错
     index = self._next_free_slot()
     if index is None:
-        index = self._evict_lru_slot()
+        raise ValueError("No free lora slots")
 
     # 把 adapter 权重 copy 到 GPU slot
     lora_model = self._registered_adapters[lora_id]
@@ -110,7 +116,7 @@ def activate_adapter(self, lora_id, ...):
     self._active_adapters[lora_id] = None
 ```
 
-### 4.2 _set_adapter_mapping（line 325）
+### 4.2 _set_adapter_mapping
 
 每步告诉 punica wrapper："本步 batch 内每个 token 属于哪个 adapter slot"：
 
@@ -127,24 +133,30 @@ ModelRunner 在每步 forward 前调这个。
 
 ## 5. LRUCacheLoRAModelManager：自动换入换出
 
-`model_manager.py:946`：
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LRUCacheLoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LRUCacheLoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L1176)
+
+`model_manager.py`：
 
 ```python
 class LRUCacheLoRAModelManager(LoRAModelManager):
-    """所有 adapter 都在 CPU 内存常驻；GPU 只放最近用过的 N 个。"""
+    """CPU 注册 cache 与 GPU active cache 分别使用 LRU 容量。"""
 
     def activate_adapter(self, lora_id):
         # 命中：lookup + 标记 recent
         # 未命中：evict 最旧 → load 新 adapter 到 GPU
 ```
 
-这是生产推荐路径——支持 100s 的 adapter 同时"挂在系统里"，按需 swap。
+注册 adapter 先在 CPU 加载并校验，激活时写入 GPU slot；CPU cache 超过 `max_cpu_loras`、GPU active cache 超过 `max_loras` 时分别淘汰最旧未 pin 项。`pin_adapter` 会同时 pin CPU 与 GPU cache，若滥用可能让后续加载因无可淘汰项失败。容量应以实际工作集与内存预算决定，不能承诺固定 adapter 数。
 
 ---
 
 ## 6. PunicaWrapper：批量 LoRA matmul
 
-`vllm/lora/punica_wrapper/punica_base.py:124` 抽象：
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L124)
+
+`vllm/lora/punica_wrapper/punica_base.py` 抽象：
 
 ```python
 class PunicaWrapperBase:
@@ -167,7 +179,7 @@ GPU 实现 `punica_gpu.py` 内部调 Triton kernel：
 - `bgmv_expand`：批量 expand
 - 已融合到一个 kernel 减少 launch 数
 
-CUDA 层面（`vllm/lora/ops/`）支持多 rank 混合 batch（一个 batch 里 adapter 各 rank 不同也能跑）。
+GPU 路径会根据平台、dtype、rank 与层类型选择相应实现。不要从抽象接口推导“任意 rank、任意量化、任意 MoE 格式都能混跑”；加载阶段的 `PEFTHelper.validate_legal`、`max_lora_rank` 与模型支持模块共同限定契约。
 
 ---
 
@@ -185,7 +197,7 @@ Linear (vllm/model_executor/layers/linear.py)
         └── LoRA 要分别处理 QKV 各自的 adapter
 ```
 
-`LoRAModelManager._create_lora_modules`（line 356）扫描模型，找到所有 `BaseLayerWithLoRA` 接口的层，包装成 LoRA 版本。
+`LoRAModelManager._create_lora_modules` 扫描模型，匹配目标 module，并把支持的层替换 / 连接到 LoRA wrapper。`target_modules` 可以在部署时限制后缀；未支持、被模型跳过或找不到对应 Punica wrapper 的 module 不应假定会自动生效。
 
 包装层 forward 大致：
 
@@ -226,10 +238,10 @@ class LRUCacheWorkerLoRAManager:
 ```mermaid
 flowchart TD
     R1["1. POST /v1/completions<br/>model='my-lora-v1', prompt='...'"]
-    R2["2. Frontend 检测 model = LoRA<br/>→ 创建 LoRARequest(lora_path='s3://...')"]
+    R2["2. Frontend 按已注册名称解析 LoRA<br/>→ 创建 LoRARequest(name, id, trusted path)"]
     R3["3. EngineCore.add_request<br/>Scheduler 标记 req.lora_request = LoRARequest(id=5)"]
     R4["4. Scheduler.schedule()<br/>SchedulerOutput.lora_requests = {5: ...}"]
-    R5["5. WorkerManager.set_active_adapters<br/>· adapter 5 未在 GPU → load_adapter 从 disk → GPU slot<br/>· 更新 lora_index_to_id 与 punica metadata"]
+    R5["5. WorkerManager.set_active_adapters<br/>· 缺失时从受控路径加载到 CPU 并校验<br/>· 激活到 GPU slot<br/>· 更新 slot mapping 与 Punica metadata"]
     R6["6. ModelRunner forward<br/>每个 LoRA-wrapped layer:<br/>y = base_matmul(x)<br/>punica.add_lora_linear(y, x, A[slot=2], B[slot=2], scale)"]
     R7["7. 输出流式返回客户端"]
 
@@ -253,34 +265,38 @@ flowchart TD
 
 - Router 维护"每 Pod 当前激活哪些 adapter"的视图
 - 路由请求时优先选**该 adapter 已激活**的 Pod
-- 否则触发 swap，cost 100ms~1s
+- 否则可能触发加载 / 激活与 LRU 淘汰，代价取决于 checkpoint、存储、CPU cache 与 GPU copy
 
 实现：
 
-- vLLM Pod 通过 `/metrics` 或 admin API 暴露 `lora:active_adapters`
-- llm-d / AIBrix EPP 把这作为路由打分的一个维度
+路由器需要从经过验证的 inventory / telemetry 获得“已注册、已激活、正在加载、失败冷却”等状态；具体 metric 名称与第三方路由能力不是 vLLM LoRA manager 的稳定 API，应按部署栈核准。
 
 ---
 
 ## 11. 工程要点
 
 ### 11.1 max_loras 怎么选
-GPU slot 数 = `max_loras`（启动参数）。每 slot 占 `rank × 2 × hidden × num_layers` 显存。Llama-70B rank=16 ≈ 200MB / slot。slot 数太大 → 显存压力；太小 → swap 频繁。生产常用 8-32。
+`max_loras` 同时限制单 batch 内 LoRA 数与 GPU active slot；`max_cpu_loras` 限制注册 cache，必须不小于前者。slot 字节数应从各 wrapper 为 target modules 分配的 stacked A / B buffer、dtype、最大 rank、额外 vocab 与分片布局求和，再用实际显存 profile 校验。过大挤压 KV / activation 空间，过小则让不同 adapter 的并发无法进入同一步或增加工作集切换。
 
 ### 11.2 加载延迟
-首次激活一个新 adapter：从 disk/S3 拷 → GPU 显存。几百 MB 在 PCIe 上 1-2 秒。建议：
+首次注册需要解析路径、读取 PEFT 配置 / 权重、在 CPU 构造并校验 adapter；激活再写入 GPU slot。冷延迟取决于本地 / 远端 resolver、文件系统、checkpoint 大小、TP rank 和 GPU copy，不能套固定秒数。建议：
 
 - 热门 adapter 启动时**预加载**
 - LRU 别太激进（cache miss 痛）
 
 ### 11.3 同 batch 跨 adapter 是真正并发吗
-是的。Punica 的设计就是：一个 batch 内的 token 各自标 `lora_id`，kernel 内并行。所以**1 个 base + 多个 LoRA** 与 **base only** 的吞吐几乎一样（仅多个小 GEMM）。
+Punica 的 mapping 让同一 batch 的 token 指向不同 slot，base matmul 仍批处理，LoRA 增量按映射执行。但增量 kernel、metadata、padding、rank、adapter 混合度和 batch 碎片都会产生成本；是否接近 base-only 必须用目标流量分布测量。
 
 ### 11.4 LoRA + 量化
-两者正交。base 可以 INT4 / FP8，LoRA 通常保 FP16/BF16（adapter 小，量化收益不大且影响精度）。
+不能笼统称为“正交”。base quantization method、layer wrapper、MoE 格式、平台 kernel 与 `lora_dtype` 必须形成受支持组合；`lora_dtype=auto` 跟随 base model dtype。加载成功只证明形状 / 配置过关，精度与性能仍需对照未量化基线。
 
 ### 11.5 LoRA + 投机解码
-draft 模型有无 LoRA？通常 draft 是独立小模型，不用 LoRA。target 用 LoRA 没问题。要保证 RejectionSampler 用 target 的（含 LoRA）输出做验证。
+draft 与 target 是否使用同一 adapter 会改变 proposal 分布与接受率。即便最终验证由 target 完成，也不能据此保证所有 speculative method、LoRA 路径和并行组合都受支持；应检查启动校验，并分别比较正确性、接受率与端到端吞吐。
+
+### 11.6 加载 API 与安全边界
+静态 adapter 应通过启动配置 `--lora-modules` 注册，客户端请求只选择服务端已公布的 model 名称。运行时端点是 `/v1/load_lora_adapter` 与 `/v1/unload_lora_adapter`，只有设置 `VLLM_ALLOW_RUNTIME_LORA_UPDATING=1` 才挂载；当前代码明确警告它**仅用于本地开发**，并禁止与 `api_server_count > 1` 组合。
+
+不要允许普通推理请求携带任意 `lora_path`。路径 / resolver 访问意味着文件或网络读取，还会改变所有请求共享的 worker 内存状态；生产控制面必须做强认证授权、名称唯一性、base compatibility、来源 allowlist、checkpoint 签名 / hash、大小配额、并发锁、审计与回滚。完整边界见 [`11-security-and-multi-tenancy.md`](../08-production-deployment/11-security-and-multi-tenancy.md)。
 
 ---
 
@@ -290,10 +306,10 @@ draft 模型有无 LoRA？通常 draft 是独立小模型，不用 LoRA。target
 A: Punica kernel：base matmul 还是一次大 GEMM，LoRA 增量按 token 的 `lora_id` 路由到对应 `B_i, A_i`。每 batch 内部分段并行执行 LoRA 部分，是个 batched grouped GEMM。
 
 **Q: max_loras 设小了会怎样？**
-A: 当不同 adapter 请求并发数超 max_loras，就触发 LRU swap。swap 期间 stall，TTFT 上涨。监控 `lora_load_time` 指标。
+A: 单步不能容纳超过 `max_loras` 个不同 adapter；时间上的活跃工作集超过 slot 时，LRU manager 会淘汰并重新激活。表现可能是 batch 分割、adapter thrash、TTFT 与 CPU / GPU copy 上升。应从真实 metrics inventory 选择注册数、active 数、加载 / 激活时延和失败计数，不能假定固定 metric 名。
 
 **Q: 怎么动态加 / 卸 adapter？**
-A: vLLM 暴露 admin API `/v1/load_lora_adapter` / `/unload`。LoRARequest 也可以在请求里现传 `lora_path`，自动加载。
+A: 静态使用 `--lora-modules`。运行时端点全名是 `/v1/load_lora_adapter` / `/v1/unload_lora_adapter`，须显式启用危险开关，而且源码只把它定位为本地开发能力；普通推理请求不应传任意路径触发加载。
 
 **Q: 多 LoRA 与 K8s 自动扩缩怎么协同？**
 A: 单个 Pod 服务多 LoRA → 减少 Pod 副本，提高 GPU 利用率。但 Smart Router 必须感知"哪 Pod 有哪些 adapter"，否则 swap 抖动。
@@ -303,20 +319,37 @@ A: block_hash 的 extra_keys 含 LoRA adapter id。同一段 prompt 用不同 Lo
 
 ---
 
+## 13. 最小可复现实验与失败证据
+
+准备至少三个 adapter：两个 rank / target module 不同但合法，一个故意与 base 不兼容。固定 prompt 集，比较 base-only、单 LoRA、混合 LoRA：
+
+1. 扫描不同 `max_loras` / `max_cpu_loras` 与 adapter 热度分布，记录每步 adapter 混合度、注册 / 激活 / 淘汰、TTFT、吞吐和各 rank 显存。
+2. 冷加载、CPU cache 命中、GPU active 命中分别测量；把存储延迟与 GPU copy 分开。
+3. 对同一 prompt 切换 adapter，验证输出、prefix-cache 隔离与删除 / 重载后的版本一致性。
+4. 对计划使用的量化、TP / EP、MoE、多模态和投机组合逐一跑启动、正确性与性能门禁。
+
+失败注入至少包括：不存在 / 越界路径、损坏 checkpoint、base / target module / rank 不兼容、CPU cache 和 active cache 全部被 pin、同名并发更新、加载中取消以及 worker 部分失败。保留 adapter name、不可变版本 / hash、base model revision、PEFT config、每 rank 日志、控制面审计记录和加载前后 inventory；不要在日志泄露凭证化路径。
+
+> **生产取舍：** 增大 CPU cache 降低磁盘读取，却增加 host memory；增大 active slot 减少换入，却挤占 KV cache；LoRA-aware routing 提高命中，却可能导致热点 Pod。版本化静态发布通常比开放运行时加载更容易审计和回滚。
+
+> **硬件验证状态：** 本章完成锁定 SHA 的静态源码复核；未在当前 SHA 上执行 GPU Punica / LoRA 基准，因此不提供固定 adapter 数、显存、加载时间或 base-only 性能差值。
+
+---
+
 ## 小结
 
 - Punica 让 base matmul 仍然一次大 GEMM，LoRA 增量按 token `lora_id` 路由到 per-slot `A/B` 小矩阵，实现真正的跨 adapter batching。
-- LoRAModelManager 把 adapter 分成"已注册"（CPU 常驻）和"激活 slot"（GPU），LRU 自动换入换出。
+- LoRAModelManager 区分 CPU 注册 cache 与 GPU active slot；LRU manager 分别按 `max_cpu_loras` / `max_loras` 淘汰，pin 会改变可淘汰性。
 - 每种 Linear 都有 LoRA wrapper 版本（column/row parallel、replicated、fused MoE、logits），都接到 PunicaWrapper。
-- `max_loras` 决定 GPU slot 数与显存占用，生产常用 8-32；超过即触发 swap 抖动。
-- LoRA-aware routing 是生产关键：让请求优先打到已经加载对应 adapter 的 Pod，避免冷加载 100ms-1s 的 stall。
+- `max_loras` 决定单 batch LoRA 上限与 active slot；容量必须从真实 adapter buffer、工作集与 KV 预算测量。
+- LoRA-aware routing 可减少冷加载，但控制面 inventory、路径信任、版本审计与失败回滚同样是生产契约。
 
 ## 自检
 
 1. 一个 batch 内有 3 个不同 LoRA 的请求，PunicaWrapper 的 `index_mapping` 大概长什么样？
-2. `max_loras=8` 但有 12 个并发 adapter 请求，会发生什么？要看哪个 metric 才能发现 swap 抖动？
+2. `max_loras=8` 但当前队列有 12 个 adapter 时，为什么“单步上限”与“时间上的 LRU 淘汰”要分开分析？
 3. 同一 prompt 用 LoRA A 和 LoRA B 命中的是同一段 prefix cache 吗？为什么？
-4. LoRA 与投机解码组合时，draft 模型是否应该带同一个 LoRA？为什么？
+4. 开放运行时 LoRA path 为什么会扩大文件 / 网络与共享 worker 状态的攻击面？
 
 ## 下一步
 
@@ -328,13 +361,31 @@ A: block_hash 的 extra_keys 含 LoRA adapter id。同一段 prompt 用不同 Lo
 
 ## Sources
 
-- `vllm/lora/model_manager.py:64,266,325,946` (LoRAModelManager / LRUCacheLoRAModelManager)
-- `vllm/lora/punica_wrapper/punica_base.py:22,124,168` (interface)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L71)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager.activate_adapter"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager.activate_adapter](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L301)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LoRAModelManager._set_adapter_mapping"} -->
+[源码锚点：vllm/lora/model_manager.py · LoRAModelManager._set_adapter_mapping](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L360)
+<!-- vllm-source: {"path":"vllm/lora/model_manager.py","symbol":"LRUCacheLoRAModelManager"} -->
+[源码锚点：vllm/lora/model_manager.py · LRUCacheLoRAModelManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/model_manager.py#L1176)
+
+- `vllm/lora/model_manager.py` (LoRAModelManager / LRUCacheLoRAModelManager)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperABC"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperABC](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L22)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L124)
+<!-- vllm-source: {"path":"vllm/lora/punica_wrapper/punica_base.py","symbol":"PunicaWrapperBase._update_base_metadata"} -->
+[源码锚点：vllm/lora/punica_wrapper/punica_base.py · PunicaWrapperBase._update_base_metadata](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/lora/punica_wrapper/punica_base.py#L168)
+
+- `vllm/lora/punica_wrapper/punica_base.py` (interface)
 - `vllm/lora/punica_wrapper/punica_gpu.py`
 - `vllm/lora/layers/{column_parallel_linear,row_parallel_linear,fused_moe,logits_processor}.py`
 - `vllm/lora/worker_manager.py`
 - `vllm/lora/request.py`、`peft_helper.py`、`resolver.py`
 - `vllm/lora/ops/`（Triton bgmv kernels）
+- `vllm/config/lora.py`（`LoRAConfig` 的 CPU / GPU 容量与 dtype 契约）
+- `vllm/entrypoints/serve/lora/api_router.py`（运行时端点与开发环境警告）
 
 ---
 
@@ -342,4 +393,4 @@ A: block_hash 的 extra_keys 含 LoRA adapter id。同一段 prompt 用不同 Lo
 
 - `08-production-deployment/02-smart-routing-and-load-balancing.md` —— LoRA-aware routing
 - `02-core-concepts/04-prefix-caching.md` —— extra_keys 的 LoRA 字段
-- `04-optimizations/01-quantization.md` —— LoRA 与量化正交
+- `04-optimizations/01-quantization.md` —— 核准 LoRA 与量化组合的 backend / layer 支持

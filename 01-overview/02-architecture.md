@@ -12,6 +12,8 @@
 > 3. 在脑子里展开单次 step 的执行链：Scheduler → Executor → Worker → forward → Sampler → 输出。
 > 4. 把 vLLM 的每一项设计映射回操作系统 / 网络 / 分布式系统课里学过的对应概念。
 
+> **当前源码复核（`b23bd73`）：** 在线服务的主链是 API server / `AsyncLLM` → `EngineCoreClient`（常见为 `AsyncMPClient`）→ `EngineCoreProc` → `Executor` → Worker。离线单进程、multiprocessing、Ray 与 external launcher 的边界不同，三层图是逻辑职责图，不保证每种部署都产生相同 PID 数量或同一种 IPC。
+
 目标是脑子里有一张清晰的图——一个请求从 HTTP 到 GPU 再到流式返回的完整路径。这张图刻进脑子，后面所有源码走读都能定位到它的某一层。
 
 ---
@@ -54,18 +56,32 @@ flowchart TD
 
 逻辑三层背后的真实进程长这样（每个 Worker 进程绑一张 GPU）：
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+<!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"launch_core_engines"} -->
+[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L1072)
+<!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core"} -->
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1253)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L103)
+
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L662)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+
 ```mermaid
 flowchart TB
     subgraph API["API Server 进程<br/>名字: 主进程 (uvloop event-loop)"]
         APIcli["vllm/entrypoints/cli/serve.py:main()<br/>(args.api_server_count 控制副本数, 默认 1)"]
         APIfast["vllm/entrypoints/openai/api_server.py<br/>FastAPI + uvloop"]
-        AsyncMP["AsyncMPClient<br/>(MPClient 子类)<br/>vllm/v1/engine/core_client.py:460"]
+        AsyncMP["AsyncMPClient<br/>(MPClient 子类)<br/>vllm/v1/engine/core_client.py"]
         APIcli --> APIfast --> AsyncMP
     end
 
     subgraph ECP["EngineCore 进程<br/>名字: EngineCore (DP 时 EngineCore_DP{N})"]
-        Launcher["launch_core_engines()<br/>vllm/v1/engine/utils.py:994<br/>context.Process(target=run_engine_core)"]
-        ECProc["EngineCoreProc.run_engine_core(...)<br/>vllm/v1/engine/core.py:1087<br/>(set_process_title 'EngineCore')"]
+        Launcher["launch_core_engines()<br/>vllm/v1/engine/utils.py<br/>context.Process(target=run_engine_core)"]
+        ECProc["EngineCoreProc.run_engine_core(...)<br/>vllm/v1/engine/core.py<br/>(set_process_title 'EngineCore')"]
         Sched["Scheduler<br/>vllm/v1/core/sched/scheduler.py"]
         Exec["Executor (Multiproc / Ray / Uniproc)<br/>vllm/v1/executor/"]
         Launcher --> ECProc --> Sched
@@ -73,9 +89,9 @@ flowchart TB
     end
 
     subgraph WP["Worker 进程 × N<br/>名字: VllmWorker-{rank}"]
-        MPExec["MultiprocExecutor._init_executor<br/>vllm/v1/executor/multiproc_executor.py:102"]
-        MakeProc["WorkerProc.make_worker_process<br/>multiproc_executor.py:644<br/>context.Process(target=worker_main)"]
-        WorkerMain["WorkerProc.worker_main<br/>multiproc_executor.py:792"]
+        MPExec["MultiprocExecutor._init_executor<br/>vllm/v1/executor/multiproc_executor.py"]
+        MakeProc["WorkerProc.make_worker_process<br/>multiproc_executor.py<br/>context.Process(target=worker_main)"]
+        WorkerMain["WorkerProc.worker_main<br/>multiproc_executor.py"]
         Runner["GPUWorker / GPUModelRunner<br/>vllm/v1/worker/gpu_worker.py<br/>gpu_model_runner.py"]
         MPExec --> MakeProc --> WorkerMain --> Runner
     end
@@ -128,6 +144,32 @@ flowchart TB
 ---
 
 ## 3. 单次推理 step 的完整流程
+
+```mermaid
+sequenceDiagram
+    participant API as OpenAI API Server
+    participant A as AsyncLLM
+    participant C as AsyncMPClient
+    participant E as EngineCoreProc
+    participant S as Scheduler
+    participant X as Executor
+    participant W as Worker/GPUModelRunner
+    participant O as OutputProcessor
+    API->>A: add_request(...)
+    A->>C: EngineCoreRequest
+    C->>E: ZMQ request channel
+    E->>S: schedule()
+    S-->>E: SchedulerOutput
+    E->>X: execute_model(SchedulerOutput)
+    X->>W: collective RPC / local call
+    W-->>E: ModelRunnerOutput
+    E-->>C: EngineCoreOutputs
+    C-->>A: output queue
+    A->>O: process_outputs(...)
+    O-->>API: RequestOutput / streaming chunk
+```
+
+`InprocClient`、Ray executor 或外部 launcher 会替换其中的传输实现，但不会改变“请求契约 → 调度契约 → runner 输出 → 用户输出”的职责顺序。
 
 整个推理过程的核心 step 循环：
 
@@ -252,23 +294,31 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 
 ### 7.1 操作系统课
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core","anchor":"def signal_handler(signum, frame):"} -->
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1311)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process","anchor":"ready_reader, ready_writer = context.Pipe(duplex=False)"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L674)
+
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"SpinCondition"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · SpinCondition](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L104)
+
 | 课上学过的 | vLLM 里的体现 | 详见 |
 | --- | --- | --- |
 | 进程 vs 线程 | Worker 用进程不用线程（避开 Python GIL；每进程独立 CUDA context） | `05-process-and-ipc-internals.md` §2 |
 | 虚拟内存 / 页表 | **PagedAttention** —— KV block 是物理页，每请求一张 block table | `02-core-concepts/01-paged-attention.md` |
-| 页错误 → 抢占 | KV 不够时的 `preempt`（释放或 swap） | `02-core-concepts/03-kv-cache-management.md` |
+| 页错误 → 抢占 | KV 不够时的 `preempt`（当前 V1 释放并重算；offload/connector 另行建模） | `02-core-concepts/03-kv-cache-management.md` |
 | 写时复制（COW） | beam search / parallel sampling 多候选共享前缀 block，分歧时再 fork | 同上 |
 | 引用计数（refcount） | `KVCacheBlock.ref_cnt` | 同上 |
 | LRU 缓存替换 | `BlockPool` 的 `free_block_queue` 是 LRU 双向链表 | `03-code-walkthrough/03-kv-cache-manager.md` |
 | 进程间通信（socket / shm / pipe） | API↔Engine 用 ZMQ；Engine↔Worker 用 `multiprocessing.shared_memory` | `05-process-and-ipc-internals.md` §4-5 |
 | fork vs spawn | `get_mp_context()`；Linux fork、macOS spawn | `05-process-and-ipc-internals.md` §2.2 |
-| 信号 / 优雅退出 | `SIGTERM` → `EngineShutdownState.REQUESTED` → drain → shutdown | `vllm/v1/engine/core.py:1145` |
+| 信号 / 优雅退出 | `SIGTERM` → `EngineShutdownState.REQUESTED` → drain → shutdown | `vllm/v1/engine/core.py` |
 | 生产者-消费者 | `Scheduler.waiting` / `running` 队列 | `03-code-walkthrough/02-scheduler.md` |
 | 发布-订阅（pubsub） | `MessageQueue` 是一写多读的共享内存广播器 | `05-process-and-ipc-internals.md` §5 |
-| 自旋锁 / 条件变量 | `SpinCondition`（`shm_broadcast.py:97`）等共享内存就绪信号 | 同上 |
+| 自旋锁 / 条件变量 | `SpinCondition`（`shm_broadcast.py`）等共享内存就绪信号 | 同上 |
 | 调度策略（FCFS / 优先级） | `Scheduler` 默认 FCFS，可切 priority | `vllm/v1/core/sched/scheduler.py` |
 | 资源隔离（namespace / cgroup） | K8s Pod + NUMA binding + `nvidia.com/gpu` device plugin | `08-production-deployment/01-deployment-architectures.md` |
-| 文件描述符传递 | `make_worker_process` 用 `Pipe` 把就绪/死亡信号传给子进程 | `vllm/v1/executor/multiproc_executor.py:656` |
+| 文件描述符传递 | `make_worker_process` 用 `Pipe` 把就绪/死亡信号传给子进程 | `vllm/v1/executor/multiproc_executor.py` |
 | Memory-mapped I/O | 模型权重加载常用 `mmap`（safetensors 默认走 mmap 加载） | `vllm/model_executor/model_loader/` |
 
 ### 7.2 计算机网络课
@@ -289,6 +339,11 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 
 ### 7.3 计算机体系结构 / GPU 编程
 
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue","anchor":"buf[1:offset] = to_bytes_big(len(all_buffers), 2)  # oob buf count"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L759)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.dequeue","anchor":"buf_len = from_bytes_big(buf[offset:buf_offset])"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.dequeue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L787)
+
 | 课上学过的 | vLLM 里的体现 | 详见 |
 | --- | --- | --- |
 | 存储层级（寄存器→cache→DRAM） | GPU 是寄存器 → SRAM → L2 → HBM → NVLink → PCIe → DRAM 七级 | `00-prerequisites.md` §6 |
@@ -297,7 +352,7 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 | 流水线 ILP / 双 buffer | CUDA Graph + 异步 Scheduler，schedule 与 forward overlap | `03-cudagraph-and-compile.md` §1 / 本篇 §4 |
 | 多级缓存 | KV cache 的 L1（GPU HBM）/ L2（CPU DRAM）/ L3（远端 LMCache） | `08-production-deployment/01-deployment-architectures.md` |
 | 数据 vs 指令 cache | 量化 weight 缓存 + KV cache 是数据；CUDA Graph 是 "instruction cache" 类比 | `04-optimizations/03-cudagraph-and-compile.md` |
-| 字节序 / endian | shared-memory ring 内 `to_bytes_big` 大端打包 | `shm_broadcast.py:752,780` |
+| 字节序 / endian | shared-memory ring 内 `to_bytes_big` 大端打包 | `shm_broadcast.py` |
 | 引用 vs 拷贝 | PEP 574 PickleBuffer + OOB 实现零拷贝 IPC | `05-process-and-ipc-internals.md` §5.3 |
 
 ### 7.4 分布式系统课
@@ -306,7 +361,7 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 | --- | --- | --- |
 | 主从模型（leader/follower） | rank 0 是 driver worker，广播 SchedulerOutput 给其他 worker | `03-code-walkthrough/04-model-runner.md` |
 | 共识 / 协调 | DP 模式下 `DPCoordinator` 协调多个 EngineCore 的全局状态 | `vllm/v1/engine/coordinator.py` |
-| 故障恢复 | KV preempt = "断点重续"（recompute）vs swap（持久化） | `02-core-concepts/02-continuous-batching.md` §7 |
+| 故障恢复 | KV preempt = 释放本地 block、清零进度、重新排队；外部 KV connector 另有状态协议 | `02-core-concepts/02-continuous-batching.md` §7 |
 | 心跳 / liveness | `EngineCore` 监控 Worker 健康，崩了整组重启 | `08-production-deployment/06-reliability-and-failure-modes.md` |
 | 一致性视图 | AIBrix 的 KV Event Sync 让所有 Pod 看到一致的 cache 状态 | `08-production-deployment/02-smart-routing-and-load-balancing.md` §4.2 |
 | 水平扩展 vs 垂直扩展 | API Server 多副本（水平）vs Worker 加 TP（垂直） | 本篇 §1 |
@@ -396,7 +451,7 @@ flowchart TB
 | `num_scheduled_tokens : dict[req_id, int]` | 每个本步要算的 token 数（prefill chunk / decode = 1）| Worker 据此组装 packed batch |
 | `total_num_scheduled_tokens : int` | 全步 token 总数 | Worker 据此 pad / 选 CUDA Graph capture 尺寸 |
 | `scheduled_spec_decode_tokens : dict[req_id, list[int]]` | 投机解码的草稿 token | Worker 一起塞进 forward，验证后采纳/拒绝 |
-| `preempted_req_ids : set[str]` | 本步被抢占的请求 | Worker 释放 KV（recompute）或拷出 CPU（swap） |
+| `preempted_req_ids : set[str]` | 本步被抢占的请求 | runner 清理持久 batch 状态；Scheduler 侧已释放 KV 并重置请求进度 |
 | `finished_req_ids : set[str]` | 本步完成的请求 | Worker 释放 KV、清理 sampling 状态 |
 | `kv_connector_metadata` | P/D 分离 / KV offload 元数据 | Worker 据此触发 KV transfer |
 | `grammar_bitmask` | 结构化输出的 token mask | Worker 在 sampler 里 apply |

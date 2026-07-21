@@ -12,6 +12,8 @@
 > 3. 用 Llama-3-70B 的真实显存和带宽，算出 batch=1 decode 的理论 token/s 上限，并解释为什么加 batch 能几乎免费地拉吞吐。
 > 4. 讲清一个反直觉但生产上极关键的点：**batching 能摊薄权重读取，但摊不薄 KV cache 读取**——这决定了长上下文为什么依然慢，也决定了 MLA / GQA / KV 量化为什么是刚需。
 
+> **当前源码复核（`b23bd73`）：** 本章 FLOPs/bytes 是分析模型，不是 vLLM runtime 硬件 counter。任何 `estimated_flops`、read/write bytes 都必须注明是否含权重、KV、激活、collective、padding 和 kernel fusion，并用 Nsight/平台 profiler 的实际时间、带宽与算力交叉验证。
+
 这一章不讲某个具体优化，而是给你一把尺子。后面所有优化（量化、投机、MLA、chunked prefill、disaggregation）本质上都是在 roofline 图上往某个方向挪一格。先有尺子，才知道往哪挪。
 
 ---
@@ -187,6 +189,10 @@ Attention 这部分的存算比，对单个 decode token 来说**恒等于 ~1**�
 > **FP8 的小陷阱（呼应 §2）**：FP8 把算力翻倍 → 拐点从 300 抬到 590。这意味着用了 FP8 后，要把 decode 喂到 compute-bound 需要**更大的 batch**。FP8 主要收益其实是"权重 Bytes 减半 → AI 翻倍 → 带宽侧提速"，算力翻倍这件事在 memory-bound 的 decode 里基本吃不到。判断一个量化方案对 decode 的收益，永远先看它省了多少 Bytes，而不是多了多少 TFLOPS。
 
 ---
+
+## 单变量实验：单位与 sanity check
+
+表格至少包含：每请求/每 step token 数、FLOPs、权重/KV/激活/collective bytes、理论时间 `max(FLOPs/peak, bytes/bandwidth)`、实测 kernel/step 时间、实测带宽/算力利用率。统一使用 FLOP、byte、second，注明 GB/GiB。一次只改 batch、context 或 dtype 之一；估算与 profiler 相差数量级时先修模型，不据此调参。
 
 ## 小结
 

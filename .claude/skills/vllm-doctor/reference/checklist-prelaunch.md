@@ -1,44 +1,44 @@
 # vLLM 上线前 15 条 Checklist
 
-每条都对应一个被本 skill 收录的失败模式。上线前过一遍，能把 80% 的常见事故挡在前面。
+每条都对应一个被本 skill 收录的失败模式。它是核对框架，不提供跨模型、硬件和平台通用的默认值。
 
 ## 容量 & 弹性
 
-- [ ] **1. minReplicas ≥ 2**：KEDA / HPA 不要 scale-to-zero，避免 5-10 分钟冷启动击穿首请求 SLO。
-- [ ] **2. cooldownPeriod ≥ 300s**：避免 KV 抖动触发 replica flapping。
-- [ ] **3. 节点池 over-provision 10-20%**：保证扩容时有 GPU 节点可调度。
+- [ ] **1. scale-to-zero 决策有证据**：记录目标模型 cold-start 分布、首请求 SLO、成本与 warm-pool 策略。
+- [ ] **2. cooldown/稳定窗口经过 burst 演练**：能抑制 flapping，也不会错过容量缺口。
+- [ ] **3. 节点容量预留可计算**：由供应时间、扩容 SLO、故障域和成本预算推导。
 
 ## KV / 显存
 
-- [ ] **4. `gpu_memory_utilization ≤ 0.85`**：留 15% 给激活峰值和 allocator 碎片。
-- [ ] **5. `max_num_seqs` 经过实测**：开 `--enable-chunked-prefill --max-num-batched-tokens 2048-4096`，再调 `max_num_seqs`，目标 `preempt_rate < 0.1/s`。
-- [ ] **6. 长上下文请求隔离**：`prompt_len > 16k` 的请求走单独 pod 池，不要混在主池里。
+- [ ] **4. 显存/KV headroom 经过实测**：覆盖业务长度、并发、backend 与失败点，记录安全水位适用范围。
+- [ ] **5. seq/token/chunked-prefill 联合调参**：用 SLO、吞吐、KV 和 preemption 的 Pareto 结果选值。
+- [ ] **6. 长上下文隔离规则来自长度分布**：用容量和公平性实验决定分池边界。
 
 ## NCCL / 通信
 
-- [ ] **7. `NCCL_TIMEOUT=60 NCCL_BLOCKING_WAIT=1 TORCH_NCCL_ENABLE_MONITORING=1`** 写进基线 env。让卡死自动 crash + restart。
-- [ ] **8. DCGM 监控 NVLink CRC / Replay 错误**：CRC > 0 立即告警，节点上 taint + 报修。
-- [ ] **9. 服务网格 sidecar 排除 NCCL 端口**：6000-6100 + IB 端口不走 Envoy。
+- [ ] **7. collective timeout/monitoring 做过版本验证**：变量、单位与语义来自目标 NCCL/PyTorch 文档，并完成 staging hang 演练。
+- [ ] **8. 硬件错误信号有平台 runbook**：定义 counter 语义、关联证据、节点处置审批和恢复条件。
+- [ ] **9. 网络策略匹配实际 transport**：按拓扑、接口和动态端口验证，不抄固定端口段。
 
 ## 生命周期 & 健康检查
 
-- [ ] **10. `terminationGracePeriodSeconds ≥ 600` + `preStop /shutdown`**：缩容时给在跑请求 10 分钟排空。
+- [ ] **10. drain 状态机演练通过**：先从新请求路由移除，再观察 inflight/running/waiting，最后按目标平台信号终止；不依赖当前不存在的公共 `/shutdown`。
 
 ## 流量管理
 
-- [ ] **11. Gateway 必须做 admission control**：`kv_cache_usage > 0.85` 返回 429 / 503，挡在 vLLM 前面，而不是让它过载后再抢占。
-- [ ] **12. 路由变更走 canary**：smart router / prefix-aware 路由策略改动必须 5% 流量观察 `prefix_cache_hit_rate` 不塌方。
+- [ ] **11. Gateway admission contract 已定义**：租户预算、queue/KV 安全区间、状态码、重试和回滚都经过负载演练。
+- [ ] **12. 路由变更走 canary**：按覆盖请求数、prefix token 命中基线、SLO 和错误预算毕业。
 
 ## 质量 & 模型
 
-- [ ] **13. 上线前必做 50 条 golden prompt 的 PPL + 格式合规 baseline**。canary 阶段加自动质量门：`format_compliance < 0.95` → rollback。
+- [ ] **13. 版本化 golden/质量集通过**：覆盖业务切片且不含用户敏感数据；质量 gate 失败停止放量，回滚仍需明确批准。
 - [ ] **14. quantization 变更必须重新校准**：FP8 / AWQ / GPTQ 切换前后用同一组 calibration set 验证。
 
 ## 可观测性
 
-- [ ] **15. Golden 3 + 错误预算燃烧率必须接 Grafana + 告警**：TTFT p99、queue depth、KV usage、`error_rate` 燃烧率。On-call 必须能在 30 秒内看到这 3 个图。
+- [ ] **15. 指标契约已抓取和演练**：TTFT、queue、KV、preemption 及网关错误预算查询存在且告警能触发；缺失信号必须 fail closed。
 
 ## 来源
 
-`vllm-learning/08-production-deployment/06-reliability-and-failure-modes.md` L293-311 +
-`vllm-learning/08-production-deployment/04-autoscaling-and-capacity.md` L253-267
+`vllm-learning/08-production-deployment/06-reliability-and-failure-modes.md` +
+`vllm-learning/08-production-deployment/04-autoscaling-and-capacity.md`

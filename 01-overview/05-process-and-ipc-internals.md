@@ -12,25 +12,36 @@
 > 3. 解释 vLLM Worker 为什么必须用进程、而不是线程；fork vs spawn 在 CUDA 上下文初始化顺序上的坑。
 > 4. 把三种部署形态（Inproc / MPClient / Ray Distributed）与"单机 offline / 单机 serve / 跨机 serve"三种工作模式对上号。
 
+> **当前源码复核（`b23bd73`）：** `EngineCoreClient` 当前有 in-process、multiprocess、data-parallel load-balanced 等实现；multiprocessing 与 Ray v2 executor 都可使用 `MessageQueue`，但跨节点还会叠加分布式传输。后文的 ZMQ/shm 图描述常见路径，不是所有 executor 的统一物理拓扑。
+
 这一篇是 [`02-architecture.md`](02-architecture.md) 的**深度续篇**。读完 `02` 知道 vLLM 有三层进程后，本篇回答"它们到底怎么生出来、怎么交换数据、为什么这么设计"。
 
 ---
 
 ## 1. 一图重温：进程拓扑
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+<!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"launch_core_engines"} -->
+[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L1072)
+<!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core"} -->
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1253)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+
 ```mermaid
 flowchart TB
     subgraph API["API Server 进程（FastAPI / uvloop）"]
         APIcli["vllm/entrypoints/cli/serve.py:main()<br/>--api-server-count 控制副本数"]
-        AsyncMP["AsyncMPClient<br/>core_client.py:460"]
+        AsyncMP["AsyncMPClient<br/>core_client.py"]
     end
     subgraph ECP["EngineCore 进程"]
-        Launcher["launch_core_engines<br/>engine/utils.py:994"]
-        ECProc["EngineCoreProc.run_engine_core<br/>engine/core.py:1087"]
+        Launcher["launch_core_engines<br/>engine/utils.py"]
+        ECProc["EngineCoreProc.run_engine_core<br/>engine/core.py"]
         Exec["MultiprocExecutor / RayExecutor"]
     end
     subgraph WP["Worker 进程 × N（每 GPU 一个）"]
-        WMain["WorkerProc.worker_main<br/>multiproc_executor.py:792"]
+        WMain["WorkerProc.worker_main<br/>multiproc_executor.py"]
         Runner["GPUWorker → GPUModelRunner"]
     end
 
@@ -56,11 +67,16 @@ flowchart TB
 
 按时间顺序追：
 
+<!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"CoreEngineProcManager.__init__","anchor":"context.Process("} -->
+[源码锚点：vllm/v1/engine/utils.py · CoreEngineProcManager.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L165)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process","anchor":"proc = context.Process("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L694)
+
 | 顺序 | 谁来 spawn | 用什么方式 | 目标进程 | 关键代码位置 |
 | --- | --- | --- | --- | --- |
 | ① | shell 启动 `vllm serve <model>` | OS 直接 exec | **API Server 主进程** | `vllm/entrypoints/cli/serve.py:main` → `api_server.py:run_server` |
-| ② | API Server 进程内的 client 构造 | `multiprocessing.Process(target=EngineCoreProc.run_engine_core)` | **EngineCore 子进程** | `vllm/v1/engine/utils.py:144` 起 `context.Process(...)`、line 189 `proc.start()` |
-| ③ | EngineCore 进程内 `Executor._init_executor` | `multiprocessing.Process(target=WorkerProc.worker_main, daemon=True)` × N | **Worker 子进程** × N | `vllm/v1/executor/multiproc_executor.py:676`、line 687 `proc.start()` |
+| ② | API Server 进程内的 client 构造 | `multiprocessing.Process(target=EngineCoreProc.run_engine_core)` | **EngineCore 子进程** | `vllm/v1/engine/utils.py` 起 `context.Process(...)`、line 189 `proc.start()` |
+| ③ | EngineCore 进程内 `Executor._init_executor` | `multiprocessing.Process(target=WorkerProc.worker_main, daemon=True)` × N | **Worker 子进程** × N | `vllm/v1/executor/multiproc_executor.py`、line 687 `proc.start()` |
 
 每个 Worker 进程在自己进程里 `torch.cuda.set_device(local_rank)` 绑一张 GPU，然后通过 NCCL 加入 TP 通信组。换句话说：
 
@@ -89,10 +105,13 @@ vLLM 启动顺序刻意安排成"先 fork 进程，再 init CUDA"，正是为兼
 
 ## 3. 三种部署形态对照
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"InprocClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · InprocClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L276)
+
 ```mermaid
 flowchart TB
     subgraph A["形态 A · Inproc（离线 LLM, 默认）"]
-        A1["Python 主进程<br/>LLM(...) → InprocClient<br/>core_client.py:274"]
+        A1["Python 主进程<br/>LLM(...) → InprocClient<br/>core_client.py"]
         A2["EngineCore 同进程内嵌"]
         A3["Worker 子进程 × N<br/>(MultiprocExecutor 仍 fork)"]
         A1 --- A2 --> A3
@@ -118,9 +137,12 @@ flowchart TB
     class C1,C2,C3 c;
 ```
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"InprocClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · InprocClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L276)
+
 | 形态 | client 类 | EngineCore | Worker |
 | --- | --- | --- | --- |
-| A · Inproc | `InprocClient`（`core_client.py:274`） | 不 fork，跟 LLM 同进程 | 仍 fork（除非 TP=1 单卡） |
+| A · Inproc | `InprocClient`（`core_client.py`） | 不 fork，跟 LLM 同进程 | 仍 fork（除非 TP=1 单卡） |
 | B · MPClient | `AsyncMPClient` / `SyncMPClient` | 由 `launch_core_engines` fork | `MultiprocExecutor` fork |
 | C · Ray | 同 B，但 Executor 换成 `RayDistributedExecutor` | 同 B | Ray actor，可跨机器 |
 
@@ -134,7 +156,10 @@ flowchart TB
 
 ### 4.1 Socket 类型
 
-`vllm/v1/engine/core_client.py:511` 起，`MPClient.__init__` 同时建两条 socket：
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient.__init__"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L480)
+
+`vllm/v1/engine/core_client.py` 起，`MPClient.__init__` 同时建两条 socket：
 
 ```python
 # client（API Server）侧
@@ -151,18 +176,30 @@ self.output_socket = make_zmq_socket(self.ctx, output_address, zmq.PULL)        
 
 `vllm/utils/network_utils.py` 统一封装：
 
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"get_open_zmq_ipc_path","anchor":"return f\"ipc://{base_rpc_path}/{uuid4()}\""} -->
+[源码锚点：vllm/utils/network_utils.py · get_open_zmq_ipc_path](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L143)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"get_tcp_uri","anchor":"return f\"tcp://[{ip}]:{port}\""} -->
+[源码锚点：vllm/utils/network_utils.py · get_tcp_uri](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L136)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"get_tcp_uri","anchor":"return f\"tcp://{ip}:{port}\""} -->
+[源码锚点：vllm/utils/network_utils.py · get_tcp_uri](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L138)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"make_zmq_socket"} -->
+[源码锚点：vllm/utils/network_utils.py · make_zmq_socket](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L284)
+
 | 行号 | 内容 |
 | --- | --- |
-| `network_utils.py:143` | `return f"ipc://{base_rpc_path}/{uuid4()}"` —— 单机默认 Unix domain socket |
-| `network_utils.py:136-138` | `return f"tcp://{ip}:{port}"` —— 跨机退化到 TCP |
-| `network_utils.py:284` | `def make_zmq_socket(...)` —— 统一工厂 |
+| `network_utils.py` | `return f"ipc://{base_rpc_path}/{uuid4()}"` —— 单机默认 Unix domain socket |
+| `network_utils.py` | `return f"tcp://{ip}:{port}"` —— 跨机退化到 TCP |
+| `network_utils.py` | `def make_zmq_socket(...)` —— 统一工厂 |
 
 IPC 省一次内核协议栈，单机延迟亚毫秒级。
 
 ### 4.3 序列化：msgspec.msgpack
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","anchor":"import msgspec.msgpack"} -->
+[源码锚点：vllm/v1/engine/core_client.py](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L19)
+
 ```python
-# vllm/v1/engine/core_client.py:18
+# vllm/v1/engine/core_client.py
 import msgspec.msgpack
 
 # line 673：启动握手
@@ -173,7 +210,10 @@ decoded   = msgspec.msgpack.decode(buf)
 scale_msg = msgspec.msgpack.encode(...)
 ```
 
-更完整的请求 / 输出编解码用 `vllm/v1/serial_utils.py:136 MsgpackEncoder`：
+<!-- vllm-source: {"path":"vllm/v1/serial_utils.py","symbol":"MsgpackEncoder"} -->
+[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/serial_utils.py#L136)
+
+更完整的请求 / 输出编解码用 `vllm/v1/serial_utils.py MsgpackEncoder`：
 
 ```python
 class MsgpackEncoder:
@@ -199,18 +239,33 @@ class MsgpackEncoder:
 
 ### 5.1 核心类：MessageQueue + ShmRingBuffer
 
-`vllm/distributed/device_communicators/shm_broadcast.py:358` 的 `MessageQueue` 底层是基于 `multiprocessing.shared_memory.SharedMemory` 的环形缓冲区：
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L365)
+
+`vllm/distributed/device_communicators/shm_broadcast.py` 的 `MessageQueue` 底层是基于 `multiprocessing.shared_memory.SharedMemory` 的环形缓冲区：
+
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L216)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer.__init__","anchor":"self.shared_memory = shared_memory.SharedMemory("} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L286)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer.__init__","anchor":"self.shared_memory = shared_memory.SharedMemory(name=name)"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L304)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L365)
 
 | 行号 | 角色 |
 | --- | --- |
-| `shm_broadcast.py:209` | `class ShmRingBuffer` —— 共享内存环形缓冲区 |
-| `shm_broadcast.py:279` | `self.shared_memory = shared_memory.SharedMemory(...)` —— writer 端创建段 |
-| `shm_broadcast.py:297` | worker 端 `shared_memory.SharedMemory(name=name)` —— attach 同一段 |
-| `shm_broadcast.py:358` | `class MessageQueue` —— 一写多读的发布订阅封装 |
+| `shm_broadcast.py` | `class ShmRingBuffer` —— 共享内存环形缓冲区 |
+| `shm_broadcast.py` | `self.shared_memory = shared_memory.SharedMemory(...)` —— writer 端创建段 |
+| `shm_broadcast.py` | worker 端 `shared_memory.SharedMemory(name=name)` —— attach 同一段 |
+| `shm_broadcast.py` | `class MessageQueue` —— 一写多读的发布订阅封装 |
 
 ### 5.2 EngineCore 端 / Worker 端 attach
 
-EngineCore 端（`vllm/v1/executor/multiproc_executor.py:150`）：
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor._init_executor","anchor":"self.rpc_broadcast_mq = MessageQueue("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor._init_executor](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L151)
+
+EngineCore 端（`vllm/v1/executor/multiproc_executor.py`）：
 
 ```python
 self.rpc_broadcast_mq = MessageQueue(           # line 150
@@ -221,7 +276,10 @@ self.rpc_broadcast_mq = MessageQueue(           # line 150
 scheduler_output_handle = self.rpc_broadcast_mq.export_handle()  # line 156
 ```
 
-Worker 端（`multiproc_executor.py:551`）：
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc._init_message_queues","anchor":"self.rpc_broadcast_mq = MessageQueue.create_from_handle("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc._init_message_queues](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L569)
+
+Worker 端（`multiproc_executor.py`）：
 
 ```python
 self.rpc_broadcast_mq = MessageQueue.create_from_handle(  # line 551
@@ -231,8 +289,11 @@ self.rpc_broadcast_mq = MessageQueue.create_from_handle(  # line 551
 
 每步 forward 前广播：
 
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor.collective_rpc","anchor":"self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor.collective_rpc](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L377)
+
 ```python
-# multiproc_executor.py:373
+# multiproc_executor.py
 self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))
 ```
 
@@ -240,7 +301,10 @@ self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))
 
 ### 5.3 关键 trick：PEP 574 OOB 零拷贝
 
-`shm_broadcast.py:720 enqueue`：
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L727)
+
+`shm_broadcast.py enqueue`：
 
 ```python
 def enqueue(self, obj, timeout=None):
@@ -262,7 +326,10 @@ def enqueue(self, obj, timeout=None):
     self._spin_condition.notify()                      # line 760
 ```
 
-配合 `pickle.HIGHEST_PROTOCOL` 的 **PickleBuffer**（[PEP 574](https://peps.python.org/pep-0574/)）特性——大 tensor / numpy 数组**不被 pickle 复制**，指针塞进 OOB buffer 列表，**零拷贝**写入共享内存。dequeue 端 `pickle.loads(buffers=...)`（`shm_broadcast.py:783`）直接拿到内存视图，同样零拷贝。
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.dequeue","anchor":"obj = pickle.loads(all_buffers[0], buffers=all_buffers[1:])"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.dequeue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L790)
+
+配合 `pickle.HIGHEST_PROTOCOL` 的 **PickleBuffer**（[PEP 574](https://peps.python.org/pep-0574/)）特性——大 tensor / numpy 数组**不被 pickle 复制**，指针塞进 OOB buffer 列表，**零拷贝**写入共享内存。dequeue 端 `pickle.loads(buffers=...)`（`shm_broadcast.py`）直接拿到内存视图，同样零拷贝。
 
 ---
 
@@ -362,7 +429,10 @@ flowchart LR
 
 - **API Server 是无状态的**——本质是 ZMQ client，崩了只丢正在排队的 HTTP 连接，不影响 EngineCore 里的 KV cache。生产用 `--api-server-count > 1` 多副本 + LB 即可水平扩。
 - **EngineCore 是有状态单点**——`Scheduler.running`、`BlockPool` 都活在它进程内。崩了等同于该实例所有 in-flight 请求丢失。K8s 里 `EngineCore + Worker` 必须用 `LeaderWorkerSet` 整组重启。
-- **Worker 之间对等，但只有 rank 0 是 driver**——`is_driver_worker=True`（`multiproc_executor.py:644` 参数）的那个负责收 Scheduler 输出并广播给其余 worker，其余是 NCCL 同步执行者。
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L662)
+
+- **Worker 之间对等，但只有 rank 0 是 driver**——`is_driver_worker=True`（`multiproc_executor.py` 参数）的那个负责收 Scheduler 输出并广播给其余 worker，其余是 NCCL 同步执行者。
 - **进程粒度的资源隔离**：每个 Worker 进程独立持有显存、CUDA stream、CUDA Graph capture buffer。这就是为什么 LLM 部署要避免 sidecar、避免共卡——一旦同卡再起别的 GPU 进程，Worker 的显存测量与 Graph 都可能错乱。
 - **shared-memory 不能跨机器**——所以跨节点 PP / EP 必须改走 Ray actor（形态 C）或 NCCL。控制平面的 ZMQ 跨机自动降 TCP，但数据平面没这条退路。
 
@@ -370,37 +440,111 @@ flowchart LR
 
 ## 10. 代码索引（贴墙速查）
 
+<!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core"} -->
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1253)
+<!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"CoreEngineProcManager.__init__","anchor":"context.Process("} -->
+[源码锚点：vllm/v1/engine/utils.py · CoreEngineProcManager.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L165)
+<!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"CoreEngineProcManager.__init__","anchor":"proc.start()"} -->
+[源码锚点：vllm/v1/engine/utils.py · CoreEngineProcManager.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L210)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"InprocClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · InprocClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L276)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient.__init__"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L480)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient.__init__","anchor":"self.ctx, output_address, zmq.PULL"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L526)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"make_zmq_socket"} -->
+[源码锚点：vllm/utils/network_utils.py · make_zmq_socket](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L284)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"get_tcp_uri","anchor":"return f\"tcp://[{ip}]:{port}\""} -->
+[源码锚点：vllm/utils/network_utils.py · get_tcp_uri](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L136)
+<!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"get_open_zmq_inproc_path","anchor":"return f\"inproc://{uuid4()}\""} -->
+[源码锚点：vllm/utils/network_utils.py · get_open_zmq_inproc_path](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L147)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","anchor":"import msgspec.msgpack"} -->
+[源码锚点：vllm/v1/engine/core_client.py](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L19)
+<!-- vllm-source: {"path":"vllm/v1/serial_utils.py","symbol":"MsgpackEncoder"} -->
+[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/serial_utils.py#L136)
+<!-- vllm-source: {"path":"vllm/v1/serial_utils.py","symbol":"MsgpackEncoder.__init__","anchor":"self.encoder = msgpack.Encoder(enc_hook=self.enc_hook)"} -->
+[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/serial_utils.py#L156)
+<!-- vllm-source: {"path":"vllm/v1/serial_utils.py","symbol":"MsgpackEncoder.encode","anchor":"bufs[0] = self.encoder.encode(obj)"} -->
+[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder.encode](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/serial_utils.py#L171)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L365)
+
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L662)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process","anchor":"proc = context.Process("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L694)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process","anchor":"proc.start()"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L705)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"DPAsyncMPClient._ensure_stats_update_task.run_engine_stats_update_task","anchor":"scale_msg = msgspec.msgpack.encode("} -->
+[源码锚点：vllm/v1/engine/core_client.py · DPAsyncMPClient._ensure_stats_update_task.run_engine_stats_update_task](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L1312)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"DPAsyncMPClient._ensure_stats_update_task.run_engine_stats_update_task","anchor":"msg = msgspec.msgpack.encode("} -->
+[源码锚点：vllm/v1/engine/core_client.py · DPAsyncMPClient._ensure_stats_update_task.run_engine_stats_update_task](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L1324)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"DPAsyncMPClient.add_request_async","anchor":"req_msg = msgspec.msgpack.encode((\"FIRST_REQ\", chosen_engine))"} -->
+[源码锚点：vllm/v1/engine/core_client.py · DPAsyncMPClient.add_request_async](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L1369)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"DPLBAsyncMPClient._scale_up_elastic_ep","anchor":"scale_up_marker = msgspec.msgpack.encode("} -->
+[源码锚点：vllm/v1/engine/core_client.py · DPLBAsyncMPClient._scale_up_elastic_ep](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L1694)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"DPLBAsyncMPClient._scale_down_elastic_ep","anchor":"scale_down_marker = msgspec.msgpack.encode("} -->
+[源码锚点：vllm/v1/engine/core_client.py · DPLBAsyncMPClient._scale_down_elastic_ep](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L1752)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L216)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer.__init__","anchor":"self.shared_memory = shared_memory.SharedMemory("} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L286)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer.__init__","anchor":"self.shared_memory = shared_memory.SharedMemory(name=name)"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L304)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L727)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.dequeue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.dequeue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L772)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue.oob_callback"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue.oob_callback](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L733)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue.oob_callback","anchor":"return False"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue.oob_callback](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L741)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor._init_executor","anchor":"self.rpc_broadcast_mq = MessageQueue("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor._init_executor](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L151)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor._init_executor","anchor":"scheduler_output_handle = self.rpc_broadcast_mq.export_handle()"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor._init_executor](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L157)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc._init_message_queues","anchor":"self.rpc_broadcast_mq = MessageQueue.create_from_handle("} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc._init_message_queues](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L569)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor.collective_rpc","anchor":"self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor.collective_rpc](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L377)
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor.collective_rpc.get_response","anchor":"status, result = mq.dequeue(timeout=dequeue_timeout)"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor.collective_rpc.get_response](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L390)
+
 | 用途 | 文件 : 行 |
 | --- | --- |
 | **进程 spawn** | |
 | API Server 入口 | `vllm/entrypoints/cli/serve.py:main` → `entrypoints/openai/api_server.py:run_server` |
-| EngineCore 入口（子进程） | `vllm/v1/engine/core.py:1087 run_engine_core` |
-| EngineCore spawn 点 | `vllm/v1/engine/utils.py:144,189` |
-| Worker 入口（子进程） | `vllm/v1/executor/multiproc_executor.py:792 worker_main` |
-| Worker spawn 点 | `multiproc_executor.py:644,676,687` |
-| Inproc 客户端 | `vllm/v1/engine/core_client.py:274 InprocClient` |
-| MP 客户端基类 | `vllm/v1/engine/core_client.py:460 MPClient` |
+| EngineCore 入口（子进程） | `vllm/v1/engine/core.py run_engine_core` |
+| EngineCore spawn 点 | `vllm/v1/engine/utils.py` |
+| Worker 入口（子进程） | `vllm/v1/executor/multiproc_executor.py worker_main` |
+| Worker spawn 点 | `multiproc_executor.py` |
+| Inproc 客户端 | `vllm/v1/engine/core_client.py InprocClient` |
+| MP 客户端基类 | `vllm/v1/engine/core_client.py MPClient` |
 | **控制平面（ZMQ + msgpack）** | |
-| ROUTER socket（API 入站） | `vllm/v1/engine/core_client.py:511` |
-| PULL socket（API 出站） | `vllm/v1/engine/core_client.py:519` |
-| `make_zmq_socket` 工厂 | `vllm/utils/network_utils.py:284` |
-| IPC vs TCP endpoint 选 | `vllm/utils/network_utils.py:136-147` |
-| msgspec 引入 | `vllm/v1/engine/core_client.py:18` |
-| `MsgpackEncoder` | `vllm/v1/serial_utils.py:136,156,171` |
-| 控制消息 encode 实例 | `core_client.py:1249,1261,1306,1625,1683` |
+| ROUTER socket（API 入站） | `vllm/v1/engine/core_client.py` |
+| PULL socket（API 出站） | `vllm/v1/engine/core_client.py` |
+| `make_zmq_socket` 工厂 | `vllm/utils/network_utils.py` |
+| IPC vs TCP endpoint 选 | `vllm/utils/network_utils.py` |
+| msgspec 引入 | `vllm/v1/engine/core_client.py` |
+| `MsgpackEncoder` | `vllm/v1/serial_utils.py` |
+| 控制消息 encode 实例 | `core_client.py` |
 | **数据平面（共享内存）** | |
-| `MessageQueue` 类 | `vllm/distributed/device_communicators/shm_broadcast.py:358` |
-| `ShmRingBuffer` | `shm_broadcast.py:209` |
-| `SharedMemory` 创建 | `shm_broadcast.py:279` |
-| `SharedMemory` attach（worker 端） | `shm_broadcast.py:297` |
-| `MessageQueue.enqueue` | `shm_broadcast.py:720` |
-| `MessageQueue.dequeue` | `shm_broadcast.py:765` |
-| OOB 零拷贝 callback | `shm_broadcast.py:726-734` |
-| `rpc_broadcast_mq` 创建 | `multiproc_executor.py:150` |
-| `export_handle` 传子进程 | `multiproc_executor.py:156` |
-| Worker 端 `create_from_handle` | `multiproc_executor.py:551` |
-| `enqueue` SchedulerOutput | `multiproc_executor.py:373` |
-| `dequeue` Worker response | `multiproc_executor.py:386` |
+| `MessageQueue` 类 | `vllm/distributed/device_communicators/shm_broadcast.py` |
+| `ShmRingBuffer` | `shm_broadcast.py` |
+| `SharedMemory` 创建 | `shm_broadcast.py` |
+| `SharedMemory` attach（worker 端） | `shm_broadcast.py` |
+| `MessageQueue.enqueue` | `shm_broadcast.py` |
+| `MessageQueue.dequeue` | `shm_broadcast.py` |
+| OOB 零拷贝 callback | `shm_broadcast.py` |
+| `rpc_broadcast_mq` 创建 | `multiproc_executor.py` |
+| `export_handle` 传子进程 | `multiproc_executor.py` |
+| Worker 端 `create_from_handle` | `multiproc_executor.py` |
+| `enqueue` SchedulerOutput | `multiproc_executor.py` |
+| `dequeue` Worker response | `multiproc_executor.py` |
 | **GPU 平面（NCCL）** | |
 | 进程组初始化 | `vllm/distributed/parallel_state.py` |
 | Worker TP forward 的 AllReduce | `vllm/distributed/communication_op.py` |
@@ -564,4 +708,11 @@ reader 直接对 mmap 段做 np.frombuffer + torch.from_numpy（不 memcpy）
 - 进入源码深读：[`03-code-walkthrough/01-entry-points.md`](../03-code-walkthrough/01-entry-points.md)（`LLMEngine.add_request` → `step()` 的完整调用链）。
 - 想看 GPU 平面通信：[`05-distributed/01-tp-pp-ep.md`](../05-distributed/01-tp-pp-ep.md)（本节只涵盖 CPU 进程间，TP/PP 的 NCCL AllReduce 在这里）。
 - 想从生产视角理解：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)（这套进程模型在 K8s 上的 Pod 划分与 LWS 部署形态）。
-- 想看源码：`vllm/v1/engine/core_client.py:460` (`MPClient`)、`vllm/distributed/device_communicators/shm_broadcast.py:358` (`MessageQueue`)、`vllm/v1/executor/multiproc_executor.py:792` (`worker_main`)。
+<!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+<!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue"} -->
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L365)
+<!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+
+- 想看源码：`vllm/v1/engine/core_client.py` (`MPClient`)、`vllm/distributed/device_communicators/shm_broadcast.py` (`MessageQueue`)、`vllm/v1/executor/multiproc_executor.py` (`worker_main`)。

@@ -12,6 +12,8 @@
 > 3. 对 6 类规模化典型故障，给出"现象 → 怀疑 → 验证 → 处置"的工业排查路径。
 > 4. 解释 EPLB / DP padding 对齐 / 微批重叠 / 弹性 EP / blast radius 控制各自治的是哪个规模化病。
 
+> **当前源码复核（`b23bd73`）：** 本章同时包含 vLLM 已实现机制与平台架构指导。Elastic EP 已有显式 scale API、standby group、weight transfer、EPLB reshuffle 与 rewarm 流程，但受 EPLB、PP、LB 组合限制；K8s 自愈、全局调度、拓扑放置、watchdog 与多集群容灾仍由平台负责，不是 vLLM 自动保证。
+
 前四章讲"怎么把模型切到多卡"。这一章讲一件不一样的事：当卡数从 8 涨到 8000，**很多在小集群上无所谓的设计，会变成压垮服务的主因**。规模不是把同样的问题放大，而是引入新问题。
 
 ---
@@ -107,7 +109,7 @@ EP 越大，AllToAll 越是 all-pairs 通信。万卡尺度上，网络（IB/RoC
 - **combine 端 reduce 下沉**：在交换机做 in-network reduction（SHARP）或分层规约，缓解 incast。
 - **拥塞控制调参**：RoCE 下调 DCQCN/PFC，避免 pause 风暴。
 
-一句话：**大 MoE 在通用 NCCL AllToAll 上一定撞墙，这就是 DeepSeek 必须自研 DeepEP 的原因**（[`03-expert-parallel-deep-dive.md`](03-expert-parallel-deep-dive.md) §4 行 155）。
+一句话：**大 MoE 的通用 collective 很可能先撞网络/同步墙，但是否需要 DeepEP 要由 topology、backend 支持和实测决定**（参见 [`03-expert-parallel-deep-dive.md`](03-expert-parallel-deep-dive.md) §4）。
 
 ---
 
@@ -136,7 +138,7 @@ EP 越大，AllToAll 越是 all-pairs 通信。万卡尺度上，网络（IB/RoC
 - **利用"推理无状态"**：推理实例除了 KV cache 没有需要持久化的状态，KV 可重算。所以恢复策略简单粗暴：**从 LB 摘除 → 杀掉整个实例 → 拉新实例 → warmup 后重新入流量**。配合冗余副本 + 全局 LB，单实例死对用户近乎无感（in-flight 的请求重试到别的副本）。
 - **快速失败而非长等**：调短 NCCL watchdog/心跳超时，让 hang 尽快暴露并触发重建，而不是干等几分钟。
 - **慢卡主动驱逐**：监控 ECC 计数、SM 时钟、per-rank timing，命中阈值就把该节点 cordon 掉，别让它当 straggler 拖整组。
-- **弹性 EP（进阶）**：EP 组支持在不停服的情况下动态增减 rank（重算 expert 映射），让坏卡能被在线替换而不是整单元重启——vLLM 的 EPLB 基础设施（`vllm/distributed/eplb/`）是这条路的起点。
+- **弹性 EP（进阶）**：当前实现通过显式 scaling API、drain、standby group、权重传输、expert 映射切换与 rewarm 增减 DP/EP 资源；它不是“发现坏卡即自动无损替换”，仍需平台触发、健康判定和失败回滚。
 - **K8s 配套**：liveness/readiness 探针 + 反亲和（同实例的 rank 别全堆一台机的同一故障域）+ PodDisruptionBudget（[`01-tp-pp-ep.md`](01-tp-pp-ep.md) §11.2、[`06-reliability-and-failure-modes.md`](../08-production-deployment/06-reliability-and-failure-modes.md)）。
 
 ---

@@ -12,6 +12,8 @@
 > 3. 用 `/metrics` 端点读 Prometheus 指标，把数字翻译成请求行为
 > 4. 用 torch.profiler 看出 prefill / decode 各自的 kernel 时间分布
 
+> **当前源码复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** 日志适合解释单次事件，`/metrics` 适合观察时间序列，profiler 用来归因 CPU/GPU 时间。当前关键指标是 `num_requests_running`、`num_requests_waiting`、`kv_cache_usage_perc`、prefix cache hit/query counter，以及 TTFT、ITL、E2E histogram；不要沿用旧文章里的 `num_running`、`num_waiting` 或预先算好的“命中率”指标。
+
 让 vLLM 把它每一步在干什么打印出来。看一次比读 10 遍文档管用。
 
 ---
@@ -65,17 +67,19 @@ Engine: Avg prompt throughput: ... tokens/s
 
 ## 3. 手动加 print：观察 Scheduler 决策
 
-实验：在 `vllm/v1/core/sched/scheduler.py` 的 `schedule()` 末尾加：
+实验：只在**一次性实验分支**中，在 `vllm/v1/core/sched/scheduler.py` 的 `schedule()` 返回前临时加：
 
 ```python
-def schedule(self) -> SchedulerOutput:
-    output = self._do_schedule(...)   # 假设主逻辑已抽出
-    print(f"[SCHED] step n_running={len(self.running)} "
-          f"n_waiting={len(self.waiting)} "
-          f"total_tokens={output.total_num_scheduled_tokens} "
-          f"new={[r.request_id for r in output.scheduled_new_reqs]} "
-          f"preempted={list(output.preempted_req_ids)}")
-    return output
+# scheduler_output 已在 schedule() 尾部构造；插在
+# self._update_after_schedule(scheduler_output) 之前。
+print(
+    "[SCHED]",
+    f"running={len(self.running)}",
+    f"waiting={len(self.waiting)}",
+    f"total_tokens={scheduler_output.total_num_scheduled_tokens}",
+    f"scheduled={list(scheduler_output.num_scheduled_tokens)}",
+    f"preempted={sorted(scheduler_output.preempted_req_ids)}",
+)
 ```
 
 跑：
@@ -95,20 +99,26 @@ llm.generate(["A"*100, "B"*200, "C"*50], SamplingParams(max_tokens=30))
 
 ## 4. 观察 KV 分配
 
-在 `vllm/v1/core/kv_cache_manager.py` 的 `allocate_slots` 末尾加：
+在 `vllm/v1/core/kv_cache_manager.py` 的 `allocate_slots()` 中给
+`coordinator.allocate_new_blocks(...)` 之后设断点，观察：
 
 ```python
-print(f"[KV] req={request.request_id} "
-      f"new_tokens={num_new_tokens} "
-      f"block_table_len={len(request.block_table)} "
-      f"free_blocks={self.block_pool.get_num_free_blocks()}")
+print(
+    "[KV]",
+    f"req={request.request_id}",
+    f"new_tokens={num_new_tokens}",
+    f"new_blocks={len(new_blocks)}",
+    f"free_blocks={self.block_pool.get_num_free_blocks()}",
+)
 ```
 
 跑同样 demo，观察：
 
-- 第一次 allocate 是大头（prompt 长度对应的所有 block）
-- 后续 decode 大部分时候 block_table_len 不变（block 没满）
-- 偶尔跨 block 边界时 block_table_len += 1
+- 第一次 allocate 通常是大头（prompt 未命中的 token 需要 slot）
+- 后续 decode 只有在已有 block 容量不足时才新增 block
+- prefix cache、sliding window、KV connector 会改变分配量，不能只用 prompt 长度直接推断
+
+实验结束后用 `git diff` 检查并只撤掉你自己的临时观测代码；不要把 `print` 带进生产构建。
 
 ---
 
@@ -119,16 +129,12 @@ print(f"[KV] req={request.request_id} "
 prompts = ["System: be concise. User: hi"] * 3
 ```
 
-如果 prefix caching 工作正常，从第 2 个请求开始：
+如果 prefix caching 工作正常，从后续相同前缀请求开始：
 
-- profile run 阶段：`block_table_len` 立即 = prompt 的 block 数
-- 但 `allocate_slots` 内部应该命中了 cache，free_blocks 几乎没减
+- `prefix_cache_hits_total` 与 `prefix_cache_queries_total` 的增量可用于计算命中比例
+- `allocate_slots()` 只为未命中部分和新生成 token 申请新 block
 
-可以在 `block_pool.py` 的 hash 命中分支加 print：
-
-```python
-print(f"[CACHE HIT] hash={block_hash} block_id={existing_block.block_id}")
-```
+不要把 `free_blocks` “几乎不减”当成唯一证据：并发请求释放、cache eviction 和尾部非整块 token 都会影响它。优先同时保存请求级日志与上述两个 counter 的前后快照。
 
 ---
 

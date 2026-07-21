@@ -9,8 +9,10 @@
 > **学完能：**
 > 1. 说清 vLLM V1 仅有的 2 种官方策略：FCFS（deque）/ PRIORITY（min-heap），数据结构、复杂度、各自的 add/pop 行为。
 > 2. 推导 PRIORITY 模式下"抢占—释放—重排"的发生顺序，并解释为什么会出现"实质上的优先级反演"。
-> 3. 量化算抢占代价（recompute 模式下损失多少 prefill token、swap 模式下走多少 PCIe）。
+> 3. 量化算当前 recompute 抢占代价，并与独立 KV offload 的传输代价比较。
 > 4. 给定 SLA 描述（多租户 / 优先级请求 / 长尾），选择"用 PRIORITY"、"上多实例"、"加路由层"中的哪个方案。
+
+> **当前源码复核（`b23bd73`）：** 官方 policy 仍为 `fcfs` / `priority`；数值越小优先级越高。当前 `_preempt_request()` 只有释放 KV、清零进度并回 waiting 的 recompute 路径，`--preemption-mode swap` 已不是当前 V1 CLI。
 
 Scheduler 文章讲了"一步内怎么决定跑谁"，本节是其中**队列层**的专题：vLLM 真正提供的调度策略只有两种，但里面藏了几个坑。
 
@@ -18,7 +20,10 @@ Scheduler 文章讲了"一步内怎么决定跑谁"，本节是其中**队列层
 
 ## 1. 仅有的 2 种官方策略
 
-源码：`vllm/v1/core/sched/request_queue.py:13`
+<!-- vllm-source: {"path":"vllm/v1/core/sched/request_queue.py","symbol":"SchedulingPolicy"} -->
+[源码锚点：vllm/v1/core/sched/request_queue.py · SchedulingPolicy](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/request_queue.py#L13)
+
+源码：`vllm/v1/core/sched/request_queue.py`
 
 ```python
 class SchedulingPolicy(Enum):
@@ -28,7 +33,10 @@ class SchedulingPolicy(Enum):
 
 **没有 SJF（最短作业优先）、没有 EDF（最早 deadline）、没有 weighted fair queueing。** 想要这些都得自己在 routing 层做，或者通过 `--scheduling-policy=priority` + 自定义 `request.priority` 字段间接表达。
 
-策略在启动时定，**全局生效**（`scheduler.py:158`），运行中不能切。
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.policy = SchedulingPolicy(self.scheduler_config.policy)"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L177)
+
+策略在启动时定，**全局生效**（`scheduler.py`），运行中不能切。
 
 ---
 
@@ -50,14 +58,24 @@ class SchedulingPolicy(Enum):
 
 ## 3. 多个队列：`waiting` 与 `skipped_waiting`
 
-`scheduler.py:164-166` 创建两个：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.waiting = create_request_queue(self.policy)"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L183)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.skipped_waiting = create_request_queue(self.policy)"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L185)
+
+`scheduler.py` 创建两个：
 
 ```python
 self.waiting = create_request_queue(self.policy)
 self.skipped_waiting = create_request_queue(self.policy)
 ```
 
-`skipped_waiting` 是个"被本步跳过"的旁置队列。常见跳过原因（`scheduler.py:430-440` 区段）：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"#    its max_total_tokens or max_model_len."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L546)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+
+`skipped_waiting` 是个"被本步跳过"的旁置队列。常见跳过原因（`scheduler.py` 区段）：
 
 - 请求超 `max_model_len`
 - encoder budget 耗尽
@@ -70,7 +88,10 @@ self.skipped_waiting = create_request_queue(self.policy)
 
 即：**FCFS 模式下，如果队头请求暂时不能跑（如等 encoder cache），后面的小请求会被先跑——FCFS 不严格守"先来先服务"**。这通常是好事（throughput +），但生产中调试"为什么我的请求被晚到的请求挤了"时要记住。
 
-到下一步 `_select_waiting_queue_for_scheduling()`（`scheduler.py:1620`）会决定先消费哪个：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler._select_waiting_queue_for_scheduling","anchor":"if self.policy == SchedulingPolicy.FCFS:"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler._select_waiting_queue_for_scheduling](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L1967)
+
+到下一步 `_select_waiting_queue_for_scheduling()`（`scheduler.py`）会决定先消费哪个：
 
 - FCFS：先消费 `skipped_waiting`，腾完再 `waiting`
 - PRIORITY：比较两队头，选更小的 `(priority, arrival_time)`
@@ -79,7 +100,12 @@ self.skipped_waiting = create_request_queue(self.policy)
 
 ## 4. 抢占（preempt）：什么时候触发，谁被踢
 
-抢占只在**给 running 请求 allocate KV 失败**时触发（`scheduler.py:448-475`）：
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"preempted_req.get_num_encoder_embeds(i)"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L591)
+
+抢占只在**给 running 请求 allocate KV 失败**时触发（`scheduler.py`）：
 
 ```mermaid
 flowchart TD
@@ -109,16 +135,16 @@ flowchart TD
 - 被踢请求重新入 `waiting`，本步剩余 budget / 已分配 block 全部退还。
 - 整个过程**单步内可发生多次**（while 循环），直到 allocate 成功或 running 空。
 
-### 4.1 V1 默认 RECOMPUTE
+### 4.1 当前 V1 使用 RECOMPUTE
 
-V0 默认 SWAP，V1 改成 RECOMPUTE。原因：
+当前实现选择 RECOMPUTE。工程原因包括：
 
 - SWAP 需要 PCIe 拷贝 KV：H100 ↔ host ~50 GB/s，70B 模型一个长上下文请求 KV 可达数 GB——拷贝几十到几百 ms。
 - RECOMPUTE 只需在重新调度时跑一次 prefill；现代 GPU FLOPS 充足，且 chunked prefill 可分摊。
 - prefix caching 命中时 RECOMPUTE 大部分免费——前面 cached 的块复用，只重算 miss 段。
 - 综合 RECOMPUTE 通常**更快且实现更简单**。
 
-切回 SWAP：`--preemption-mode swap`（仅在 KV 极大、prefill 极贵的窄场景下值得考虑）。
+需要 CPU/远端 KV 时，应评估 `--kv-offload-backend` 或 `--kv-transfer-config` 的独立能力、状态协议和故障语义，不能用不存在的 preemption flag 切换。
 
 ---
 
@@ -157,7 +183,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 
 但若 prefix cache 命中率高（如 system prompt 长 + cache 未 evict），实际重算只是 miss 段——可能仅几十 ms。
 
-### 6.2 SWAP 模式
+### 6.2 独立 KV offload 的对比模型
 
 被踢请求 KV 拷出 CPU + 恢复时拷回。Llama-70B 长 2500 token KV ≈ 2.5 GB（BF16 GQA）。
 
@@ -172,7 +198,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 
 ### 6.3 监控
 
-抢占次数：`vllm:num_preemptions`（Counter）。生产突然 spike 通常意味着：
+抢占次数：Prometheus 暴露 `vllm:num_preemptions_total`（Counter）。生产突然 spike 通常意味着：
 
 1. 大批高优先级请求涌入；
 2. KV cache 容量配置过小（`--num-gpu-blocks-override` 不足）；
@@ -214,7 +240,7 @@ PRIORITY 下退化为 add → 重新按 (priority, arrival_time) 排——它若
 - vLLM V1 官方只有 **FCFS（deque）** 和 **PRIORITY（heap）**两种策略，启动时固定。
 - FCFS 并不严格"先来先服务"——`skipped_waiting` 队列允许小请求绕过卡住的大请求（throughput +）。
 - PRIORITY 模式下抢占踢 `max((priority, arrival_time))`，会**等效优先级反演**：低优请求做的工作可能被高优请求到达完全废弃。
-- V1 默认 RECOMPUTE 而非 SWAP——KV 拷贝太贵，prefix cache 命中下重算其实更快。
+- 当前 V1 抢占使用 RECOMPUTE；KV offload/transfer 是独立系统，必须另外核算传输、容量和一致性。
 - 复杂策略（SJF / EDF / weighted fair）请放路由层做，不要在 scheduler 里加。
 
 ## 自检
@@ -288,6 +314,11 @@ curl :8000/metrics | grep -E "preempt|kv_cache_usage|queue_time"
 ## 下一步
 
 - 下一节：[`03-kv-cache-manager.md`](03-kv-cache-manager.md)（理解 preempt 时 KV 是怎么 allocate / free 的）。
-- 想看源码：`vllm/v1/core/sched/request_queue.py`、`vllm/v1/core/sched/scheduler.py:430-475` 的 preempt 段。
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"#    its max_total_tokens or max_model_len."} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L546)
+<!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"preempted_req.get_num_encoder_embeds(i)"} -->
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L591)
+
+- 想看源码：`vllm/v1/core/sched/request_queue.py`、`vllm/v1/core/sched/scheduler.py` 的 preempt 段。
 - 想做实验：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md) 第 4 个实验"batching 极限"中可手工触发 preempt 观察 `num_preemptions` 增长。
 - 想从生产视角理解：[`08-production-deployment/02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)（路由层是 vLLM 调度策略的真正延伸）。

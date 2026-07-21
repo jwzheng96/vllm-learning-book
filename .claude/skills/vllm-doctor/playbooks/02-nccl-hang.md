@@ -4,7 +4,7 @@
 - **必须同时满足**：
   - `sum(rate(vllm:generation_tokens_total[1m])) ≈ 0`
   - `sum(vllm:num_requests_running) > 0`
-  - 持续 ≥ 60s
+  - 持续超过该服务已定义的无进展窗口
 - **排除**：
   - `num_requests_running == 0` → 没人请求，不是 hang
   - `request_inference_time` 还在涨 → 是单请求慢，不是 NCCL 卡
@@ -31,36 +31,32 @@ done
 
 | 现象 | 根因 |
 | --- | --- |
-| 全部 worker 都 `NCCL_WAIT_LIKELY` | 真 NCCL 集合通信卡死（rank 间消息丢失或拓扑断） |
-| 仅 1 个 worker `NOT_IN_NCCL`，其他都 `NCCL_WAIT_LIKELY` | 那 1 个 worker 慢（OOM 边缘 / 单 GPU 错误 / 该节点 thermal throttle），其他在等它 |
-| 多 pod NVLink CRC/Replay 错误 NON-ZERO | 硬件问题（NVLink 通道劣化），需换节点 |
-| `nccl-env.txt` 里 `NCCL_TIMEOUT` 未设 | 上次卡的就是这次，看门狗缺失，整改先注入 env |
-| 同一时刻 mesh sidecar 重启 | 服务网格代理把 NCCL 端口路由断了，参考 `06-reliability-and-failure-modes.md:105` |
+| 全部 worker stack 同时停在 collective，step/token 无进展 | NCCL/collective hang 假设较强；继续核对 rank 与 transport log |
+| 仅 1 个 worker 不在 collective，其他 rank 等待 | 该 rank 的 GPU、进程或输入路径可能是 straggler |
+| 硬件错误 counter 与故障时间对齐且只集中于节点 | 硬件/链路问题假设较强，交由平台按硬件流程确认 |
+| timeout/monitor 配置与批准基线不同 | 配置漂移；不能仅因某变量未设就断定根因 |
+| mesh 变更/重启与故障时间对齐 | 网络路径是候选原因；必须用连接与路由证据确认 |
 
 ## Remediate
 
-按 `scripts/remediate_02.sh` 输出执行。关键动作：
+`scripts/remediate_02.sh` 只生成计划。每项动作展示当前状态、完整部署单元、blast radius、回滚与停止条件后逐条批准：
 
-- **L2（直接做）**：
-  - 注入 `NCCL_TIMEOUT=60 NCCL_BLOCKING_WAIT=1 TORCH_NCCL_ENABLE_MONITORING=1`
-  - 让"下次再卡 60s 就 crash"，K8s 自动重启
-- **L3（弹确认）**：
-  - 重启整个 LWS group（**必须整组重启，不是单 pod**——NCCL group 跨 rank，单删一个会让剩下的继续等）
-  - 如有 `BAD_NODE`，taint 该节点 + 报修硬件
+- **L2（需逐命令批准）**：只在目标 NCCL/PyTorch 版本官方语义和 staging 演练确认后，修改 timeout/monitoring；环境变量名和值都不得从本 playbook 硬编码。
+- **L3（需逐命令批准）**：从路由池移除并重建**完整并行部署单元**；部署单元可能是单 Pod 多 GPU 或多 Pod group，先从实际拓扑解析。taint/cordon 节点是独立平台变更，另行批准。
 
 ## Verification
 
-整改后 120s 起（留足重新初始化时间），连续 3 个采样点：
-- `sum(rate(vllm:generation_tokens_total[1m])) > 1.0`
-- `sum(vllm:num_requests_running) > 0`
+重新 warmup 后，覆盖批准的验证请求和观测窗口：
+- generation token rate 与 step progress 恢复到事故前同类负载基线
+- running 请求可以完成，所有 rank 无持续 collective wait
 
 任一不满足且重启已做过 → `NEEDS_HUMAN`，把 `evidence/nccl/` 整包给硬件 / 平台团队。
 
 ## Long-term
 
-- `NCCL_TIMEOUT=60`、`NCCL_BLOCKING_WAIT=1` 写进基线配置（默认就有）
-- DCGM 持续监控 NVLink CRC / Replay，CRC > 0 触发告警
-- 网格 sidecar 不要拦截 NCCL 端口（一般是 6000-6100 + IB 端口）
+- 将经目标版本验证的 timeout/monitoring 语义写进基线并做故障演练
+- DCGM/平台持续监控硬件错误；阈值和归零/累积语义由硬件运维标准定义
+- 根据实际 transport 和动态端口范围配置网络策略，不照抄固定端口
 - 见 `reference/checklist-prelaunch.md` 第 5、9 条；NCCL 环境速查见 `reference/nccl-env.md`
 
-<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md L79-111 + 07-incident-playbook.md case 2 -->
+<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md + 07-incident-playbook.md case 2 -->

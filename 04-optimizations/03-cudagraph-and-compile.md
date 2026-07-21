@@ -1,7 +1,7 @@
 
 
 
-># 03. CUDA Graph 与 torch.compile
+# 03. CUDA Graph 与 torch.compile
 
 > **谁该读这一篇？** 启动慢得离谱、改了模型出现奇怪错误、想自己改 attention kernel、或者想搞清"默认开 / 什么时候要关 / 怎么诊断"的读者。
 >
@@ -14,6 +14,8 @@
 > 2. 判断"我这个改动要不要 `--enforce-eager`"——给出 3 个该关的典型场景。
 > 3. 在启动失败 / 运行结果异常时，按降级路径定位到根因。
 > 4. 配 compile cache 让重启避免重复编译。
+
+> **当前源码复核（`b23bd73`）：** 当前 `CompilationConfig` 使用 `cudagraph_mode`、capture sizes、splitting ops 与 capability resolution，最终可能是 NONE、PIECEWISE、FULL、FULL_DECODE_ONLY 或组合模式；不能只用“默认开/关”描述。`--enforce-eager` 是诊断基线，不代表修复根因。
 
 ---
 
@@ -195,10 +197,14 @@ A: warmup（启动后跑几个 dummy 请求触发编译）。开 `VLLM_TORCH_COM
 
 ---
 
+## 单变量实验：eager → compile → graph
+
+用同一 workload 依次跑：`--enforce-eager` 正确性基线、compile-only 候选、解析后的 graph mode 候选。每组区分 cold start、首次请求 warmup、steady state，记录 compile/cache hit 日志、启动时长、显存、TTFT/TPOT/吞吐和输出一致性。缓存实验必须换新 cache dir 测 cold，再复用同一目录测 warm；出现 silent accuracy drift 立即回 eager 定位。
+
 ## 小结
 
 - CUDA Graph 消 **kernel launch overhead**（decode 主要受益），torch.compile 消 **Python overhead + op fusion**，两者叠加最佳。
-- 默认开。但调试、新模型、严重 OOM、冷启动敏感、动态 shape 多 → 用 `--enforce-eager` 关掉。
+- 最终模式受平台、模型、compile config 和 capability resolution 共同决定。调试、新模型、严重 OOM、冷启动敏感、动态 shape 多时，可先用 `--enforce-eager` 建立正确性基线，再逐层恢复能力。
 - 失败按 §4.6 流程从 CG → compile → 两者都关 逐级降级。
 - 启动慢的解药：`VLLM_TORCH_COMPILE_CACHE_DIR` 缓存到磁盘。
 

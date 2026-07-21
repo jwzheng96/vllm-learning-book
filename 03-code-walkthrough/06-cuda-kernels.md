@@ -13,6 +13,8 @@
 > 4. 说明 attention kernel 怎么用 `block_tables` 间接读 KV cache
 > 5. 说出 vLLM 现在主用 FlashAttention/FlashInfer、自家 kernel 作为 fallback 的工程取舍
 
+> **当前源码复核（`b23bd73`）：** 自定义 PagedAttention、FlashAttention、FlashInfer、Triton/平台专用实现并非固定主备顺序；selector 只能在各自支持矩阵内选择。修改 kernel 前要先证明请求实际命中该 backend/dispatch path，并为 eager、compile、CUDA Graph 和数值回退分别留证据。
+
 目录：`csrc/`。这是 vLLM 的 C++ / CUDA 部分。本节带你穿过最重要的几个文件，看 PagedAttention v1/v2 的真实 kernel 实现。CUDA 细节不是入门必需，但读过以后，很多性能问题会更容易定位。
 
 ---
@@ -178,14 +180,14 @@ flowchart TB
 
 ---
 
-## 4. 现代实现：FlashAttention v3 + FlashInfer 接管
+## 4. 现代实现：多 backend 并存
 
 如本课程前面提到的，vLLM 现在主用：
 
 - `vllm-flash-attn`（vllm 维护的 fork，FA2/FA3）
 - `flashinfer`
 
-它们都通过 Python 包提供，**不在 csrc/ 里**。vLLM 自己的 `paged_attention_v1/v2.cu` 现在主要作为 fallback。
+它们常通过独立包/扩展提供，**不在同一个 `csrc/attention` 实现里**。自定义 PagedAttention 是否被调用取决于平台、模型、dtype、layout、功能与显式 backend；不能仅凭安装了 FlashAttention 就认定它“接管”。
 
 但学习目的上看 v1/v2 仍很值：你能搞懂 paged 寻址、shared memory 用法、split-K reduction，这些是 attention kernel 的通用思想。
 
@@ -270,7 +272,7 @@ Python 调用：`torch.ops._C.paged_attention_v1(out, query, ...)`
 2. **shared memory layout**：避免 bank conflict
 3. **vectorize**：用 `float4` / `__half2` 把多个元素一次读写
 4. **register tile**：把热数据放寄存器，减少 shared memory 访问
-5. **CUDA Graph**：消 launch overhead（已默认）
+5. **CUDA Graph**：在支持的 capture mode/shape 下减少 launch overhead；最终模式由配置与兼容性决定
 6. **tensor core**：让 GEMM 走 WMMA / MMA 指令
 7. **fusion**：减少 kernel 数（RMSNorm + 后续 op）
 
@@ -309,7 +311,7 @@ A: 性能。FlashAttention v2/v3 由 Tri Dao 团队持续优化，针对最新�
 
 ## 小结
 
-- `csrc/attention/paged_attention_v1/v2.cu` 是 PagedAttention 自家 kernel；现在主用 vllm-flash-attn / FlashInfer，自家 kernel 作为 fallback。
+- `csrc/attention/paged_attention_v1/v2.cu` 是自定义 PagedAttention 路径；当前还并存 FlashAttention、FlashInfer、Triton 与平台专用路径，选择必须以最终 backend/dispatch 证据为准。
 - v1 的 grid 是 `(num_heads, num_seqs)`，每个 (head, seq) 一个 CTA，128 threads；适合普通 batch。
 - v2 用 split-K 把每个 (head, seq) 拆 P 段并行算，再用 `merge_attn_states.cu` 按 LogSumExp 合并；解决"decode 小 batch 时 CTA 数填不满 SM"。
 - 间接寻址 `block_tables[seq_idx * max_blocks + b]` 是 paged 寻址的核心，所有 paged attention kernel 共享这个思想。
@@ -460,4 +462,3 @@ def paged_attention_v1(out, query, ...):
 - 想看源码：`csrc/attention/`、`csrc/torch_bindings.cpp`、`csrc/quantization/gptq_marlin/`
 - 想动手：[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md)（用 Nsight Compute 看一个 kernel 的 SM 利用率）
 - 想从生产视角理解：[`08-production-deployment/06-reliability-and-failure-modes.md`](../08-production-deployment/06-reliability-and-failure-modes.md)（kernel 升级 / fallback 引入的稳定性风险）
-

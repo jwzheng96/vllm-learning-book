@@ -10,7 +10,9 @@
 > 1. 在白板画出 No / Static / Continuous 三种 batching 的时间线，并说出 GPU 利用率差异。
 > 2. 用"token budget" 概念解释 `max_num_batched_tokens` 如何同时影响吞吐和延迟。
 > 3. 区分 vLLM 的 token-level 调度与 TGI 的 sequence-level 调度。
-> 4. 解释 recompute vs swap 抢占策略的取舍，以及 V1 默认 recompute 的理由。
+> 4. 解释当前 V1 的 recompute 抢占路径，并把它与 KV offload / connector 区分开。
+
+> **当前源码复核（`b23bd73`）：** `max_num_batched_tokens` 没有单一生产默认：`EngineArgs.get_batch_defaults()` 按 usage context、设备显存/型号、CPU/TPU 与并行方式选择（常见 API server 为 2048，≥70 GiB 且非 A100 的设备为 8192）。当前 V1 `_preempt_request()` 只实现释放 KV、清零计算进度并重新排队，不存在可切换的 `--preemption-mode swap`。
 
 这是 vLLM 性能上的第二个杀器，与 PagedAttention 平级重要。它解决"GPU 在等慢请求"的问题。
 
@@ -63,7 +65,7 @@ vLLM 的回答是：
 
 ## 3. Token Budget 是核心
 
-V1 调度器的关键参数：`max_num_batched_tokens`（默认 8192 或类似）。
+V1 调度器的关键参数：`max_num_batched_tokens`。默认由 `EngineArgs.get_batch_defaults()` 按使用场景与硬件选择；不要脱离启动日志或最终 `SchedulerConfig` 假定为 8192。
 
 每一步，所有请求**加起来**最多算这么多 token：
 
@@ -149,14 +151,14 @@ vLLM 的策略：
 代价：算力浪费
 好处：实现简单、不占额外显存
 
-### 7.2 Swap（CPU 卸载）
+### 7.2 KV offload / connector（不是 V1 preemption mode）
 - 把 block 从 GPU 拷到 CPU 内存
 - 恢复时拷回来
 
 代价：PCIe 拷贝慢、占 CPU 内存
 好处：算力不浪费
 
-V1 默认 recompute，因为：
+当前 V1 preemption 采用 recompute 路径，因为：
 
 1. PCIe 反而经常比重算还慢
 2. 代码更简单
@@ -203,8 +205,8 @@ A: TGI 是 sequence-level（请求级），仍然按"prefill 阶段→decode 阶
 
 - Continuous batching = **iteration-level 动态批处理**：每生成 1 个 token 就重新组 batch，完成的请求立刻退出、等待的立刻进入，GPU 几乎不空转。
 - 能跑起来的三个前提：① PagedAttention 让 KV 加入/退出不搬数据；② InputBatch 持久化只更新 diff；③ token-level 调度让"算多少 token"成为唯一调度单位。
-- **`max_num_batched_tokens` 是核心旋钮**：大 → 吞吐高 / 延迟抖动大；小 → 反之；生产经验值 4096-8192。
-- 抢占有两种：**recompute**（释放 KV，重新 prefill）与 **swap**（拷到 CPU）；V1 默认 recompute——因为 PCIe 慢、prefix cache 兜底、实现简单。
+- **`max_num_batched_tokens` 是核心旋钮**：大值通常提高吞吐上限但可能增加单步延迟，小值通常反之；初值应读取最终配置，再用业务负载测量。
+- 当前 V1 抢占是 **recompute**（释放 KV、清零计算进度、重新排队）；CPU/远端 KV offload 与 connector 有独立配置和一致性约束，不等同于旧式 swap 抢占。
 - vLLM 的 token-level 与 TGI 的 sequence-level 是本质差异——后者仍按"prefill 阶段 → decode 阶段"分组。
 
 ## 自检
@@ -285,7 +287,7 @@ def schedule(self):
 
 ---
 
-**4. Recompute 比 swap 快的原因 + swap 反而更优的场景。**
+**4. 当前为何使用 recompute；设计 KV offload 时还要权衡什么？**
 
 **Recompute 快的原因**：
 
@@ -294,13 +296,13 @@ def schedule(self):
 3. **Prefix cache 救场**：被踢请求重新调度时，前缀部分大概率命中 cache，实际重算只是 cache miss 段——往往很短
 4. **代码实现简单**：recompute 路径就是"释放 block + 重新入 waiting"，无需管 host buffer / 拷贝调度
 
-**Swap 反而更优的场景**：
+**独立 KV offload 可能有价值的场景**（不是当前 preemption mode）：
 
-- **KV 极大 + prefix cache 命中率低**（如全新 RAG，每次 prompt 都不一样）→ recompute 等于完全重 prefill，比 swap 慢
-- **Prefill 算力极度紧张**（极大 batch 同时争 GPU）→ swap 释放算力给其他 running
-- **特殊硬件**（如 Grace Hopper，CPU↔GPU 带宽 900 GB/s 接近 HBM）→ swap 成本接近免费
+- **KV 极大 + prefix cache 命中率低**：重算成本高，值得测量 offload 的传输与一致性成本
+- **Prefill 算力极度紧张**：外部 KV 可能减少重算，但会引入容量、回压和故障恢复问题
+- **CPU/GPU 互连更快的硬件**：传输更有竞争力，但仍需实测，不能把理论带宽当端到端结果
 
-参数：`--preemption-mode swap`（V1 默认 `recompute`）。
+当前 V1 没有 `--preemption-mode swap` 这个 CLI。需要 CPU/远端 KV 时，应评估 `--kv-offload-backend` 或 `--kv-transfer-config` 对应的专用路径，并按所选 backend 文档验证能力。
 
 ---
 

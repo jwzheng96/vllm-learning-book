@@ -12,6 +12,8 @@
 > 3. 列出 KV connector 接口的 3 个核心方法，知道 NIXL / LMCache / Mooncake 在该接口下怎么接入。
 > 4. 判断"我这场景值不值得搞 disaggregated"（并发、SLO、网络成本）。
 
+> **当前源码复核（`b23bd73`）：** KV connector 是 scheduler/worker 两侧协议，不等于“自动完成 P/D 集群”。生产还需外部路由、request/KV ownership、block/模型兼容、传输完成通知、容量 backpressure、timeout、取消与失败清理；NIXL/LMCache/Mooncake 的能力和配置不能互换。
+
 ---
 
 ## 1. 为什么要拆？
@@ -145,6 +147,17 @@ vLLM 通过 KV connector 的回调 + Scheduler 的 metadata 字段（`kv_connect
 
 ---
 
+### 8.1 Connector 生产契约
+
+| 契约 | 必须回答的问题 | 失败时动作 |
+| --- | --- | --- |
+| identity/ownership | request、model、KV group/block 如何唯一对应 | 拒绝错配，不允许静默复用 |
+| compatibility | model revision、KV dtype/layout、block size、parallel rank 是否一致 | admission 前 fail fast |
+| capacity/backpressure | destination 预留多少 block/bytes，队列是否有界 | 429/重路由/超时取消，而非无限等待 |
+| completion | load/save 哪个 ack 表示可调度/可释放 | deadline 后幂等 abort 与回收 |
+| partial failure | 一部分 layer/rank 到达时如何清理 | connector-specific rollback；不得标 cache hit |
+| observability | bytes、queue、transfer、retry、timeout 如何关联 request ID | 保留两端 trace 与错误原因 |
+
 ## 9. 工程自检问答
 
 **Q: 为什么 prefill 和 decode 适合的卡不同？**
@@ -172,7 +185,7 @@ A: 互补。chunked prefill 是同卡上把长 prefill 切片，缓解阻塞但�
 | TTFT 严重不达标但 TPOT OK | **可搞**（多 prefill 节点）| 但先试 chunked prefill / prefix caching 是否能解决 |
 | 同机一开 chunked 就 TPOT 抖 | **强烈考虑** | 这就是 disaggregated 解决的核心矛盾 |
 | 长上下文（≥ 100K token）| **看情况** | KV 转移本身可能 100ms+，得算清楚 |
-| RDMA 网络不具备（只有以太网） | **不搞** | 走 PCIe / TCP 的 KV 转移会让 TPOT 雪崩 |
+| RDMA 网络不具备（只有以太网） | **先测再决定** | TCP/存储路径可能可用，但必须把 KV bytes、排队与尾延迟计入收益 |
 | 多模型 / LoRA 切换频繁 | **不搞** | prefill 节点重启/换模型很贵 |
 | 高 prefix cache 命中率（70%+）| 谨慎 | cache 散布到多 prefill 节点，命中率会下降，需要 cache-aware routing 抵消 |
 
@@ -238,7 +251,7 @@ class KVConnectorBase(ABC):
 
 **默认 vLLM 行为**：
 
-1. **检测**：decode 节点等 KV 超时（默认 30-60s timeout）→ 标该请求 failed
+1. **检测**：decode 节点等待 KV 超过所选 connector/路由层的显式 deadline → 标记失败；不要假设跨 backend 通用的 30-60 秒默认值
 2. **响应**：API Server 收到 abort，返回 5xx 错误给客户端
 3. **重试**：取决于客户端策略，vLLM 自己不重试
 
@@ -273,7 +286,7 @@ class KVConnectorBase(ABC):
 | **400G InfiniBand HDR** | 50 GB/s | **640 ms** —— 接近可用 |
 | **NVLink 跨机（NVL72 等）** | 900 GB/s | 35 ms —— 理想 |
 
-→ 对 100K token 这种极端长上下文，连 IB 都吃力，需要做**层级 streaming**（不等整请求 KV 全到，按 layer 分批发送，decode 节点收到第 N 层就开始算第 N 层），或 **prefix-aware routing**（让相似 prefix 的请求路由到同一组节点，复用 cache 减少传输）。
+→ 对 100K token 这种极端长上下文，连 IB 都可能吃力。layer/chunk streaming 与 prefix-aware routing 是架构候选，但必须核对所选 connector 是否真的实现对应粒度、完成通知和失败恢复，不能从接口抽象推断已支持。
 
 **常见上下文长度（4-16K token）**: 1-5 GB，10Gbps 以太网 800 ms 可接受，IB 100 ms 流畅。这是 disaggregated 的主战场。
 
@@ -296,7 +309,7 @@ class KVConnectorBase(ABC):
 | **prefix-pinned 部署** | 已知热门 system prompt 在所有 prefill 节点 pre-warm | 需要业务知识，pin 列表手工维护 |
 | **不做 disaggregated** | 如果 prefix cache 命中率是核心 KPI，重新考虑架构 | 见 §10 决策表 |
 
-实战：**80% 的 disaggregated 部署都配 cache-aware routing**，否则 disaggregated 的收益（latency / TPOT 改善）会被 prefix cache 命中率下降抵消，得不偿失。详见 [`08-production-deployment/02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)。
+架构建议：disaggregated 通常需要 cache/KV-aware routing；具体采用率没有仓库内证据，不写“80%”。否则 latency/TPOT 收益可能被 cache 命中下降和传输排队抵消。详见 [`08-production-deployment/02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)。
 
 ## 下一步
 

@@ -12,17 +12,25 @@
 > 3. 描述 piecewise split 的切点策略与每段的编译/CUDA Graph 处理
 > 4. 知道 CompilationConfig 哪些旋钮在生产里要调
 
+> **当前源码复核（`b23bd73`）：** `CompilerManager` / `VllmBackend` 仍是核心边界，但 `CompilationConfig` 已围绕 `cudagraph_mode`、Inductor graph partition、attention/KV splitting ops 与 capability resolution 演进。文中的 level/piecewise 术语用于理解历史与抽象，最终行为以解析后的 config 和日志为准。
+
 `03-cudagraph-and-compile.md` 讲了 "torch.compile + CUDA Graph 是什么"。本节深入 `vllm/compilation/`，看 vLLM 怎么**自己包装一层 backend**，把 paged attention 这种自定义 op 也纳入图编译。
 
 ---
 
 ## 1. 全景：4 层抽象
 
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"VllmBackend"} -->
+[源码锚点：vllm/compilation/backends.py · VllmBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L805)
+
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"CompilerManager"} -->
+[源码锚点：vllm/compilation/backends.py · CompilerManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L124)
+
 ```mermaid
 flowchart TD
     Eager["PyTorch model.forward (eager)<br/>torch.compile(model, backend=VllmBackend)"]
-    Backend["VllmBackend<br/><sub>vllm/compilation/backends.py:800</sub><br/>1. Dynamo trace → FX Graph<br/>2. 自定义 pass（fusion / fix custom ops）<br/>3. piecewise compile（按 attention 切段）<br/>4. 每段交给 CompilerManager 编译"]
-    Mgr["CompilerManager<br/><sub>backends.py:124</sub><br/>· 调用底层 CompilerInterface（如 Inductor）<br/>· hash-based 编译缓存<br/>· 包装 CUDA Graph capture"]
+    Backend["VllmBackend<br/><sub>vllm/compilation/backends.py</sub><br/>1. Dynamo trace → FX Graph<br/>2. 自定义 pass（fusion / fix custom ops）<br/>3. piecewise compile（按 attention 切段）<br/>4. 每段交给 CompilerManager 编译"]
+    Mgr["CompilerManager<br/><sub>backends.py</sub><br/>· 调用底层 CompilerInterface（如 Inductor）<br/>· hash-based 编译缓存<br/>· 包装 CUDA Graph capture"]
     Iface["CompilerInterface<br/><sub>compiler_interface.py</sub><br/>· 抽象接口（默认实现 InductorAdaptor）<br/>· hash_compiled_artifacts"]
 
     Eager --> Backend --> Mgr --> Iface
@@ -52,7 +60,10 @@ vLLM 的 `VllmBackend` 解决：
 
 ## 3. VllmBackend：编排者
 
-`vllm/compilation/backends.py:800` 起：
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"VllmBackend"} -->
+[源码锚点：vllm/compilation/backends.py · VllmBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L805)
+
+`vllm/compilation/backends.py` 起：
 
 ```python
 class VllmBackend:
@@ -89,7 +100,10 @@ class VllmBackend:
 
 ## 4. Piecewise split：图怎么被切
 
-`vllm/compilation/backends.py:548 (split_graph)`：
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"split_graph"} -->
+[源码锚点：vllm/compilation/backends.py · split_graph](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L553)
+
+`vllm/compilation/backends.py (split_graph)`：
 
 策略：**遇到 attention op 就切**。
 
@@ -122,7 +136,10 @@ flowchart LR
 
 ## 5. CompilerManager：编译缓存
 
-`backends.py:124`：
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"CompilerManager"} -->
+[源码锚点：vllm/compilation/backends.py · CompilerManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L124)
+
+`backends.py`：
 
 ```python
 class CompilerManager:
@@ -231,14 +248,17 @@ vllm serve <model> \
 ### CompilationLevel
 - **0 NO_COMPILATION**：纯 eager（debug / 兼容性兜底）
 - **1 DYNAMO_AS_IS**：Dynamo trace 但不优化
-- **2 PIECEWISE**：默认。按 attention 切段编译
+- **2 PIECEWISE**：一种常见/历史 level 语义；当前最终 split 与 graph mode 还要经过模型和 capability resolution
 - **3 FULL_COMPILE**：（实验）整图 compile
 
 ---
 
 ## 9. CUDA Graph 包装
 
-`backends.py:628 (wrap_with_cudagraph_if_needed)`：
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"wrap_with_cudagraph_if_needed"} -->
+[源码锚点：vllm/compilation/backends.py · wrap_with_cudagraph_if_needed](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L633)
+
+`backends.py (wrap_with_cudagraph_if_needed)`：
 
 ```python
 def wrap_with_cudagraph_if_needed(compiled_fn, ...):
@@ -268,7 +288,10 @@ def wrap_with_cudagraph_if_needed(compiled_fn, ...):
 
 ## 10. CompilerInterface 与多后端
 
-`vllm/compilation/compiler_interface.py:782` 起：
+<!-- vllm-source: {"path":"vllm/compilation/compiler_interface.py","symbol":"EagerAdaptor.compile","anchor":"return graph, None"} -->
+[源码锚点：vllm/compilation/compiler_interface.py · EagerAdaptor.compile](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/compiler_interface.py#L810)
+
+`vllm/compilation/compiler_interface.py` 起：
 
 ```python
 class CompilerInterface(ABC):
@@ -345,6 +368,10 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 
 ---
 
+## 单变量实验：证明是哪一层带来收益
+
+保存解析后的 `CompilationConfig`、cache key 输入、splitting ops、graph mode/capture sizes 与编译日志。先固定 workload 只改一个 pass 或 partition 设置；分别报告 Dynamo/Inductor 编译时间、cache cold/warm、graph replay 覆盖率、kernel time、端到端指标和数值误差。若 fallback 增多、cache key 不稳定或 warmup 超预算，回退到上一层配置。
+
 ## 小结
 
 - vLLM 的 `VllmBackend` 在 torch.compile 之上包了一层：按 attention 切 piecewise，每段独立编译 + CUDA Graph，避开 dynamic shape 与 custom op 的两大坑。
@@ -370,7 +397,10 @@ A: 视情况。AllReduce fusion + activation+quantize fusion 在 H100 上累积 
 
 **2. `split_graph` 切点依据 + 默认 op 列表。**
 
-源码：`vllm/compilation/backends.py:548` 的 `split_graph`。切点由 `CompilationConfig.splitting_ops` 控制。
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"split_graph"} -->
+[源码锚点：vllm/compilation/backends.py · split_graph](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L553)
+
+源码：`vllm/compilation/backends.py` 的 `split_graph`。切点由 `CompilationConfig.splitting_ops` 控制。
 
 **默认 `splitting_ops`** 通常包含：
 
@@ -482,7 +512,10 @@ def model_forward(x):
 
 ## Sources
 
-- `vllm/compilation/backends.py:124 (CompilerManager)`, `:548 (split_graph)`, `:628 (wrap_with_cudagraph)`, `:682 (PiecewiseCompileInterpreter)`, `:800 (VllmBackend)`
+<!-- vllm-source: {"path":"vllm/compilation/backends.py","symbol":"CompilerManager"} -->
+[源码锚点：vllm/compilation/backends.py · CompilerManager](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/compilation/backends.py#L124)
+
+- `vllm/compilation/backends.py (CompilerManager)`, `:548 (split_graph)`, `:628 (wrap_with_cudagraph)`, `:682 (PiecewiseCompileInterpreter)`, `:800 (VllmBackend)`
 - `vllm/compilation/compiler_interface.py`（CompilerInterface / InductorAdaptor / hash）
 - `vllm/compilation/passes/{vllm_inductor_pass,pass_manager,fusion/*}.py`
 - `vllm/compilation/decorators.py`（custom op 注册装饰器）

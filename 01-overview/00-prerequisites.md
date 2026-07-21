@@ -12,6 +12,8 @@
 > 3. 区分 DP / TP / PP，并指出哪种通信强依赖 NVLink。
 > 4. 用 TTFT / TPOT / 吞吐三个指标解释推理服务"卡不卡"和"赚不赚"。
 
+> **当前源码复核（`b23bd73`）：** 本章把 TTFT（请求到首个可见输出）、TPOT（除首 token 外的平均输出 token 间隔）与逐 token ITL 分开；`CacheConfig.DEFAULT_BLOCK_SIZE` 是 16，但最终 block size 可由平台或用户覆盖，不能把 16 当成所有后端的固定事实。
+
 ---
 
 ## 0. 给读者的心智地图
@@ -563,7 +565,7 @@ vLLM 的回答：
 | **AllToAll** | 集合通信，每卡把不同片段发给不同卡。EP（专家并行）下 dispatch / combine 用。 |
 | **Attention backend** | vLLM 中"具体怎么算注意力"的可插拔后端：FlashAttention / FlashInfer / Triton / MLA / ... |
 | **BF16 / FP16 / FP8 / INT8 / INT4** | 浮点 / 整数精度。BF16 ≈ FP16 但动态范围更大；FP8 是 H100+ 的新格式，约一半显存与算力。 |
-| **Block / KV block** | PagedAttention 把 KV cache 切成固定大小的小块。默认 16 token / block。 |
+| **Block / KV block** | PagedAttention 把 KV cache 切成固定大小的小块。通用 fallback 是 16 token / block，最终值由平台、模型和用户配置共同决定。 |
 | **Block table** | 每个请求一张表，把"第几个 block"映射到"物理 block id"。类比 OS 页表。 |
 | **Continuous batching** | iteration-level 动态批处理。每生成一个 token 就重新组 batch。 |
 | **CUDA Graph** | 把一系列 CUDA kernel 调用录制成静态图，runtime 一次性提交，省 launch 开销。 |
@@ -574,7 +576,7 @@ vLLM 的回答：
 | **Executor** | EngineCore 与 Worker 之间的中间层。有 multiproc / Ray / uniproc 三种实现。 |
 | **EP（Expert Parallel）** | MoE 模型里把不同 expert 分到不同卡。 |
 | **EPP（Endpoint Picker）** | Gateway API Inference Extension 的接口，由 ExtProc 调用。Smart router 用。 |
-| **Flash Attention** | Tri Dao 的高效 attention kernel（SRAM tiling + fused softmax）。vLLM 默认 backend。 |
+| **Flash Attention** | Tri Dao 的高效 attention kernel（SRAM tiling + fused softmax）。它是 CUDA 上的候选后端之一；vLLM 会按平台、dtype、head layout 与模型能力选择。 |
 | **GQA / MQA** | Grouped / Multi-Query Attention。多个 Q head 共享一组 KV head，省 KV cache。 |
 | **HBM** | High-Bandwidth Memory。GPU 显存的主体（80 GB on H100），带宽 ~3 TB/s。 |
 | **InputBatch** | V1 持久化的 batch 状态。每步只增删 diff，不重建。 |
@@ -591,7 +593,7 @@ vLLM 的回答：
 | **PagedAttention** | vLLM 核心创新。把 KV cache 分页管理。详见 `02-core-concepts/01`。 |
 | **Prefill** | 处理 prompt 的阶段，一次 forward 处理整个 prompt。compute-bound。 |
 | **Prefix caching** | 跨请求复用相同前缀的 KV block。chatbot 场景命中率极高。 |
-| **Preemption** | KV 不够时把某请求踢回 waiting。V1 默认 recompute（重算而非 swap）。 |
+| **Preemption** | KV 不够时把某请求踢回 waiting。当前 V1 释放其 block、把 `num_computed_tokens` 归零并重新排队，相当于 recompute；KV offload/connector 是另一条能力边界。 |
 | **RoPE** | Rotary Position Embedding。给 Q、K 加旋转编码注入位置信息。 |
 | **Sampler** | 把 logits 转成 token id 的模块。含 top-k / top-p / temperature 等。 |
 | **Scheduler** | EngineCore 内的调度核心。每步决定哪些请求跑多少 token。 |
@@ -613,6 +615,10 @@ vLLM 的回答：
 - 工程指标分两层：用户侧看 **TTFT / TPOT**，平台侧看**吞吐 / GPU util / 并发数**——这是后面所有优化要回去对照的"靶子"。
 
 ## 自检
+
+### 无 GPU 源码定位练习
+
+只读锁定源码，不导入 vLLM：依次在 `vllm/v1/engine/llm_engine.py`、`vllm/v1/engine/core_client.py`、`vllm/v1/engine/core.py`、`vllm/v1/core/sched/scheduler.py`、`vllm/v1/worker/gpu_model_runner.py` 中定位“提交请求、跨进程、调度、执行”边界，并记下每一跳传递的数据类型。最后回答：哪一步定义 TTFT 的服务端起点，哪一步只能解释 GPU 执行时间？
 
 > 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 

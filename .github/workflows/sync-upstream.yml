@@ -1,0 +1,168 @@
+name: Check vLLM upstream
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Optional official vLLM main commit
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: vllm-main-sync
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install documentation dependencies
+        run: python -m pip install -r requirements-docs.txt
+
+      - name: Resolve official candidate
+        id: resolve
+        env:
+          REQUESTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          candidate_sha="$REQUESTED_SHA"
+          if [ -z "$candidate_sha" ]; then
+            candidate_sha="$(git ls-remote https://github.com/vllm-project/vllm.git refs/heads/main | awk '{print $1}')"
+          fi
+          if ! printf '%s\n' "$candidate_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "candidate is not a full lowercase SHA" >&2
+            exit 1
+          fi
+          baseline_sha="$(python3 -c 'import json; print(json.load(open("source.lock.json"))["commit"])')"
+          printf 'candidate=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+          printf 'baseline=%s\n' "$baseline_sha" >> "$GITHUB_OUTPUT"
+          if [ "$candidate_sha" = "$baseline_sha" ]; then
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare and validate candidate
+        if: steps.resolve.outputs.changed == 'true'
+        id: gates
+        env:
+          CANDIDATE_SHA: ${{ steps.resolve.outputs.candidate }}
+          BASELINE_SHA: ${{ steps.resolve.outputs.baseline }}
+        run: |
+          set +e
+          gate_rc=0
+          validated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          git -C vllm fetch origin main || gate_rc=1
+          git -C vllm fetch origin "$CANDIDATE_SHA" || gate_rc=1
+          git -C vllm merge-base --is-ancestor \
+            "$BASELINE_SHA" "$CANDIDATE_SHA" || gate_rc=1
+          git -C vllm checkout --detach "$CANDIDATE_SHA" || gate_rc=1
+
+          python3 -m tools.source_sync impact \
+            --baseline "$BASELINE_SHA" \
+            --candidate "$CANDIDATE_SHA" \
+            --output artifacts/source-sync/latest-impact.md || gate_rc=1
+          python3 -m tools.source_sync refresh \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --validated-at "$validated_at" \
+            --report artifacts/source-sync/latest-impact.md || gate_rc=1
+          python3 -m tools.source_sync validate \
+            --profile full || gate_rc=1
+          python3 -m unittest discover -s tests/source_sync -v || gate_rc=1
+          VLLM_LEARNING_DST="$RUNNER_TEMP/vllm-learning-site" \
+            python3 build_html.py || gate_rc=1
+
+          printf 'result=%s\n' "$gate_rc" >> "$GITHUB_OUTPUT"
+          if [ "$gate_rc" -eq 0 ]; then
+            printf 'summary=passed\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'summary=failed; inspect workflow logs and unresolved contracts\n' >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Publish one automation branch
+        if: steps.resolve.outputs.changed == 'true'
+        env:
+          CANDIDATE_SHA: ${{ steps.resolve.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          automation_branch="automation/vllm-main-sync"
+          test "$automation_branch" = "automation/vllm-main-sync"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$automation_branch"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No candidate changes to commit"
+          else
+            git commit -m "docs: sync tutorial to vLLM main $CANDIDATE_SHA"
+          fi
+
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$automation_branch" | awk '{print $1}')"
+          if [ -n "$remote_sha" ]; then
+            git push \
+              --force-with-lease="refs/heads/$automation_branch:$remote_sha" \
+              origin "HEAD:refs/heads/$automation_branch"
+          else
+            git push origin "HEAD:refs/heads/$automation_branch"
+          fi
+
+      - name: Create or update candidate pull request
+        if: steps.resolve.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ steps.resolve.outputs.candidate }}
+          GATE_SUMMARY: ${{ steps.gates.outputs.summary }}
+        run: |
+          set -euo pipefail
+          automation_branch="automation/vllm-main-sync"
+          test "$automation_branch" = "automation/vllm-main-sync"
+          body_file="$(mktemp)"
+          {
+            printf 'Validation: **%s**\n\n' "$GATE_SUMMARY"
+            printf 'Candidate: `%s`\n\n' "$CANDIDATE_SHA"
+            if [ -f artifacts/source-sync/latest-impact.md ]; then
+              cat artifacts/source-sync/latest-impact.md
+            else
+              printf 'Impact report was not generated; inspect the failed workflow.\n'
+            fi
+          } > "$body_file"
+
+          pr_number="$(gh pr list --state open --head "$automation_branch" --json number --jq '.[0].number // empty')"
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" \
+              --title "docs: sync tutorial to vLLM main" \
+              --body-file "$body_file"
+          else
+            gh pr create \
+              --base main \
+              --head "$automation_branch" \
+              --title "docs: sync tutorial to vLLM main" \
+              --body-file "$body_file"
+          fi
+
+      - name: Fail when candidate gates failed
+        if: always() && steps.resolve.outputs.changed == 'true'
+        env:
+          GATE_RESULT: ${{ steps.gates.outputs.result }}
+        run: |
+          if [ "$GATE_RESULT" != "0" ]; then
+            echo "Candidate PR was preserved, but one or more gates failed" >&2
+            exit 1
+          fi

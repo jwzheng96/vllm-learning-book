@@ -6,13 +6,17 @@
 >
 > **耗时：** 约 25 分钟
 >
+> **难度：** 进阶
+>
+> **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；endpoint 是否挂载、pooling task、归一化与 score 语义都由目标模型 / pooler 决定。
+>
 > **学完能：**
-> 1. 解释 vLLM 跑 embedding 比 sentence-transformers 快的根因（batching / FlashAttn / 量化 / varlen）
-> 2. 在 CLS / Mean / Last / All / Dispatch 五类 Pooler 中正确选型
-> 3. 描述 BGE-M3 一次 forward 输出 dense+sparse+colbert 三种表示的实现
+> 1. 解释 pooling runner 复用了哪些引擎能力，以及为什么不能预设固定加速倍数
+> 2. 在 sequence-level 与 token-level 输出、CLS / Mean / Last / All / Step 中正确选型
+> 3. 描述 BGE-M3 的 dense、sparse、ColBERT 任务怎样由不同 pooler 分支暴露
 > 4. 区分 bi-encoder（embedding）与 cross-encoder（reranker）的部署方式
 
-BGE、E5、Jina、bge-reranker、Qwen3-Embedding 这些模型在 vLLM 里能跑，且性能比 sentence-transformers 高几倍。原因：复用 vLLM 引擎（continuous batching + paged 注意 + 量化），只把 sampling 换成 pooling。涉及代码：`vllm/model_executor/layers/pooler/`、`vllm/v1/pool/`。
+pooling runner 复用 vLLM 的调度、模型执行与平台 attention backend，把自回归采样出口换成 sequence-level 或 token-level pooler。它可服务 embedding、分类、score / rerank 与模型插件任务，但支持面由模型实现决定。相对其他 serving 栈的性能没有固定倍数，必须在相同模型 revision、dtype、输入分布、batching 与输出语义下比较。
 
 ---
 
@@ -24,8 +28,8 @@ flowchart LR
         G1["input_ids"] --> G2["forward"] --> G3["logits<br/>(last token)"] --> G4["Sampler"] --> G5["下一个 token"]
         G5 -.->|N step 自回归| G2
     end
-    subgraph Emb["Embedding 模型 (encoder-only)"]
-        E1["input_ids"] --> E2["forward<br/>(1 步)"] --> E3["hidden_states<br/>(all tokens)"] --> E4["Pooler"] --> E5["embedding vector"]
+    subgraph Emb["Pooling runner（encoder 或 decoder-style backbone）"]
+        E1["input_ids"] --> E2["forward<br/>(无自回归 decode)"] --> E3["hidden_states<br/>(所需 token)"] --> E4["Pooler"] --> E5["sequence / token output"]
     end
 
     classDef gen fill:#fef3c7,stroke:#b45309,color:#1a1f29;
@@ -36,9 +40,9 @@ flowchart LR
 
 vLLM 的处理：
 
-- engine / scheduler / KV manager / attention backend 全部复用
+- engine / scheduler / attention backend 与请求生命周期复用；KV cache 形式取决于模型 attention type
 - 不走 sampling 路径，改走 pooling 路径
-- 每个请求只算一次 prefill（无 decode），latency 主要看 prefill
+- 没有逐 token 自回归 decode；长输入仍可能分 step / chunk 调度，完成整段所需 hidden state 后才返回最终 pooling 输出
 
 ---
 
@@ -46,20 +50,37 @@ vLLM 的处理：
 
 `vllm/model_executor/layers/pooler/`：
 
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/abstract.py","symbol":"Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/abstract.py · Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/abstract.py#L16)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/poolers.py","symbol":"SequencePooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/poolers.py · SequencePooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/poolers.py#L44)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"SequencePoolingMethod"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · SequencePoolingMethod](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L21)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/tokwise/poolers.py","symbol":"TokenPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/tokwise/poolers.py · TokenPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/tokwise/poolers.py#L48)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"DispatchPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · DispatchPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L25)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"IdentityPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · IdentityPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L140)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BOSEOSFilter"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BOSEOSFilter](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L152)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
 ```mermaid
 flowchart LR
-    Root["Pooler (abstract)<br/><sub>pooler/abstract.py:16</sub>"]
-    SP["SequencePooler<br/><sub>seqwise/poolers.py:44</sub>"]
-    SPM["SequencePoolingMethod<br/><sub>seqwise/methods.py:20</sub>"]
+    Root["Pooler (abstract)<br/><sub>pooler/abstract.py</sub>"]
+    SP["SequencePooler<br/><sub>seqwise/poolers.py</sub>"]
+    SPM["SequencePoolingMethod<br/><sub>seqwise/methods.py</sub>"]
     CLS["CLSPool<br/>取第一个 token"]
     Last["LastPool<br/>取最后一个 token"]
     Mean["MeanPool<br/>取均值"]
-    TP["TokenPooler<br/><sub>tokwise/poolers.py:48</sub>"]
+    TP["TokenPooler<br/><sub>tokwise/poolers.py</sub>"]
     All["AllPool<br/>返回所有 token 的 embed"]
-    Disp["DispatchPooler<br/>按 task 路由<br/><sub>special.py:25</sub>"]
-    ID["IdentityPooler<br/>原样返回 hidden<br/><sub>special.py:139</sub>"]
-    Filter["BOSEOSFilter<br/>过滤 BOS/EOS<br/><sub>special.py:151</sub>"]
-    Bge["BgeM3Pooler<br/>dense + sparse + col-bert<br/><sub>special.py:198</sub>"]
+    Disp["DispatchPooler<br/>按 task 路由<br/><sub>special.py</sub>"]
+    ID["IdentityPooler<br/>原样返回 hidden<br/><sub>special.py</sub>"]
+    Filter["BOSEOSFilter<br/>过滤 BOS/EOS<br/><sub>special.py</sub>"]
+    Bge["BgeM3Pooler<br/>组合 dense + sparse<br/><sub>special.py</sub>"]
 
     Root --> SP --> SPM
     SPM --> CLS
@@ -79,10 +100,13 @@ flowchart LR
     class CLS,Last,Mean,All,Disp,ID,Filter,Bge leaf;
 ```
 
-PoolerActivation（`activations.py:73`）后处理：
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerActivation"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerActivation](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L79)
+
+PoolerActivation（`activations.py`）后处理：
 
 - `PoolerIdentity`：原样输出
-- `PoolerNormalize`：L2 normalize（对 dot product / cosine 相似度必须做）
+- `PoolerNormalize`：L2 normalize；启用后 dot product 可直接表示 cosine，关闭时调用方必须遵守模型的相似度契约
 - `PoolerClassify` / `PoolerMultiLabelClassify`：分类头
 
 ---
@@ -91,11 +115,11 @@ PoolerActivation（`activations.py:73`）后处理：
 
 | Pooling | 含义                    | 典型模型                |
 | ------- | --------------------- | ------------------- |
-| CLS     | 取 `[CLS]` token 的 hidden | BERT-style 分类、BGE-base |
-| Mean    | 所有 token hidden 均值      | sentence-BERT、E5        |
-| Last    | 最后一个 token              | 解码器风格 embedding（Llama-based） |
+| CLS     | 取首 token 的 hidden | 训练配置指定首 token 汇聚的模型 |
+| Mean    | 按有效 token 聚合均值 | 训练配置指定 mean pooling 的模型 |
+| Last    | 取最后一个有效 token | 训练配置指定 last-token 表示的模型 |
 
-不同模型预训练时 pooling 是固定的，**用错就废**（输出向量没用）。vLLM 通过 `--task embed` 自动选，或 `pooling_type` 显式设。
+不同模型训练 / 导出时的 pooling、prompt 模板与归一化是检索质量契约。vLLM 用 `--runner auto` 解析模型类型，也可显式 `--runner pooling`；`PoolerConfig` 中 `seq_pooling_type` / `tok_pooling_type` 是内部明确字段，兼容入口 `pooling_type` 只会解析到其中一类。覆盖默认值前要先读取模型配置并做离线评估。
 
 ---
 
@@ -104,19 +128,21 @@ PoolerActivation（`activations.py:73`）后处理：
 `vllm/pooling_params.py`：
 
 ```python
-@dataclass
-class PoolingParams:
-    additional_data: dict | None
-    truncate_prompt_tokens: int | None
-    output_kind: PoolingOutputKind
-    # 部分模型支持 task 切换
-    task: PoolingTask  # encode / classify / score / score_pairs / rerank
-    softmax: bool | None
-    activation: bool | None
-    dimensions: int | None  # Matryoshka：截取前 N 维
+class PoolingParams(msgspec.Struct):
+    use_activation: bool | None = None
+    dimensions: int | None = None
+    step_tag_id: int | None = None
+    returned_token_ids: list[int] | None = None
+    task: PoolingTask | None = None
+    requires_token_ids: bool = False
+    skip_reading_prefix_cache: bool | None = None
+    late_interaction_params: LateInteractionParams | None = None
+    output_kind = RequestOutputKind.FINAL_ONLY
 ```
 
-OpenAI API `/v1/embeddings` 请求转成 `PoolingParams`，进 EngineCore。
+当前 pooling tasks 包括 `embed`、`classify`、`token_embed`、`token_classify`、`plugin` 与复合的 `embed&token_classify`。`dimensions` 只对 embedding 类 task 有效，并会检查模型是否声明 Matryoshka 支持；pooling 输出只允许 `FINAL_ONLY`。
+
+API router 按模型支持 task 有条件挂载：`/v1/embeddings`（另有 Cohere `/v2/embed`）、`/classify`、`/score`、`/rerank` 与通用 `/pooling`。`/v1/score`、`/v1/rerank` 仍存在但会提示使用不冒充 OpenAI 标准的无 `/v1` 路径；调用方不应假定所有 pooling 模型都暴露所有 endpoint。
 
 ---
 
@@ -124,28 +150,18 @@ OpenAI API `/v1/embeddings` 请求转成 `PoolingParams`，进 EngineCore。
 
 `vllm/v1/pool/` 包含 pool task 的 metadata + 后处理。
 
-EngineCore 检测请求类型（generation vs pooling）：
-
-- generation：走 Sampler
-- pooling：走 Pooler
-
-`vllm/v1/worker/gpu_model_runner.py` 的 `_get_sampling_or_pooling`：
+`ModelConfig.runner_type` 决定该 engine 实例走 `generate` 还是 `pooling`；pooling runner 在请求加入 persistent batch 时，让模型 pooler 校验 task 并更新 `PoolingParams`。forward 完成后走 `_pool`：
 
 ```python
-def execute_model(self, scheduler_output):
-    ...
-    hidden_states = self.model(...)
-
-    if scheduler_output.has_pooling_requests:
-        pooled = self.model.pooler(hidden_states, pooling_metadata)
-        return ModelRunnerOutput(pooled_data=pooled, ...)
-    else:
-        logits = self.model.compute_logits(hidden_states, ...)
-        sampled = self.sampler(logits, sampling_metadata)
-        return ModelRunnerOutput(sampled_token_ids=sampled, ...)
+def _pool(self, hidden_states, ...):
+    assert num_reqs == len(self.input_batch.pooling_params)
+    pooling_metadata = self.input_batch.get_pooling_metadata()
+    pooling_metadata.build_pooling_cursor(...)
+    raw_output = model.pooler(hidden_states, pooling_metadata)
+    return ModelRunnerOutput(pooler_output=copy_finished_to_cpu(raw_output))
 ```
 
-一个 batch 通常**纯 generation 或纯 pooling**，混合较少（API 也不混合）。
+同一个 runner batch 要么全部是 pooling 请求，要么不是；一个生成模型实例与另一个 embedding 模型实例也不会因为在同一台机器就自动共 batch。
 
 ---
 
@@ -173,22 +189,22 @@ flowchart TD
 
 ---
 
-## 7. 为什么 vLLM 跑 embedding 比 sentence-transformers 快？
+## 7. 为什么可能更快，以及如何公平比较
 
 | 维度          | sentence-transformers | vLLM                       |
 | ----------- | --------------------- | -------------------------- |
 | Batching    | 用户自己组 batch          | continuous batching 自动     |
-| Attention   | HF transformers 朴素   | FlashAttention v2/v3       |
-| KV / 注意力 layout | 连续 padding         | varlen 不 pad              |
-| 量化          | 手动 bitsandbytes      | FP8 / AWQ / GPTQ 一键        |
-| 多并发         | 单 batch 等             | iteration-level 动态进出      |
-| 多模型支持      | 每模型一个进程              | LoRA / pooling task 同 base 复用 |
+| Attention   | 取决于所用 PyTorch / HF backend | 取决于模型、平台与 vLLM backend 选择 |
+| padding / 调度 | 取决于调用方 batching | scheduler 可跨请求聚合不同长度输入 |
+| dtype / 量化 | 取决于部署实现 | 仅可使用目标模型与平台明确支持的组合 |
+| 并发 | 由外部队列 / batcher 决定 | engine scheduler 统一管理请求 |
+| 输出 | 必须固定 pooling / normalize / truncation | 必须保持同一语义才能比较 |
 
-实测在中等 batch 下 vLLM 跑 BGE-large 比 HF 实现快 3-5×。
+公平 benchmark 应固定 tokenized inputs、输出 dtype / 维度、pooling 与 normalize、warmup、并发和 SLO，再分别报告短 / 长文本的吞吐与 p50 / p99。若另一侧没有动态 batching，测到的差异主要是 serving architecture，而不只是 kernel。
 
 ---
 
-## 8. BGE-M3：复合 pooler 范例
+## 8. BGE-M3：多任务 pooler 范例
 
 BGE-M3 输出 3 种表示：
 
@@ -196,21 +212,26 @@ BGE-M3 输出 3 种表示：
 - Sparse（每 token 计算稀疏权重）
 - ColBERT（per-token embedding for late interaction）
 
-`BgeM3Pooler`（`special.py:198`）继承 Pooler，**一次 forward 输出三种结果**：
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
+当前 `RobertaForMaskedLM` 的 BGE-M3 路径用 `DispatchPooler` 暴露不同 task：
+
+- `embed`：sequence embedding（dense）
+- `token_embed`：经 `colbert_linear` 的 token embedding，并过滤相应特殊 token
+- `token_classify`：经 `sparse_linear` + ReLU 的 token score
+- `embed&token_classify`：`BgeM3Pooler` 把 dense 向量与展平的 sparse token score 串接
+
+因此 `BgeM3Pooler` 本身不是返回 `{"dense", "sparse", "colbert"}` 的三字段容器；ColBERT 是独立的 `token_embed` 分支：
 
 ```python
 class BgeM3Pooler(Pooler):
     def forward(self, hidden_states, pooling_metadata):
-        # Dense
-        dense = cls_pool(hidden_states) → normalize
-        # Sparse
-        sparse_weights = softmax(linear(hidden_states))
-        # ColBERT-style
-        col_embeds = linear_col(hidden_states)
-        return {"dense": dense, "sparse": sparse_weights, "colbert": col_embeds}
+        dense_outputs = self.embed_pooler(hidden_states, metadata)
+        sparse_outputs = self.token_classify_pooler(hidden_states, metadata)
+        return [cat(dense.view(-1), sparse.view(-1))
+                for dense, sparse in zip(dense_outputs, sparse_outputs)]
 ```
-
-API 通过 `PoolingTask` 控制返回哪个。
 
 ---
 
@@ -222,35 +243,29 @@ API 通过 `PoolingTask` 控制返回哪个。
 
 $$\text{score}(q, d) = \sum_{i=1}^{L_q} \max_{j=1, \ldots, L_d} \, q_i \cdot d_j$$
 
-这是 reranker 模型（rerank-large、bge-reranker）的核心。vLLM 把 token-level pooling（`TokenPooler`，返回 all token embeds）+ 外部 score 算法分开。
+这是 late-interaction score 的核心，不等同于所有 reranker：cross-encoder 通常直接输出 sequence score。当前 serving 可把 query token embeddings 缓存在 worker 进程，并把同一 query 的 document 请求路由到同一 engine，在 worker 侧计算 MaxSim；缓存是进程本地状态，必须考虑 query key、使用次数、取消与清理。
 
 ---
 
 ## 10. 与 paged attention 的关系
 
-Embedding 模型大多是 **encoder-only**（BERT 风格）：
+pooling runner 既可能包装 encoder-only 模型，也可能把 decoder-style 模型转换为 embedding runner，不能把两者的 attention / KV 语义混写。对 `AttentionType.ENCODER_ONLY`：
 
 - 无 causal mask
 - 一次 forward 完成
-- KV 用一次就丢
+- attention 是双向的，并有专门的 `EncoderOnlyAttentionSpec`
 
-vLLM 的 attention backend 支持 `attn_type = "ENCODER_ONLY"`：
-
-- 不写 KV cache
-- 双向 attention（非 causal）
-- 可以走 FlashAttention 的 bidirectional 模式
-
-KV 不分块也不复用——单次 prefill 跑完即丢。PagedAttention 的 ref_cnt 此时其实没意义。
+当前 GPU runner 会把 encoder-only layer 加到 KV cache config，标为 runner-only attention layer；具体 backend / buffer 布局仍由平台选择。prefix caching 对 sequence-level pooling 可能有读复用价值，但 token-level `token_embed` / `token_classify` 默认 `skip_reading_prefix_cache=True`，因为命中前缀后拿不到被跳过 token 的逐 token 输出。结论应按模型 attention type 和输出粒度判断，不能概括为“pooling 不用 KV / prefix cache”。
 
 ---
 
 ## 11. 工程要点
 
 ### 11.1 batch 设计
-embedding 请求通常**短而多**（每条几十到几百 token）。max_num_batched_tokens 可以开大（16k+），充分发挥 prefill compute-bound 算力。
+先从真实 token 长度分布、输出粒度和 SLO 建模，再扫描 `max_num_batched_tokens` / `max_num_seqs`。增大 token budget 可能提高 GPU 利用率，也会增加单步工作量、排队和输出搬运；token-level embeddings 的返回体还可能成为显存、CPU copy 和网络瓶颈。
 
 ### 11.2 多 task 共存
-DispatchPooler 让一个模型同时支持 encode / classify / score：
+DispatchPooler 让**同一个模型已实现的任务**按 `PoolingTask` 分派；不是任意模型都同时支持 embed / classify / score：
 
 ```python
 class DispatchPooler(Pooler):
@@ -262,7 +277,7 @@ class DispatchPooler(Pooler):
 ```
 
 ### 11.3 Matryoshka 维度截取
-`PoolingParams.dimensions = 256` → 取前 256 维。模型训练时已经把"最重要信号"放在前面（Matryoshka loss），用户根据延迟需求自选。
+`PoolingParams.dimensions = 256` 只有在模型声明 Matryoshka 支持，且（若给出）256 位于允许维度列表时才通过验证。截断后仍要按该模型契约处理 activation / normalize，并用目标检索集评估 recall、存储与 latency 取舍。
 
 ### 11.4 Rerank 部署
 Reranker（cross-encoder）跟 embedding（bi-encoder）不一样：
@@ -270,26 +285,43 @@ Reranker（cross-encoder）跟 embedding（bi-encoder）不一样：
 - bi-encoder：分别 encode query / doc → 算相似度
 - cross-encoder：拼接 `[CLS] query [SEP] doc` 一次 forward → 输出 score
 
-vLLM 通过 `score` task + Classify head 做 reranker。
+vLLM 的 scoring frontend 根据 pooler task 映射为 bi-encoder、cross-encoder 或 late-interaction；`/score` / `/rerank` 是 API endpoint，不是 `PoolingTask` 字面值。部署前要核准 query / document 模板、截断方式、score activation / calibration 和分数方向。
 
 ---
 
 ## 12. 工程自检问答
 
 **Q: 为什么 BGE 在 vLLM 上比 sentence-transformers 快？**
-A: ①continuous batching 跨请求合并 prefill；②FlashAttention 比朴素 attention 快几倍；③varlen 不 pad；④量化（FP8/INT8）开箱即用。
+A: 不能先假定更快。vLLM 的潜在优势来自跨请求调度、所选 attention / model kernel 与支持的 dtype；结果还受输入长度、batching、输出搬运和对方 backend 影响。只能用同模型、同 token、同输出语义和同 SLO benchmark 得出结论。
 
 **Q: embedding 模型用得到 PagedAttention 吗？**
-A: 用得到机制（注意力 kernel 一样），但前缀复用没意义（每个请求独立 encode 一次后扔）。Paged 主要价值是支持 varlen + 显存复用，对 embedding 还是有的。
+A: 要看 attention type 与输出粒度。当前 encoder-only layer 有专用 cache spec；sequence-level pooling 可读取 prefix cache，而 token-level 输出默认跳过 prefix-cache read，以免丢失逐 token hidden output。不要从“无 decode”直接推出“不需要 cache”。
 
 **Q: BGE-M3 三个输出怎么在 vLLM 里实现？**
-A: 用 BgeM3Pooler 一次 forward 同时产出 dense / sparse / colbert，PoolingParams.task 控制哪个返回给客户端。
+A: `DispatchPooler` 分别提供 `embed`（dense）、`token_classify`（sparse）与 `token_embed`（ColBERT）；`BgeM3Pooler` 的复合 task 只拼接 dense + sparse，不包含 ColBERT。
 
 **Q: Reranker 跟 embedding 怎么不同？**
-A: Embedding 是 bi-encoder（独立 encode）；reranker 是 cross-encoder（拼接后一次 forward）。前者用 SequencePooler + classify activation 跑 (query, doc) 对，返回 0-1 score。
+A: bi-encoder 独立编码 query / document，再由相似度函数打分；cross-encoder 联合编码 pair，返回 sequence score；late-interaction 则保留 token embeddings 做 MaxSim。score 是否在 0–1、是否 activation / calibration，完全由模型和 pooler 配置决定。
 
 **Q: Embedding 服务的容量怎么估？**
-A: 主要看 prefill TFLOPs。短文本（128 token）+ BGE-large（~300M 参数）单 H100 能跑 500-1000 req/s。max_num_batched_tokens 开到 32k 充分利用。
+A: 用生产长度直方图分别测 sequence / token 输出，记录 tokens/s、requests/s、p50/p99、峰值显存、pooler / D2H / 序列化 / 网络成本和质量指标。再扫描 batch token 与并发，不应套用固定卡型 QPS。
+
+---
+
+## 13. 最小可复现实验与失败证据
+
+固定模型 revision、tokenizer、prompt 模板与一份带标签的 query / document 数据集：
+
+1. 核准 runner 解析结果、`get_supported_tasks()` 与实际挂载 endpoint；对不支持 task 验证明确失败。
+2. 对 CLS / MEAN / LAST、activation / normalize、truncation、query / document 前缀做单变量实验，记录检索 recall / NDCG 或分类指标，性能比较必须保持语义相同。
+3. 扫描长度、并发与 `max_num_batched_tokens`，分别记录 sequence-level 与 token-level 的 GPU、D2H、JSON 序列化和网络成本。
+4. 若使用 Matryoshka，逐个允许维度比较质量、向量库容量与查询延迟；若使用 rerank，检查 score calibration 与排序稳定性。
+
+失败证据至少覆盖：错误 runner、模型不支持的 task / endpoint、非法 Matryoshka 维度、超过最大长度、空输入、token-level 巨大响应、prefix-cache read 语义差异、query / document 模板反转。保存 tokenized input、pooler config、task、原始向量 / logits 的摘要、activation / normalize 设置、错误响应与 server 日志。
+
+> **生产取舍：** 更大的动态 batch 提高吞吐却可能抬高尾延迟；token-level 输出保留更多信息却放大内存与网络；降维节省存储却可能损失 recall。容量门禁必须同时看服务 SLO 与离线质量，而不是只看 tokens/s。
+
+> **硬件验证状态：** 本章完成锁定 SHA 的静态源码复核；未在当前 SHA 上执行 GPU pooling 基准，因此不提供相对 sentence-transformers 的倍数或固定卡型 QPS。
 
 ---
 
@@ -298,15 +330,15 @@ A: 主要看 prefill TFLOPs。短文本（128 token）+ BGE-large（~300M 参数
 - vLLM 把 sampling 换成 pooling 即可服务 embedding/分类/score 模型，复用 continuous batching + FlashAttn + 量化收益。
 - Pooler 体系分 Sequence / Token / Dispatch / Identity / 复合（BgeM3）几类，预训练时定型，用错即废。
 - PoolingParams 通过 `task`、`activation`、`dimensions`（Matryoshka）控制输出形态。
-- BGE-M3 等复合模型靠定制 Pooler 一次 forward 输出 dense / sparse / colbert 三种表示。
-- Encoder-only 模型走 `attn_type=ENCODER_ONLY`，KV 不写也不复用，注意力是双向的。
+- BGE-M3 用 DispatchPooler 暴露 dense / sparse / ColBERT 分支；复合 BgeM3Pooler 当前拼接 dense + sparse。
+- pooling 的 KV / prefix-cache 语义取决于 attention type 与 sequence / token 输出；token-level task 默认跳过 prefix-cache read。
 
 ## 自检
 
 1. 你拿到一个声称兼容 BERT 的 embedding 模型，怎么判断该用 CLS、Mean 还是 Last pool？
-2. PoolingParams.dimensions=256 在 BGE-large 上意味着什么？为什么这能直接做？
-3. 一个 RAG pipeline 想同时支持"找 top-k 向量"和"对 top-k rerank"，最少用几个 vLLM 实例？为什么？
-4. 同一台 H100 上跑 BGE-large 与 Llama-70B，scheduler 会让它们共 batch 吗？为什么？
+2. `PoolingParams.dimensions=256` 通过验证需要哪些模型声明？降维后还要评估什么？
+3. 一个 RAG pipeline 想同时支持 bi-encoder 检索和 cross-encoder rerank，什么时候需要两个模型实例？哪些 task 可能由一个多任务模型提供？
+4. 同一台 GPU 上的 embedding 与 generation 模型为什么不会自动进入同一个 runner batch？
 
 ## 下一步
 
@@ -318,14 +350,38 @@ A: 主要看 prefill TFLOPs。短文本（128 token）+ BGE-large（~300M 参数
 
 ## Sources
 
-- `vllm/model_executor/layers/pooler/abstract.py:16`（Pooler）
-- `vllm/model_executor/layers/pooler/seqwise/methods.py:36,50,60`（CLS/Last/Mean）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/abstract.py","symbol":"Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/abstract.py · Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/abstract.py#L16)
+
+- `vllm/model_executor/layers/pooler/abstract.py`（Pooler）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"CLSPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · CLSPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L37)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"LastPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · LastPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L50)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/seqwise/methods.py","symbol":"MeanPool"} -->
+[源码锚点：vllm/model_executor/layers/pooler/seqwise/methods.py · MeanPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/seqwise/methods.py#L60)
+
+- `vllm/model_executor/layers/pooler/seqwise/methods.py`（CLS/Last/Mean）
 - `vllm/model_executor/layers/pooler/tokwise/methods.py`
-- `vllm/model_executor/layers/pooler/activations.py:73,102,112`
-- `vllm/model_executor/layers/pooler/special.py:25,198`（Dispatch / BgeM3）
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerActivation"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerActivation](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L79)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerNormalize"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerNormalize](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L108)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/activations.py","symbol":"PoolerClassify"} -->
+[源码锚点：vllm/model_executor/layers/pooler/activations.py · PoolerClassify](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/activations.py#L118)
+
+- `vllm/model_executor/layers/pooler/activations.py`
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"DispatchPooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · DispatchPooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L25)
+<!-- vllm-source: {"path":"vllm/model_executor/layers/pooler/special.py","symbol":"BgeM3Pooler"} -->
+[源码锚点：vllm/model_executor/layers/pooler/special.py · BgeM3Pooler](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/pooler/special.py#L202)
+
+- `vllm/model_executor/layers/pooler/special.py`（Dispatch / BgeM3）
 - `vllm/v1/pool/late_interaction.py`、`metadata.py`
 - `vllm/pooling_params.py`
-- `vllm/model_executor/models/bert.py`、`bge_m3.py`、`jina_embeddings_v3.py`
+- `vllm/model_executor/models/bert.py`、`roberta.py`（BGE-M3 pooler 装配）、`jina.py`
+- `vllm/tasks.py`、`vllm/config/pooler.py`
+- `vllm/entrypoints/pooling/{embed,scoring,classify,pooling}/api_router.py`
 
 ---
 
