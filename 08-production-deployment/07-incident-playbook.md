@@ -1,4 +1,4 @@
-# 07. 真实故障 Runbook：8 个生产案例
+# 07. 故障演练 Runbook：8 个合成场景
 
 > **谁该读这一篇？** 一线 on-call SRE、负责推理服务稳定性的工程师、postmortem 文化的推动者。
 >
@@ -8,11 +8,13 @@
 >
 > **学完能：**
 > 1. 用"症状 → 排查 → 根因 → 修复 → 长期改进"的结构复盘任意 LLM 故障
-> 2. 把至少 4 个真实 case（NCCL hang / preempt cascade / cache 跌 / retry storm 等）复盘清楚
+> 2. 把至少 4 个合成 case（NCCL hang / preempt cascade / cache 跌 / retry storm 等）推演清楚
 > 3. 写出可机械执行的 runbook 与决策树
 > 4. 区分紧急止血动作与长期改进项
 
-这一节把 LLM 推理常见 8 种故障写成可读的 runbook。每个案例都按 **症状 → 排查 → 根因 → 修复 → 长期改进** 展开，方便你在值班、复盘和团队培训时直接套用。
+> **当前复核（2026-07-20）：** 下列数字是事故叙事示意，不是通用正常值/告警阈值。先用本服务 SLO 和基线替换；命令默认只读，任何重启、限流、扩缩或网络动作都需精确 scope、授权、rollback 与恢复验证。
+
+这一节把 LLM 推理常见的 8 类**合成演练场景**写成 runbook。每个案例都按 **症状 → 排查 → 假设/证据 → 修复 → 长期改进** 展开；数字用于展示叙事结构，不代表真实事故或通用阈值。
 
 ---
 
@@ -30,7 +32,7 @@ PromQL: sum(vllm:num_requests_waiting) → 持续 > 10？YES
 # 2. 再看 KV
 PromQL: avg(vllm:kv_cache_usage_perc) → > 0.9？YES
 # 3. 是否有 preempt
-PromQL: rate(vllm:num_preemptions_total[5m]) → > 0？YES
+PromQL: rate(vllm:num_preemptions_total[5m]) → 是否高于同 workload 基线？
 # 4. 流量层面
 PromQL: sum(rate(vllm:request_success_total[1m])) → 比昨天同时段高 2×
 ```
@@ -39,14 +41,14 @@ PromQL: sum(rate(vllm:request_success_total[1m])) → 比昨天同时段高 2×
 流量突增，但 HPA cooldown 还没释放，KV 满了，请求开始排队。
 
 ### 修复（紧急）
-1. 手动扩 Pod 2 个（绕过 HPA）
+1. 按已批准的 emergency capacity step 扩容并记录精确 target/current/desired
 2. Gateway 临时降级：拒绝 max_tokens > 2048 的请求
 3. 看 TTFT 回落
 
 ### 长期改进
-- HPA 阈值降低：`num_requests_waiting > 3` 而不是 10
+- 用 replay 重标定 HPA queue threshold，不直接复制本场景数字
 - Predictive scaling：基于 hour-of-day 提前扩
-- Warm pool：常驻 20% 冗余
+- Warm pool：按 burst/failure headroom 模型配置
 - 客户端 SDK 调小默认 max_tokens
 
 ### 复盘要点
@@ -73,12 +75,12 @@ nvidia-smi nvlink -e                    # NVLink CRC error 计数上涨
 NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang。
 
 ### 修复（紧急）
-- LeaderWorkerSet 重启整组 Pod
+- 若 deployment unit 是多 Pod collective group，按编排契约恢复整组；单 Pod 多 GPU 则恢复该 Pod
 - 节点打 taint，让其他 Pod 不调度过来
 - 通知运维换 NVLink 线/查硬件
 
 ### 长期改进
-- `NCCL_BLOCKING_WAIT=1`、`NCCL_TIMEOUT=60`：超时变 crash 而不是 hang
+- 按锁定 PyTorch/NCCL 版本验证 ProcessGroup timeout/watchdog；可在隔离演练中核对 `TORCH_NCCL_BLOCKING_WAIT=1` 的行为
 - Liveness probe 检查 "最近 30s 是否有成功 step"
 - DCGM 监控 NVLink CRC，预警硬件问题
 - 节点定期 nccl-tests 自检
@@ -132,12 +134,12 @@ NVLink 某条链路有间歇错误，NCCL 一次 AllReduce 卡死，整组 hang�
 客户端 SDK retry 无 budget，故障期间流量呈倍数增长。
 
 ### 修复（紧急）
-- Gateway 强制限流（先 5×，逐步放）
+- Gateway 按预定义 shedding policy 限流，记录当前流量与目标降幅
 - 通知客户端方禁用 retry
 - 等流量平稳后慢慢扩
 
 ### 长期改进
-- Gateway 默认有 ratelimit（按 client / API key）
+- Gateway 显式配置并测试 per-principal rate/retry budget，不假设默认开启
 - 客户端 SDK 强制 jittered exp backoff + retry budget
 - Pod 优雅 drain，不要 hard kill 触发 retry
 - 跨 AZ 部署，单 AZ 挂不会全崩
@@ -215,7 +217,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 
 ### 排查
 - vLLM 版本：新升级到 v0.x.x，CUDA Graph 与新 attention backend 兼容性问题
-- 试 `--enforce-eager`：能起，但跑慢 30%
+- 试 `--enforce-eager`：若能起，记录为 CUDA Graph/compile 路径线索，并实测 steady-state 回归
 
 ### 根因
 新版本的某个 op 不支持 CUDA Graph，但配置默认开启。
@@ -250,7 +252,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 
 ### 修复
 1. 紧急：Gateway 根据 prompt 长度路由：> 16k 走专门 Pod 池
-2. 那个池关 chunked prefill 默认，调大 max_num_batched_tokens
+2. 在长请求池对 chunked prefill 与 token budget 做单变量 A/B，同时看 TTFT/TPOT/goodput
 3. 短请求池保持原配置
 
 ### 长期改进
@@ -268,7 +270,7 @@ dmesg | grep -i "xid"                   # 看到 Xid 错误
 每个 runbook 应该有：
 
 1. **明确的 symptom**：用户 / 监控看到什么
-2. **可机械执行的检查命令**：复制粘贴就能跑
+2. **可机械执行但安全的检查命令**：默认只读，精确 namespace/label/时间窗，不使用模糊 target
 3. **二分诊断**：每一步缩小怀疑范围
 4. **紧急 vs 长期分离**：先止血再治本
 5. **跟代码 / 配置位置关联**：vLLM 源码、Pod yaml、Helm values
@@ -302,8 +304,8 @@ Root cause analysis: follow standard postmortem template
 
 ## 工程自检问答
 
-**Q: 你最难处理的 LLM 故障是哪个？**
-A: 挑 NCCL hang 或 ECC 这种"症状诡异、调试难"的——故事性强。
+**Q: 面试里怎样讲一个故障？**
+A: 只讲亲自参与且有证据的事件；说明 symptom、证据链、决策、影响、rollback 与后续验证。没有真实经历时明确使用合成演练，不包装成生产故事。
 
 **Q: 怎么减少故障 MTTR（平均恢复时间）？**
 A: ①完整 runbook ②自动告警 + 自动诊断脚本 ③on-call 培训 ④chaos 演练熟悉故障模式 ⑤关键操作 self-service（一键扩容、一键回滚）。
@@ -318,7 +320,7 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 
 ## 小结
 
-- 8 个典型故障覆盖 LLM 推理的主要失效维度：容量/通信/路由/重试/质量/硬件/框架/隔离。
+- 8 个合成场景覆盖容量/通信/路由/重试/质量/硬件/框架/隔离，但不声称穷尽所有故障。
 - 任何故障都按 "Symptom → Triage (<5min) → Root cause → Emergency fix → Long-term" 五段写。
 - 紧急动作只追求"止血"，长期改进必须落地为监控、配置或自动化代码改动。
 - LLM 特有故障（NCCL hang、ECC bit flip、模型质量回归）单靠传统 5xx/latency 告警发现不了，必须额外加代理指标。
@@ -341,7 +343,7 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 
 ## 总章节小结
 
-整个 `08-production-deployment/` 7 章覆盖：
+整个 `08-production-deployment/` 将在本轮扩展为 12 章；本章位于故障响应主线中。
 
 1. 参考架构（llm-d / AIBrix / vLLM Production Stack）
 2. 智能路由（cache-aware / load-aware / LoRA-aware）

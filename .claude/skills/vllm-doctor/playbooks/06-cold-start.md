@@ -1,9 +1,8 @@
 # Playbook 06: 冷启动 / readiness 慢
 
 ## Symptom Reconfirm
-- 新 pod 调度后超过 5 分钟还没 Ready，或 Ready 后 TTFT p99 仍异常高 ≥ 60 s
-- 历史正常冷启 60-180s；本次明显偏长
-- 排除：模型权重确实大（70B+）→ 5-10 分钟是正常的，不算故障
+- 新实例从 scheduled 到 Ready，或 Ready 到满足放流条件的时长，显著越过同模型/硬件/缓存状态的历史基线
+- 分别记录镜像拉取、调度、权重读取、compile/capture、warmup；不要用模型参数量推断固定“正常分钟数”
 
 ## Triage Commands
 
@@ -19,7 +18,7 @@ if [ -n "$PEND_POD" ]; then
     > "$INCIDENT_DIR/evidence/pending-pod.log"
 fi
 
-# 2. torch.compile 缓存路径是否挂载且非空（缺失会重新编译 60-180s）
+# 2. compile/cache 路径是否存在；非空不代表与当前版本兼容
 first_pod=$(kubectl get pods -n ${VLLM_NAMESPACE:-vllm} -l ${VLLM_SERVICE_LABEL:-app.kubernetes.io/name=vllm} -o jsonpath='{.items[0].metadata.name}')
 kubectl exec -n ${VLLM_NAMESPACE:-vllm} $first_pod -- bash -lc \
   'ls -la $VLLM_TORCH_COMPILE_CACHE_DIR 2>/dev/null | head' \
@@ -36,32 +35,27 @@ kubectl exec -n ${VLLM_NAMESPACE:-vllm} $first_pod -- bash -lc \
 | 现象 | 根因 |
 | --- | --- |
 | `pending-pod-describe.txt` 显示 `Insufficient nvidia.com/gpu` | 节点池容量不够，HPA 扩了但无节点接 |
-| 日志卡在 `torch.compile` | 编译缓存没挂载 / 缓存路径为空，每次重编 |
-| 日志卡在 `Downloading model` | 模型走的是 HF / S3 拉，第一次慢 |
-| 日志卡在 `Loading safetensors` 且超长 | 权重在 NFS，I/O 慢 |
-| Ready 但 TTFT 高 | CUDA Graph 还没 capture 完，正常的 warmup 期 |
+| compile 阶段明显慢于同版本基线 | cache miss/不兼容或 compile workload 改变，需比对 digest 与日志 |
+| 下载阶段慢 | 远端制品、网络或鉴权是候选原因 |
+| 权重读取阶段慢 | 存储吞吐/并发是候选原因，需用 I/O 证据确认 |
+| Ready 但 TTFT 高 | readiness 未覆盖完整 warmup，或真实流量形态未预热 |
 
 ## Remediate
 
-- **L1**：抓证据
-- **L2（直接做）**：
-  - 给 deployment 加 `VLLM_TORCH_COMPILE_CACHE_DIR=/persistent/torch-cache`（PV/PVC 已挂时）
-  - `readinessProbe.initialDelaySeconds` 调到 600s（70B 模型）
-  - 模型存储改用本地 SSD 镜像（如果原是 NFS）
-- **L3（弹确认）**：
-  - 提前 warm 节点池：`kubectl scale lws/${VLLM_LWS:-vllm} --replicas=+N`（影响：成本）
-  - 改用 baked-in image（模型权重打进镜像，第一次拉镜像慢但启动飞快）—— 影响：镜像变 30-50GB
+- **L1（只读）**：抓证据
+- **L2（需逐命令批准）**：根据分段证据调整 readiness、缓存挂载或制品分发；候选值来自目标模型启动分布，并验证缓存的版本隔离、权限和一致性。
+- **L3（需逐命令批准）**：预热节点/实例池或改变镜像制品布局；先计算容量、镜像分发成本、安全扫描和回滚。
 
 ## Verification
 
 - 新建 pod 从 `Pending` 到 `Ready` 时间 < 历史 p95 × 1.5
-- Ready 后 60s 内 TTFT p99 < `$TTFT_SLO_MS`
+- Ready 后覆盖批准 warmup 与请求矩阵，TTFT 满足该服务 SLO
 
 ## Long-term
 
-- KEDA `minReplicaCount >= 2`、`cooldownPeriod >= 300s`，避免 scale-to-zero
-- 编译缓存放 NFS 或 PVC 共享，所有 pod 复用
-- 起容量预留（节点池 over-provision 10-20%）
+- 是否保留 warm replica、cooldown 与 scale-to-zero 由冷启动分布和成本目标共同决定
+- 编译缓存只有在版本键、并发写和存储语义验证后才能共享
+- 节点容量预留按扩容 SLO 与供应时间计算，不套固定比例
 - 见 `reference/checklist-prelaunch.md` 第 1、2、3 条
 
-<!-- source: ../../08-production-deployment/04-autoscaling-and-capacity.md L253-267 -->
+<!-- source: ../../08-production-deployment/04-autoscaling-and-capacity.md -->

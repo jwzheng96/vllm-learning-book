@@ -1,4 +1,4 @@
-# 08. 监控菜谱：可直接复制的 Prometheus 规则、PromQL、Dashboard 面板
+# 08. 监控菜谱：可验证的 Prometheus 规则、PromQL、Dashboard 面板
 
 > **谁该读这一篇？** 准备搭 vLLM 生产监控的 SRE / 平台工程师；oncall 要预定义告警规则的同学；已经看完 SLO 章节，需要"动手版"的人。
 >
@@ -7,12 +7,14 @@
 > **耗时：** 约 20 分钟。
 >
 > **学完能：**
-> 1. 列出 vLLM 暴露的 30+ 个 Prometheus 指标，按 4 大金信号分桶。
-> 2. 直接复制粘贴本节的告警规则 yaml 与 PromQL，部署到自己的 Prometheus。
+> 1. 从当前 `/metrics` 与源码生成指标清单，按 4 大金信号分桶。
+> 2. 把本节模板替换为自己的 label/bucket/SLO，并用 `promtool` 验证。
 > 3. 按"延迟 / 容量 / 缓存 / 故障"4 块组织 Grafana dashboard。
 > 4. 在 oncall 30 秒内通过 3-5 个核心 panel 判断"系统现在到底怎么了"。
 
-不解释为什么要监控（[`05-slo-and-observability.md`](05-slo-and-observability.md) 已讲）。这章只给**可直接用的工件**。
+> **当前复核（`b23bd73f540175f9e117eaee5029cd7d8df63964`）：** Prometheus exposition 会给 counter 加 `_total`，histogram 使用 `_bucket/_count/_sum`；聚合时保留 `le`，跨副本按目标标签聚合。示例阈值必须由本服务基线/SLO替换，复制 YAML 前先在 staging 用 `promtool` 和真实 `/metrics` 验证。
+
+不解释为什么要监控（[`05-slo-and-observability.md`](05-slo-and-observability.md) 已讲）。这章给**需在 staging 验证的工件模板**。
 
 ---
 
@@ -42,33 +44,33 @@
 | `vllm:num_requests_running` (gauge) | 当前 running 请求数 |
 | `vllm:num_requests_waiting` (gauge) | 当前等待请求数 |
 | `vllm:num_requests_waiting_by_reason` (gauge) | 按等待原因分桶（KV/encoder/...） |
-| `vllm:prompt_tokens` (counter) | 累计 prompt token 数 |
-| `vllm:prompt_tokens_by_source` (counter) | 按来源（user/template 等）分 |
-| `vllm:prompt_tokens_cached` (counter) | 由 prefix cache 命中的 prompt token |
-| `vllm:generation_tokens` (counter) | 累计 generated token 数 |
+| `vllm:prompt_tokens_total` (counter) | 累计 prompt token 数 |
+| `vllm:prompt_tokens_by_source_total` (counter) | 按当前 `source` enum 分 |
+| `vllm:prompt_tokens_cached_total` (counter) | local + external cache 命中的 prompt token |
+| `vllm:generation_tokens_total` (counter) | 累计 generated token 数 |
 | `vllm:iteration_tokens_total` (histogram) | 每次 engine step 处理的 token 数分布 |
-| `vllm:request_success` (counter) | 按 `finish_reason` 分桶（stop/length/abort/...） |
+| `vllm:request_success_total` (counter) | 按 `finished_reason` 分桶 |
 
 ### 1.3 Saturation（资源压力）
 
 | Metric | 含义 |
 | --- | --- |
 | `vllm:kv_cache_usage_perc` (gauge) | KV cache 占用率（0-1） |
-| `vllm:num_preemptions` (counter) | 累计抢占次数 |
+| `vllm:num_preemptions_total` (counter) | 累计抢占次数 |
 | `vllm:engine_sleep_state` (gauge) | 引擎睡眠状态（多副本 elastic 用） |
 
 ### 1.4 Cache 命中
 
 | Metric | 含义 |
 | --- | --- |
-| `vllm:prefix_cache_queries` (counter) | prefix cache 查询次数（按 block 计） |
-| `vllm:prefix_cache_hits` (counter) | prefix cache 命中次数 |
-| `vllm:external_prefix_cache_queries` (counter) | 外部（LMCache 等）查询次数 |
-| `vllm:external_prefix_cache_hits` (counter) | 外部命中次数 |
-| `vllm:mm_cache_queries` (counter) | 多模态 encoder cache 查询 |
-| `vllm:mm_cache_hits` (counter) | 多模态 encoder cache 命中 |
+| `vllm:prefix_cache_queries_total` (counter) | prefix cache 查询 token 数 |
+| `vllm:prefix_cache_hits_total` (counter) | prefix cache 命中 token 数 |
+| `vllm:external_prefix_cache_queries_total` (counter) | 外部 KV connector 查询 token 数 |
+| `vllm:external_prefix_cache_hits_total` (counter) | 外部命中 token 数 |
+| `vllm:mm_cache_queries_total` (counter) | 多模态 encoder cache 查询 item 数 |
+| `vllm:mm_cache_hits_total` (counter) | 多模态 encoder cache 命中 item 数 |
 
-### 1.5 KV block 生命周期（histogram，需开启 `--enable-kv-cache-events` 或相关）
+### 1.5 KV block 生命周期（histogram，需配置非零 `--kv-cache-metrics-sample`）
 
 | Metric | 含义 |
 | --- | --- |
@@ -94,7 +96,7 @@
 
 | Metric | 含义 |
 | --- | --- |
-| `vllm:corrupted_requests` (counter) | 因 KV / 状态损坏被 fail 的请求 |
+| `vllm:corrupted_requests_total` (counter) | 仅在 `VLLM_COMPUTE_NANS_IN_LOGITS` 启用时，logits 含 NaN 的请求 |
 
 ### 1.8 配置 / Info
 
@@ -110,7 +112,7 @@
 
 ---
 
-## 2. 必备的 PromQL 公式（直接抄走）
+## 2. PromQL 公式模板（先核对标签与基线）
 
 ### 2.1 SLO 公式
 
@@ -162,21 +164,21 @@ sum by (model_name) (rate(vllm:generation_tokens_total[1m]))
 # Block-level 命中率（5min 滑动）
 sum by (model_name) (rate(vllm:prefix_cache_hits_total[5m]))
 /
-sum by (model_name) (rate(vllm:prefix_cache_queries_total[5m]))
+clamp_min(sum by (model_name) (rate(vllm:prefix_cache_queries_total[5m])), 1e-9)
 
 # Token-level 节省比例
 sum(rate(vllm:prompt_tokens_cached_total[5m]))
 /
-sum(rate(vllm:prompt_tokens_total[5m]))
+clamp_min(sum(rate(vllm:prompt_tokens_total[5m])), 1e-9)
 ```
 
 ### 2.4 多副本 / DP 健康度
 
 ```promql
 # 实例间 QPS 偏差（max / min）
-max(rate(vllm:request_success_total[1m])) by (model_name)
+max by (model_name) (rate(vllm:request_success_total[1m]))
 /
-min(rate(vllm:request_success_total[1m])) by (model_name)
+clamp_min(min by (model_name) (rate(vllm:request_success_total[1m])), 1e-9)
 
 # 单实例 KV 利用率比集群中位数高 30%（routing 不均）
 vllm:kv_cache_usage_perc
@@ -185,14 +187,14 @@ vllm:kv_cache_usage_perc
 
 ### 2.5 近似 MFU / MBU
 
-把 H100 SXM 作为例子：BF16 峰值约 990 TFLOPS，HBM 带宽约 3350 GB/s。
+下面把 `<peak_flops_per_gpu>` 与 `<peak_bytes_per_second>` 留作部署参数；它们必须来自当前 GPU SKU、精度/稀疏模式与实测/厂商规格，不能把某个 H100 数字硬编码到通用 dashboard。
 
 ```promql
 # 每 GPU 估算 TFLOPS
 rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12
 
-# H100 BF16 近似 MFU
-rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
+# 近似 MFU
+rate(vllm:estimated_flops_per_gpu_total[1m]) / <peak_flops_per_gpu>
 
 # 每 GPU 估算带宽 GB/s
 (
@@ -200,11 +202,11 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
   + rate(vllm:estimated_write_bytes_per_gpu_total[1m])
 ) / 1e9
 
-# H100 近似 MBU
+# 近似 MBU
 (
   rate(vllm:estimated_read_bytes_per_gpu_total[1m])
   + rate(vllm:estimated_write_bytes_per_gpu_total[1m])
-) / 1e9 / 3350
+) / <peak_bytes_per_second>
 ```
 
 读法：
@@ -216,7 +218,9 @@ rate(vllm:estimated_flops_per_gpu_total[1m]) / 1e12 / 990
 
 ---
 
-## 3. 告警规则（Prometheus YAML，直接复制）
+## 3. 告警规则模板（staging 验证后使用）
+
+以下 YAML 用演示阈值展示语法，不可直接部署；先替换阈值、labels 和 `for`，再运行 `promtool check rules`：
 
 ```yaml
 groups:
@@ -273,7 +277,7 @@ groups:
       severity: warning
     annotations:
       summary: "KV cache > 90% on {{ $labels.instance }}"
-      description: "Preemptions likely. Scale out or reduce max_num_seqs."
+      description: "Correlate with preemption, queue and SLO before mitigation."
 
   - alert: VLLMPreemptionsSpiking
     expr: rate(vllm:num_preemptions_total[5m]) > 0.5
@@ -311,6 +315,7 @@ groups:
 
 - name: vllm-failure
   rules:
+  # 仅在 VLLM_COMPUTE_NANS_IN_LOGITS 启用时存在
   - alert: VLLMCorruptedRequests
     expr: increase(vllm:corrupted_requests_total[10m]) > 0
     labels:
@@ -352,7 +357,7 @@ groups:
 
 **关键设计原则：**
 
-- 默认 5min 时间窗、按 model_name 维度 group（多模型一份 dashboard）
+- 时间窗覆盖 scrape/evaluation lag 和 SLO 窗口；按实际低基数 labels 分组
 - 用 **Repeat by instance** 实现多 GPU pod 切换
 - 颜色统一：错误红、延迟黄、容量蓝、cache 绿
 
@@ -419,7 +424,7 @@ vLLM 默认在 `/metrics` 暴露 Prometheus 格式：
 **OpenTelemetry trace（更细粒度）**：
 
 - 开启：`--otlp-traces-endpoint <collector>`
-- 源码：`vllm/tracing.py` 暴露每个 request 的 span（含 prefill / decode / sampling）
+- 源码：当前 V1 `output_processor.py` 记录 `llm_request` span，并以 attributes 表示 queue/prefill/decode 等时间
 - 适合追"这一个请求为什么慢"——配合 metric 看"宏观趋势"
 
 ---
@@ -430,14 +435,14 @@ vLLM 默认在 `/metrics` 暴露 Prometheus 格式：
 # docker-compose.yml（开发/测试用）
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:<pinned-version-or-digest>
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./vllm-rules.yml:/etc/prometheus/vllm-rules.yml
     ports: ["9090:9090"]
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:<pinned-version-or-digest>
     ports: ["3000:3000"]
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
@@ -446,11 +451,11 @@ services:
       - ./grafana-provisioning:/etc/grafana/provisioning
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:<pinned-version-or-digest>
     ports: ["9093:9093"]
 
   vllm:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:<validated-version-or-digest>
     command: --model facebook/opt-125m --port 8000
     ports: ["8000:8000"]
 ```
@@ -483,7 +488,7 @@ scrape_configs:
 
 | 陷阱 | 怎么发现 | 怎么避免 |
 | --- | --- | --- |
-| histogram bucket 默认值不适合长尾 | TTFT p99 永远落在最高 bucket | 调 `--prometheus-histogram-buckets` |
+| histogram bucket 不覆盖目标边界 | TTFT p99 落在最高 bucket | 当前锁定 vLLM 没有通用 bucket CLI；改用可配置的 gateway/OTel SLI 或提交受测配置变更 |
 | 标签维度爆炸（per-request labels） | Prometheus 内存 OOM | 不要给 metric 加 `request_id`、按 model_name + finish_reason 即可 |
 | metric reset on restart | counter 增长突然回 0 | 用 `increase()` 而非 `rate()` 的差值，或在 PromQL 用 `resets()` |
 | 多副本下 `vllm:kv_cache_usage_perc` 平均掩盖热点 | 单副本可能 100% 但平均 60% | 看 `max by (instance)` 或开 instance label |
@@ -493,9 +498,9 @@ scrape_configs:
 
 ## 小结
 
-- vLLM 暴露 30+ 个 `vllm:*` 指标，分 7 类（latency / traffic / saturation / cache / kv lifecycle / failure / info）。
+- 当前 vLLM 暴露的指标随配置变化；启动后从 `/metrics` inventory，并按 latency / traffic / saturation / cache / kv lifecycle / failure / info 分类。
 - 4 大 SLO 必看：TTFT p99、TPOT p99、abort rate、queue depth。
-- 给出可直接复制的 8 条核心告警规则（YAML）和 12 panel 的 dashboard 骨架。
+- 给出需替换阈值并经 `promtool`/staging 验证的告警模板和 dashboard 骨架。
 - Oncall 30 秒按 5 panel 顺序看 + 用根因树定位。
 - 接云厂商监控通过 OTel 或厂商专属 Prometheus 服务。
 
@@ -509,7 +514,7 @@ scrape_configs:
 ## 下一步
 
 - 想理解为什么这样定 SLO：[`05-slo-and-observability.md`](05-slo-and-observability.md)（理论层）。
-- 想理解 metric 怎么从代码注入：`vllm/vllm/v1/metrics/loggers.py`（Prometheus 注册）、`vllm/vllm/v1/metrics/stats.py`（统计聚合）。
-- 想做端到端 trace：`vllm/tracing.py` + OTel 全栈。
-- 想看真实故障 case 怎么用监控定位：[`07-incident-playbook.md`](07-incident-playbook.md)（8 个真实事故）。
+- 想理解 metric 怎么从代码注入：锁定 submodule 的 `vllm/v1/metrics/loggers.py`（Prometheus 注册）、`vllm/v1/metrics/stats.py`（统计聚合）。
+- 想做端到端 trace：查看 `vllm/v1/engine/output_processor.py` 的 `llm_request` span attributes，并串 Gateway/EPP spans。
+- 想看合成故障 case 怎么用监控定位：[`07-incident-playbook.md`](07-incident-playbook.md)。
 - 想做容量规划：[`04-autoscaling-and-capacity.md`](04-autoscaling-and-capacity.md)。

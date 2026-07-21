@@ -7,12 +7,16 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
-> 1. 解释为什么传统 round-robin / least-conn 在 LLM 推理下注定失败
+> 1. 解释 round-robin / least-conn 的基线价值与失配条件
 > 2. 列举 cache-aware / load-aware / LoRA-aware / session-sticky 四类信号
 > 3. 描述 push / pull / estimate 三种 cache 状态同步方案的取舍
 > 4. 画出 Envoy + ExtProc + EPP (Gateway API Inference Extension) 的请求路径
 
-LLM 推理的负载均衡跟传统微服务**完全不同**。round-robin 在这里是灾难。本节讲清"为什么需要 smart router"、几种路由策略，以及 llm-d / AIBrix / vLLM Router 的工程实现。
+> **当前复核（2026-07-20）：** vLLM 单实例负责请求内调度，不内置跨副本全局 smart router。Production Stack 官方文档提供 prefix/KV-aware routing 用例；Gateway API Inference Extension 定义 InferencePool/EPP 协议，其 lightweight EPP 仅用于 reference/conformance。收益必须在你的 workload 实测，round-robin 也可作为低状态基线，不能写成“必然灾难”。
+
+外部边界依据（访问于 2026-07-20）：[Production Stack Prefix Aware Routing](https://docs.vllm.ai/projects/production-stack/en/latest/use_cases/prefix-aware-routing.html)、[Inference Extension implementer guide](https://gateway-api-inference-extension.sigs.k8s.io/guides/implementers/)。
+
+LLM 推理的负载均衡比等成本 HTTP 请求多了长度、KV、adapter 与队列状态。round-robin 是有用基线，但在有共享 prefix、长尾请求或 adapter 局部性时可能明显次优。本节讲清 smart router 的信号、协议与验证方法。
 
 ---
 
@@ -28,14 +32,14 @@ LLM 推理打破**全部**这些假设：
 
 | 假设            | LLM 现实                                                    |
 | ------------- | --------------------------------------------------------- |
-| 请求时间相近        | 一个 50 token 短请求 vs 一个 100k token 长请求差 1000×             |
-| 实例无状态        | 每实例有自己的 **prefix cache**——命中和不命中差 50× TTFT             |
+| 请求时间相近        | prompt/output 长度和服务时间可跨多个数量级，比例由 workload 决定 |
+| 实例无状态        | 每实例有自己的 **prefix cache**，命中收益取决于重复前缀和 prefill 成本 |
 | 实例性能相近        | 不同实例的 KV usage、batch fullness 差异极大                       |
 | 一来一回          | 流式输出（SSE）持续几十秒，连接长存                                      |
 
-如果用 round-robin：
+round-robin 基线可能暴露：
 
-- prefix cache 命中率从 80% 跌到 10%
+- 重复 prefix 被分散，cluster hit rate 低于 sticky/prefix-aware 变体
 - 长尾长请求恰好都落同一实例 → 那实例 KV 爆 / 频繁 preempt
 - decode 阶段大 batch 实例和 idle 实例并存，浪费
 
@@ -51,7 +55,7 @@ flowchart TB
         S2["Random"]
         S3["Least Connections"]
     end
-    subgraph LLMAware["LLM-Aware 路由（生产必备）"]
+    subgraph LLMAware["LLM-Aware 路由（按证据启用）"]
         L1["Session Sticky<br/>基于 conversation_id 哈希"]
         L2["Prefix-Cache Aware<br/>查询每实例的 cache 命中"]
         L3["Load-Aware<br/>基于 num_running / KV usage / queue depth"]
@@ -72,7 +76,7 @@ flowchart TB
 ## 3. Session Sticky：最基础但极有效
 
 ### 思想
-同一个 conversation_id 永远路由到同一个 Pod。
+同一个稳定的 session key 优先路由到同一个 Pod；Pod 不健康或达到 load guardrail 时允许受控 fallback。
 
 - 第一轮：cold start，TTFT 高
 - 后续轮：完整 prefix cache 命中，TTFT 极低
@@ -103,25 +107,19 @@ Smart Router 维护一份"每 Pod 当前有什么 cached prefix"的近实时视�
 
 ### 4.2 数据怎么同步？
 
-**方案 A：Pull（vLLM Production Stack Router）**
-Router 周期性向每个 Pod GET `/metrics` 或自定义端点，拉取 cache index 摘要。简单但有延迟（秒级），命中率次优。
+**方案 A：Pull**
+Router 周期获取 Pod metrics/index 摘要。实现简单但视图有采样延迟；效果由刷新周期和 eviction 速度决定。
 
 **方案 B：Push (AIBrix KV Event Sync)**
 vLLM 在 KV 状态变化时（block cached / evicted）通过 ZMQ 主动向 Gateway 发事件。
 Gateway 实时维护全局视图。
-v0.6 (2026-03) 已稳定，支持 remote tokenizer 保证不同 Pod tokenization 一致。
+该路径要求 remote tokenizer、ZMQ-enabled gateway build、Redis 和兼容的 vLLM KV-event 配置；以锁定 AIBrix release 文档为准。
 
-**方案 C：Estimate（llm-d EPP，默认）**
-Router 自己用 prompt + 已知 Pod 历史路由做 trie 估计 cache 状态。
-精度低于 push 但零侵入。
+**方案 C：Estimate**
+Router 用 prompt 与已知路由历史维护近似 index。它不读取引擎权威 eviction 事件，需验证误判、重启和多 gateway 副本下的状态一致性。
 
 ### 4.3 效果
-llm-d 公开数据：
-
-- Throughput +38.9%（vs round-robin）
-- TTFT p95 -97%（chat workload，prefix 重复多）
-
-Cache-aware 是**目前 LLM 路由最重要的优化**，不开就是浪费。
+外部 benchmark 只能作为待复现实验假设。至少对比 round-robin、load-only、prefix-only 和组合策略，保持模型、请求到达过程、长度/前缀分布和并发一致，报告 TTFT/TPOT/goodput/error/cache-hit 与 router 开销。
 
 ### 4.4 跟 vLLM 内部 prefix caching 的关系
 - vLLM Pod 内部：跨请求 prefix 命中（同一 Pod 内的请求）
@@ -155,10 +153,10 @@ score(pod) = α * cache_hit_length(pod, prompt)         # 越高越好
 route_to = argmax(score)
 ```
 
-α/β/γ/δ/ε 由 workload 调，**chat workload 中 α 权重最大**（cache 收益主导）。
+α/β/γ/δ/ε 由 workload 实验调优；即使是 chat，prefix 重复低或队列压力高时也可能由 load 信号主导。
 
 ### 5.3 admission control
-某些 Pod 已经 `kv_usage > 0.9` 时，无论分数多高都**拒绝调度新请求**，避免后续 preempt cascade。
+为 `kv_usage`、queue、preemption rate 和 readiness 设置经压测得到的 filter/guardrail；阈值要留出请求长度不确定性，并提供 fallback 或显式 429/503。
 
 ---
 
@@ -179,7 +177,7 @@ LoRA 适配器（每个几十 MB）允许同一基模型服务多个微调版本
 
 ---
 
-## 7. vLLM 自带的 Router（Production Stack）
+## 7. vLLM Production Stack 的 Router 组件
 
 ```mermaid
 flowchart LR
@@ -204,7 +202,7 @@ helm install vllm-stack vllm/vllm-stack \
 
 ## 8. Envoy AI Gateway + Gateway API Inference Extension
 
-**这是 2026 年的官方方向**。
+这是一个正在演进的开放接口方向；使用时锁定 CRD/API 版本并运行实现的 conformance/故障测试。
 
 ### 架构
 
@@ -231,8 +229,8 @@ flowchart TD
 ### 关键点
 1. **ExtProc** 是 Envoy 的扩展点：外部 gRPC 服务可以在路由前修改 request、决定 backend
 2. **EPP（Endpoint Picker）** 是 Gateway API Inference Extension 标准化的接口
-3. Istio 1.28+ 原生支持
-4. 解耦：路由策略可以单独迭代，不需要碰 Envoy 本体
+3. 数据面支持矩阵随 Envoy Gateway/Istio 等实现版本变化
+4. 解耦：兼容同一 API/扩展契约时，路由策略可以独立迭代
 
 ### 好处
 - 复用 Envoy 的 mTLS、ratelimit、observability、熔断
@@ -270,7 +268,7 @@ flowchart LR
 
 ### 10.1 Tokenization 一致性
 不同 Pod 必须用**完全相同**的 tokenizer 版本。否则同一 prompt 的 block_hashes 不同，cache 命中失败。
-AIBrix v0.6 的 `remote tokenizer` 就是为了这个：Gateway 统一 tokenize 后把 token_ids 传给 Pod。
+AIBrix 当前 KV event sync 文档把 remote tokenizer 列为部署前提之一；具体 token 传递契约、gateway build 和兼容 vLLM 版本必须按锁定 release 验证，不能从教程推断。
 
 ### 10.2 流式 + Smart Router
 SSE 的 first byte 已经出去后，不能换 Pod。
@@ -306,7 +304,7 @@ flowchart LR
 A: vLLM 内部 cache 只在**同一 Pod 内**生效。多 Pod 部署下，同一会话路由到不同 Pod 就完全 miss。Router 层 cache-aware 保证同前缀请求落到同一 Pod，让 Pod 内 cache 真的生效。
 
 **Q: Push vs Pull 同步 cache 状态怎么选？**
-A: Push 实时但侵入；Pull 简单但有延迟。生产追求性能选 Push（AIBrix 路径）；早期用 Pull 起步即可。
+A: Push 更接近引擎事件但引入 publisher、网络、状态恢复与 HA 依赖；Pull/estimate 简单但视图可能滞后。用一致 workload 比较命中、router 开销、错误与降级，不按“生产/早期”直接二选一。
 
 **Q: 一致性哈希在 LLM 路由够用吗？**
 A: 不够。一致性哈希只解决"扩缩平稳"，不感知 cache、load、LoRA。生产用 cache-aware + load-aware 综合打分。一致性哈希是 session sticky 实现的工具，不是策略本身。
@@ -315,16 +313,16 @@ A: 不够。一致性哈希只解决"扩缩平稳"，不感知 cache、load、Lo
 A: 录制真实 workload trace（带 conversation_id），离线 replay 不同策略，对比 TTFT/throughput/cache hit rate。或者 shadow 流量在 staging。
 
 **Q: smart router 自己会不会成为瓶颈？**
-A: 会。需要确保：①ExtProc 服务本身可扩缩 ②路由决策 < 1ms ③缓存状态用近实时近似（不强求严格一致）④Gateway 层有降级到 round-robin 的能力。
+A: 会。需要确保：①ExtProc/EPP 本身可扩缩 ②路由开销预算来自端到端 SLO ③状态陈旧/分区时行为可预测 ④Gateway 能降级到经过验证的低状态策略。
 
 ---
 
 ## 小结
 
-- LLM 请求时长、状态、性能高度异质，传统无状态 LB 必然让 cache miss 和热点同时发生。
-- Cache-aware 是收益最大的路由信号（chat workload 下 TTFT p95 可降 90%+），其次是 load-aware 与 LoRA-aware。
-- Cache 状态同步有 push（AIBrix ZMQ 事件）/ pull（Production Stack 周期拉 metrics）/ estimate（llm-d 本地 trie）三条路线。
-- 2026 年方向是 Gateway API Inference Extension + Envoy ExtProc + EPP：路由策略与数据面解耦。
+- LLM 请求时长、状态和性能高度异质；无状态 LB 是必要基线，但在特定 workload 可能产生 cache 分散或热点。
+- Cache/load/LoRA-aware 哪个收益最大取决于 prefix 重复、长度、adapter 分布和排队；用 round-robin 基线分别做单信号 A/B，不预填 TTFT 降幅。
+- Cache 状态可由 push、pull 或 estimate 获得；具体项目的默认与协议必须按锁定版本核对。
+- Gateway API Inference Extension + proxy/EPP 提供数据面与选择策略的契约，但可替换性仍需 API 版本和 conformance 证明。
 - 工程陷阱集中在 tokenizer 一致性、SSE 首字节后不能换 Pod、长上下文需要独立通道。
 
 ## 自检
@@ -351,16 +349,16 @@ def should_admit(request) -> bool:
     waiting = read_metric("vllm:num_requests_waiting")
     kv_usage = read_metric("vllm:kv_cache_usage_perc")
 
-    # 硬阈值：KV 快满 → 拒绝（避免 preempt 风暴）
-    if kv_usage > 0.95:
+    # 示例阈值必须由长度分布、SLO 与压测反推
+    if kv_usage > KV_HARD_LIMIT:
         return False
 
     # 软阈值：队列深 → 拒绝（保护 TTFT SLO）
-    if waiting > 100:
+    if waiting > WAITING_HARD_LIMIT:
         return False
 
     # 综合：KV 紧张 + 队列也长 → 更严格
-    if kv_usage > 0.85 and waiting > 50:
+    if kv_usage > KV_SOFT_LIMIT and waiting > WAITING_SOFT_LIMIT:
         return False
 
     return True
@@ -368,13 +366,13 @@ def should_admit(request) -> bool:
 
 **阈值依据**：
 
-- `kv_usage > 0.95`：留 5% 安全垫，否则下一个请求 alloc 必失败
-- `waiting > 100`：假设 step 时长 50ms，100 个请求要至少 5s 才能依次进 batch，超过 TTFT SLO
-- 复合规则：两个都吃紧时降低阈值，更早拒绝避免雪崩
+- `KV_HARD_LIMIT`：由 KV 容量、请求长度分布、chunking/preemption 行为和 OOM headroom 反推
+- `WAITING_HARD_LIMIT`：由实测 queue-time 与 TTFT SLO 反推，不能用 `waiting × step time` 简化为串行服务
+- 复合规则：在 replay/load test 中验证误拒绝率、goodput 与恢复时间
 
 **拒绝时返回**：HTTP 429 + `Retry-After: <估算重试时长>` header，让客户端 backoff。
 
-补充：还可以加 `vllm:num_preemptions_total` rate 作为第三维度——如果 preempt 已经在发生，证明系统极限到了，必须拒新请求。
+补充：可把 `vllm:num_preemptions_total` rate 作为压力信号；先关联 queue/KV/SLO，再决定 shed、扩容或调参，不能由单一 counter 自动判定系统极限。
 
 ---
 
@@ -388,7 +386,7 @@ def should_admit(request) -> bool:
 
 1. **不能区分 prefix**：两个不同用户用同一个 system prompt（如同一公司的 chatbot），一致性 hash 把他们分到不同 pod，cache 不能共享
 2. **负载不均**：用户 session 长短不一，hot session pod 过载、idle session pod 闲
-3. **新用户 cold start**：首次访问的用户走哪个 pod 完全随机，cache 命中率 0
+3. **低复用或新 prefix**：若没有其他请求共享该 prefix，首次访问无法获得该前缀的本地命中；但不能按“新用户”直接推断命中率为零
 4. **pod failure 时重路由**：用户被切到新 pod，原 pod 的 cache 失效
 
 **需要补充**：
@@ -403,14 +401,14 @@ def should_admit(request) -> bool:
 
 **4. 替换 EPP 实现（llm-d → AIBrix），Envoy 这边需要改什么？**
 
-**几乎不用改**——这是 Gateway API Inference Extension 的核心价值。
+只有两边实现兼容同一 API/扩展契约并通过 conformance 时，数据面改动才可能很小。
 
 **Envoy 端只需要**：
 
 - 配置 ExtProc filter 指向新 EPP 的 gRPC endpoint
-- 改一行 endpoint URL：`llm-d-epp.svc:9002` → `aibrix-epp.svc:9002`
+- 更新 endpoint、CRD/API version、认证/TLS、metadata/header 与失败策略
 
-**EPP 端**：协议遵循 Gateway API Inference Extension 标准（ExtProc gRPC），所以新 EPP 实现只要也遵循同一协议，Envoy 就能透明替换。
+**EPP 端**：核对支持的 request API、body parsing、目标 endpoint metadata、flow control、streaming 与错误映射；不能只凭都使用 ext-proc 就假设透明替换。
 
 **协议核心**：
 
@@ -424,8 +422,8 @@ Envoy → backend : forward request
 
 1. **解耦**：路由策略（EPP）与数据面（Envoy）分离。替换策略不动数据面
 2. **可插拔**：用户可以自己实现 EPP（rust / go / python 都行），只要符合协议
-3. **标准化**：不同 LLM serving 平台（llm-d / AIBrix / 自研）可共用同一 Gateway 基础设施
-4. **生态**：Istio / Cilium Gateway 都自动兼容
+3. **标准化目标**：不同 EPP/serving 实现有机会复用 Gateway API 抽象，但必须锁定 API 版本并通过 conformance
+4. **实现生态**：Istio、Envoy Gateway、Cilium 等支持范围和接入方式各异，不存在“自动兼容”保证
 
 → 这是把传统 K8s Ingress 缺乏的"应用层智能"统一抽象，让 LLM serving 不必每家造个轮子。详见 https://gateway-api-inference-extension.sigs.k8s.io/。
 

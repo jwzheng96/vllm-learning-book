@@ -24,14 +24,11 @@ prom_range() {
     "${PROM_URL}/api/v1/query_range" > "$out"
 }
 
-prom_range 'sum(vllm:gpu_cache_usage_perc)' "$OUT_DIR/kv-usage-10m.json"
+prom_range 'max(vllm:kv_cache_usage_perc)' "$OUT_DIR/kv-usage-10m.json"
 prom_range 'sum(rate(vllm:num_preemptions_total[1m]))' "$OUT_DIR/preempt-rate-10m.json"
 prom_range 'sum(vllm:num_requests_waiting)' "$OUT_DIR/queue-10m.json"
 prom_range 'sum(vllm:num_requests_running)' "$OUT_DIR/running-10m.json"
 prom_range 'histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket[1m])) by (le))' "$OUT_DIR/ttft-p99-10m.json"
-
-# 长尾请求：仍在 running 但已经跑超过 N 秒
-prom_range 'max(vllm:request_inference_time_seconds)' "$OUT_DIR/longest-running-10m.json"
 
 # 当前 max_num_seqs / max_num_batched_tokens 配置（从 env 取）
 first_pod=$(kubectl get pods -n "$VLLM_NAMESPACE" -l "$VLLM_SERVICE_LABEL" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
@@ -60,14 +57,12 @@ except Exception:
 kv_now=$(extract_latest "$OUT_DIR/kv-usage-10m.json")
 preempt_now=$(extract_latest "$OUT_DIR/preempt-rate-10m.json")
 queue_now=$(extract_latest "$OUT_DIR/queue-10m.json")
-longest=$(extract_latest "$OUT_DIR/longest-running-10m.json")
 
 cat <<JSON
 {
   "out_dir": "$OUT_DIR",
   "kv_usage_now": ${kv_now:-null},
   "preempt_rate_now": ${preempt_now:-null},
-  "queue_now": ${queue_now:-null},
-  "longest_running_seconds": ${longest:-null}
+  "queue_now": ${queue_now:-null}
 }
 JSON

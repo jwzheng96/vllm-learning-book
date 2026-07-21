@@ -2,9 +2,9 @@
 
 ## Symptom Reconfirm
 - **必须同时满足**：
-  - `vllm:gpu_cache_usage_perc >= 0.9` 持续 ≥ 60s
-  - `rate(vllm:num_preemptions_total[5m]) >= 0.5/s`
-  - TTFT p99 和 TPOT 同时变差
+  - `vllm:kv_cache_usage_perc` 越过该模型池压测得到的 `$KV_HIGH`
+  - `rate(vllm:num_preemptions_total[5m])` 相对健康基线上升
+  - queue、TTFT 或 TPOT 同时变差
 - **排除**：
   - 如果同时出现 OOMKilled / exit code 137 → 走 `03-gpu-oom`
   - 如果 throughput == 0 → 走 `02-nccl-hang`
@@ -20,44 +20,38 @@ bash "$CLAUDE_SKILL_DIR/scripts/kv_pressure_diag.sh" \
 kubectl get lws/${VLLM_LWS:-vllm} -n ${VLLM_NAMESPACE:-vllm} \
   -o jsonpath='{.spec.replicas}' > "$INCIDENT_DIR/evidence/replicas.txt"
 
-# 3. 是否有长尾请求霸占 batch（一个 >5min 的请求会把整个 batch KV 钉满）
-# longest_running_seconds 由 kv_pressure_diag 输出
+# 3. 从网关请求长度分布确认是否有超长请求；vLLM 核心指标不提供
+# “最长在途请求”这个 gauge，不能从 histogram 伪造单请求证据。
 ```
 
 ## Root Cause 判定
 
 | 现象 | 根因 |
 | --- | --- |
-| `kv ≥ 0.9` + `preempt > 0.5/s` + 流量正常 | 容量不足 / `max_num_seqs` 设大了 |
-| `kv ≥ 0.95` + `longest_running > 300s` | 长尾请求堵 batch |
-| `kv ≥ 0.9` + 突然出现，QPS 同步翻倍 | 客户端重试雪崩（先做 04，再回这里） |
-| `kv` 周期性 0.9↔0.6 抖动 + replica 频繁变化 | HPA cooldown 太短，flapping |
+| KV 越过本池安全水位 + preempt 上升 + 流量正常 | KV 容量不足；`max_num_seqs` 只是待验证假设之一 |
+| 长度分布突增 + KV/preempt 同步恶化 | 超长请求带来的容量压力 |
+| KV 突然升高，入口尝试率同步异常上升 | 客户端重试雪崩（先做 04，再回这里） |
+| KV 周期振荡 + replica 频繁变化 | autoscaler flapping；需对齐扩缩事件验证 |
 
 ## Remediate
 
-按 `scripts/remediate_01.sh` 输出的 L1/L2/L3 顺序执行。关键动作：
+`scripts/remediate_01.sh` 只输出候选计划。以下每个变更都必须展示唯一 target、当前值、候选值、回滚和停止条件，并逐条取得批准：
 
-- **L2（直接做）**：
-  - `MAX_NUM_SEQS` 从 64 → 32（牺牲吞吐换稳定）
-  - `MAX_NUM_BATCHED_TOKENS` 从 4096 → 2048
-  - LWS 扩容 +2 replica
-  - Gateway 加 admission control：`kv_cache_usage > 0.85` 时返回 429
-- **L3（弹确认）**：
-  - 滚动重启（`kubectl rollout restart`）—— 影响：全员经历一次冷启动
-  - 更激进扩容 +4 replica —— 影响：成本
+- **L2（需逐命令批准）**：按压测矩阵降低 admission / `max_num_seqs` 的一个档位；或按已测单副本容量计算扩容数；网关在本池安全水位和队列条件下拒绝新请求。
+- **L3（需逐命令批准）**：滚动重启或切换节点池。先 drain，说明 cold-start、成本和可回滚容量。
 
 ## Verification
 
-整改后 60s 起，连续 3 个采样点必须全部满足：
-- `vllm:gpu_cache_usage_perc < 0.85`
-- `rate(vllm:num_preemptions_total[5m]) < 0.1/s`
-- TTFT p99 < `$TTFT_SLO_MS`（默认 2000ms）
+经过一个完整业务观测窗口后，连续采样必须全部满足：
+- `vllm:kv_cache_usage_perc` 回到本池已验证安全区间
+- preemption rate 回到事故前健康基线
+- queue、TTFT 与 TPOT 满足该服务已批准的 SLO
 
 ## Long-term
 
-- 启用 chunked prefill：`--enable-chunked-prefill --max-num-batched-tokens 2048-4096`
-- KEDA 触发器加 `gpu_cache_usage_perc > 0.8` 作为扩容信号（不只是 queue）
+- 对 chunked prefill、token budget 与 seq budget 做成组 A/B 压测，不照抄固定值
+- autoscaling 同时观察 `vllm:kv_cache_usage_perc`、queue 和稳定窗口，阈值来自本池容量实验
 - 长上下文请求隔离到独立 pod 池（避免长尾堵主池）
 - 见 `reference/checklist-prelaunch.md` 第 4、6 条
 
-<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md L114-146 + 07-incident-playbook.md case 1 -->
+<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md + 07-incident-playbook.md case 1 -->

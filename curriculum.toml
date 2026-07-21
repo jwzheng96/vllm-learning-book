@@ -378,7 +378,7 @@ source_areas = ["vllm/distributed/**", "vllm/v1/core/sched/**"]
 
 [[chapter]]
 path = "08-production-deployment/07-incident-playbook.md"
-title = "07. 真实故障 Runbook：8 个生产案例"
+title = "07. 故障演练 Runbook：8 个合成场景"
 level = "advanced"
 tracks = ["production", "interview"]
 environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
@@ -386,7 +386,7 @@ source_areas = ["vllm/v1/core/sched/**", "vllm/v1/engine/**"]
 
 [[chapter]]
 path = "08-production-deployment/08-monitoring-cookbook.md"
-title = "08. 监控菜谱：可直接复制的 Prometheus 规则、PromQL、Dashboard 面板"
+title = "08. 监控菜谱：可验证的 Prometheus 规则、PromQL、Dashboard 面板"
 level = "advanced"
 tracks = ["production", "interview"]
 environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
@@ -407,6 +407,22 @@ level = "advanced"
 tracks = ["production", "interview"]
 environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
 source_areas = ["vllm/config/**", "vllm/v1/core/sched/**", "vllm/v1/metrics/**", "vllm/v1/worker/**"]
+
+[[chapter]]
+path = "08-production-deployment/11-security-and-multi-tenancy.md"
+title = "11. 安全与多租户：把 vLLM 放进可信边界"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/config/model.py", "vllm/entrypoints/openai/**", "vllm/entrypoints/serve/lora/**"]
+
+[[chapter]]
+path = "08-production-deployment/12-upgrades-rollbacks-and-compatibility.md"
+title = "12. 升级、回滚与兼容性：让每次变更都可证明"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["vllm/config/model.py", "vllm/config/observability.py", "vllm/entrypoints/openai/**"]
 
 [[chapter]]
 path = "09-advanced-features/01-sampling-and-logits.md"

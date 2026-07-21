@@ -12,6 +12,10 @@
 > 3. 配置 SSE / 长 body / 长超时的 Envoy 与 K8s Ingress 参数
 > 4. 避开 mTLS 拦截 NCCL、sidecar 影响 RDMA 的典型陷阱
 
+> **当前复核（2026-07-20）：** 外部 auth、TLS、quota、跨副本 retry/canary 通常由 gateway/mesh/platform 提供，不是 vLLM engine 能力。Gateway API Inference Extension 的 EPP 通过 ext-proc/metadata 选 endpoint；具体 data plane、streaming 和 retry 行为必须按实现版本做 conformance 与故障测试。
+
+外部协议依据（访问于 2026-07-20）：[Inference Extension API/请求流](https://gateway-api-inference-extension.sigs.k8s.io/)、[v1 API reference](https://gateway-api-inference-extension.sigs.k8s.io/reference/spec/)。
+
 通用微服务里 Service Mesh 是为了 mTLS / Observability / Resilience。LLM 场景下，Mesh 还要扛 SSE 长连接、ExtProc 智能路由、大 Body 体的 ratelimit、token 级 cost 计费——这些点常被忽略。
 
 ---
@@ -55,7 +59,7 @@ flowchart TD
 ```
 
 **网关**主要管"南北向"（用户 ↔ 集群），**Mesh** 主要管"东西向"（集群内 Pod ↔ Pod）。
-现代 Gateway API 把两者统一了：Istio 1.28+ 同时是网关也是 mesh。
+Gateway API 可以为入口与服务流量提供共同抽象，但 Istio、Envoy Gateway、Cilium 等数据面的支持版本、扩展点和行为并不相同；锁定实现并做 conformance/故障测试。
 
 ---
 
@@ -126,16 +130,16 @@ sequenceDiagram
     Pod-->>Client: SSE stream
 ```
 
-整个过程 < 1ms（EPP 用 Go 写，cache 状态都在内存）。
+EPP 决策时间属于入口延迟预算，必须从 proxy 与 EPP trace 实测；实现语言和内存状态不能替代 p99/timeout/fallback 证据。
 
 ---
 
 ## 4. 流式 SSE：Mesh 最容易翻车的地方
 
-LLM API 的 99% 流量是 **Server-Sent Events**：long-lived HTTP/2 连接，token 一个个推。Mesh 默认配置常常出问题：
+许多 chat workload 使用 **Server-Sent Events** 长连接逐 token 输出，但比例由业务决定。Mesh 默认 timeout/buffering/retry 配置需要专项验证：
 
 ### 4.1 buffer：致命的"看似工作但 batch 输出"
-Envoy 默认有 response buffering。开启后 token 会被攒在 buffer 里一起送，TTFT 看起来还行但用户看到的是"卡半天再一整段刷出来"。
+是否 buffering 取决于实际 listener/filter/route。若链路中启用了 buffer、body transform、WAF 或 ext-proc full-body mode，token 可能被攒后再发送；要用逐块时间戳验证。
 
 修复：
 
@@ -155,15 +159,14 @@ spec:
 ```
 
 ### 4.2 idle timeout
-默认 60-300s。LLM 长生成（几分钟）会被砍。要调大或关闭。
+Gateway、route、upstream、client 和中间 LB 都可能有不同 timeout。把每一跳当前值列入兼容矩阵，并用超过目标最长生成时间的受控流验证；不要复制一个通用秒数。
 
 ### 4.3 HTTP/2 设置
-- `http2_max_concurrent_streams` 默认 100，并发高时撞上限
+- `http2_max_concurrent_streams` 与连接池/客户端复用共同限制并发；读取当前实现值并压测
 - `initial_stream_window_size` 太小导致 token 推送慢
 
 ### 4.4 mTLS + SSE
-Istio 默认 mTLS 在 ALPN 协商时偶发抖动，会让 SSE 第一帧迟到。
-解决：固定走 TCP，由 `Sidecar` CRD 显式配置 outbound。
+mTLS 会增加握手与加密工作，但是否影响 TTFT 必须从 connection reuse、CPU 和 trace 证明。不要为了延迟直接降级明文；先验证连接池、证书轮换和 TLS termination 边界。
 
 ---
 
@@ -205,7 +208,7 @@ LLM 需要的维度：
 SSE 第一帧已经发给客户端 → 中断只能让客户端感知错误，不能透明重试。
 
 ### 6.3 重试 budget
-Envoy 的 `retry_budget` 限制全局重试比例（如 < 20%），避免 retry storm。
+配置实现支持的 retry budget，并从总请求、重试次数和额外 token/GPU 工作反推上限；SSE first byte 后禁止透明重放。
 
 ### 6.4 熔断
 按 Pod 熔断：连续 5xx 多了暂时不路由到该 Pod。
@@ -218,18 +221,17 @@ Envoy 的 `retry_budget` 限制全局重试比例（如 < 20%），避免 retry 
 LLM 请求 body 可能很大（multimodal 携带图片 base64、长 RAG 上下文）。常见配置默认值不够：
 
 ```yaml
-# Envoy
-typed_config:
-  max_request_bytes: 100MB        # 默认 1MB
-  max_request_headers_kb: 64      # tool_use schema 大
+# 示意：字段名与资源类型必须按选定 gateway/version 核对
+request_body_limit: <由 threat model 与模型输入上限反推>
+request_header_limit: <由 schema/header 基线反推>
 
 # K8s Ingress
-nginx.ingress.kubernetes.io/proxy-body-size: 100m
-nginx.ingress.kubernetes.io/proxy-read-timeout: 600s
-nginx.ingress.kubernetes.io/proxy-send-timeout: 600s
+nginx.ingress.kubernetes.io/proxy-body-size: <validated-limit>
+nginx.ingress.kubernetes.io/proxy-read-timeout: <validated-timeout>
+nginx.ingress.kubernetes.io/proxy-send-timeout: <validated-timeout>
 ```
 
-**注意 mTLS 加密大 body 有显著 CPU 开销**。生产可以让 mTLS 终结在 Gateway，内网用普通 TCP（视安全模型）。
+记录 TLS CPU 与连接复用开销；是否在 gateway 后继续 mTLS 由威胁模型、合规和网络边界决定，不能只为性能默认明文。
 
 ---
 
@@ -238,17 +240,18 @@ nginx.ingress.kubernetes.io/proxy-send-timeout: 600s
 Istio 推 sidecar 模式（每 Pod 一个 envoy）。LLM 场景下要考虑：
 
 ### 8.1 Sidecar 的代价
-- 每 Pod 多 30-100MB 内存 + 5-10% CPU
-- 多一跳 latency（通常 < 1ms 但 high QPS 累积）
+- 每 Pod 增加 proxy 的 CPU/内存、连接与升级成本；数值以 resource metrics 为准
+- 增加网络处理路径；影响以 gateway/vLLM 两端 trace 为准
 - 对 NCCL/RDMA 流量必须 exclude 否则破坏 GPU 通信
 
 ### 8.2 Sidecarless（Ambient mode / Cilium / Linkerd2）
 Istio Ambient mode 把 sidecar 抽到节点级 proxy（ztunnel）。
 对 LLM 适配更好：vLLM Pod 内不动，节点级 proxy 处理 mTLS + L7 治理。
 
-### 8.3 推荐
-- 早期：Sidecar 简单，开箱
-- 规模化：迁移到 Ambient / Cilium eBPF 模式，省资源
+### 8.3 选择门槛
+- Sidecar：验证端口捕获、资源、升级是否会重启 workload，以及 RDMA/NCCL bypass
+- Ambient/节点级数据面：验证 L4/L7 waypoint 覆盖、身份策略、故障域和升级影响
+- 选择结果记录在兼容矩阵；不能仅凭规模预设答案
 
 ---
 
@@ -275,13 +278,13 @@ gantt
     istio-ingress.last_byte   :g, after f, 1
 ```
 
-Istio + OTel + Tempo + Grafana 一套下来，能在 Grafana 上看到任意一个请求的完整时间线。
+Istio/网关指标与 OTel/Tempo/Grafana 可以拼出被采样、已正确传播上下文的请求时间线；未埋点阶段、sampling、断连和异步边界都会造成缺口，不能承诺“任意请求完整可见”。
 
 ---
 
 ## 10. 真实部署的"小但能省命"的配置
 
-下面是一份精简的 Istio + vLLM 生产配置要点：
+下面是配置审查清单式伪 YAML，不可直接 `kubectl apply`；字段必须拆入所选版本的 Gateway/route/policy 资源并通过 schema/conformance：
 
 ```yaml
 # 1. Gateway listener：HTTP/2 + SSE 友好
@@ -291,18 +294,18 @@ Istio + OTel + Tempo + Grafana 一套下来，能在 Grafana 上看到任意一�
     mode: SIMPLE  # mTLS 终结在 gateway
 
 # 2. VirtualService：长超时
-  timeout: 600s   # SSE 可能 > 5 分钟
+  timeout: <validated end-to-end timeout>
   retries:
     attempts: 2
-    perTryTimeout: 600s
+    perTryTimeout: <shorter than request deadline>
     retryOn: gateway-error,connect-failure  # 不重试 5xx (LLM 没意义)
 
 # 3. DestinationRule：连接池 + 熔断
   connectionPool:
     http:
       h2UpgradePolicy: UPGRADE
-      maxRequestsPerConnection: 0      # 不要复用，每 SSE 独立
-      idleTimeout: 600s
+      maxRequestsPerConnection: <load-test result>
+      idleTimeout: <validated timeout>
   outlierDetection:
     consecutive5xxErrors: 10           # 连续 10 次 5xx 才隔离
     interval: 30s
@@ -332,12 +335,9 @@ spec:
 
 ---
 
-## 11. 故障实例：mTLS 把 NCCL 干挂了
+## 11. 故障演练：验证 mesh 是否捕获 collective 流量
 
-真实事故：某团队上 Istio mTLS，集群所有 Pod-to-Pod 通信走 sidecar。
-**症状**：vLLM TP=8 Pod 启动卡死在 NCCL init，超时 10 分钟。
-**根因**：sidecar 拦截了 NCCL 走的 IB 通信端口，包被加密但 NCCL 不会解。
-**解决**：用 `Sidecar` CRD 把 NCCL 端口段 exclude，或者 PeerAuth 在那些端口 DISABLE mTLS。
+在隔离集群部署一个最小 collective workload，记录 proxy capture 规则、`nvidia-smi topo -m`、NCCL log 与 mesh log。若初始化或 collective 卡住，先证明流量确实被重定向，再按当前 Istio/CNI 文档配置精确 CIDR/port bypass 或改用不捕获该数据面的架构。
 
 教训：**Mesh sidecar 必须放过 NCCL/RDMA 端口**。生产部署前用 `nccl-tests` 验证。
 
@@ -346,10 +346,10 @@ spec:
 ## 12. 工程自检问答
 
 **Q: 为什么不直接用 K8s Service + Ingress？**
-A: 几个原因：①K8s Service LB 只能基于 IP/conn-hash，不感知 LLM 语义；②Ingress 不支持 ExtProc 类型的扩展；③缺少跨 Pod 治理（mTLS、ratelimit、observability）。生产规模必走 Gateway API + Mesh。
+A: K8s Service 是有价值的低状态基线，但不感知 prefix/adapter/queue。是否增加 Gateway API、EPP 或 mesh 取决于多租户、安全、路由和可观测需求；不是所有生产服务都必须同时部署这些层。
 
 **Q: Sidecar 给 LLM Pod 增加多少 latency？**
-A: 单跳约 0.3-1ms，相对于 LLM TTFT（几十 ms 到几百 ms）影响小。但要确保 sidecar 不拦 NCCL 端口。
+A: 没有通用数值。用客户端、gateway、sidecar/waypoint 和 vLLM server spans 分解 p50/p99，并在连接复用、证书轮换和高并发下复测。
 
 **Q: Mesh 怎么做 token-level ratelimit？**
 A: Envoy 自带的 ratelimit 是 connection / request 维度。token 级需要：①gateway 层 tokenize 算 input；②output 推完后由 vLLM 上报实际 token；③异步累加到 quota 服务（Redis / 自研）。
@@ -365,38 +365,37 @@ A: Istio multi-cluster（mesh federation）或者 Cilium ClusterMesh。但**跨 
 ## 小结
 
 - Gateway 管南北向（协议、Auth、Quota、Cost），Mesh 管东西向（mTLS、跨 Pod 治理）；Gateway API 把两者统一。
-- Gateway API Inference Extension 的 InferenceModel / InferencePool / EPP 是 2026 年的标准抽象。
+- Gateway API Inference Extension 提供 InferencePool/EPP 等开放抽象；API 版本和实现支持矩阵仍需锁定。
 - SSE 在 mesh 上至少要调 3 处：关闭 response buffering、调大 stream_idle_timeout、HTTP/2 stream 并发上限。
 - LLM 维度的 ratelimit 比 QPS 复杂得多：input / output / total tokens / 并发流都要管。
-- mTLS + Sidecar 必须放过 NCCL/RDMA 端口；规模化推荐 Ambient / Cilium eBPF。
+- mesh 不应透明捕获未验证兼容的 NCCL/RDMA 数据面；Sidecar、Ambient 或 eBPF 数据面要按 threat model 与 conformance 选择。
 
 ## 自检
 
 > 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
-**1. SSE 场景下 Envoy/Istio 必须改默认值的至少 3 个参数。**
+**1. SSE 上线前至少验证哪 3 类配置？**
 
-| 参数 | 默认值 | 推荐值 | 原因 |
+| 类别 | 当前值 | 验收证据 | 原因 |
 | --- | --- | --- | --- |
-| `stream_idle_timeout` | 5min（Envoy 默认）| **0 或 600s** | SSE 流期间 idle 可能 30s+（用户在读），默认会被剪断 |
-| `route.timeout` | 15s | **0 或 600s** | route timeout 是整个请求超时，SSE 长流必须放宽 |
-| `http2_protocol_options.initial_stream_window_size` | 64 KB | **256 KB-1 MB** | window 小会让 SSE 流频繁等 WINDOW_UPDATE，影响 TPOT |
-| `http_filters.buffer.max_request_bytes` | 4 MB | **保持小** 但加 streaming bypass | 长 prompt 不能被全缓存（影响 TTFT） |
-| `keepalive.interval` | 不启用 | **30s ping** | 中间路由器 idle 60s 会断连，主动 keepalive 保命 |
-| `circuit_breaker.max_pending_requests` | 1024 | **>10000** | LLM 请求并发高，队列要给够 |
+| route/stream/idle timeout | `<inventory>` | 最长目标流 + cancellation 测试 | 任一跳都可能提前终止 |
+| buffering/ext-proc body mode | `<inventory>` | chunk arrival timeline | 全量 buffering 会破坏 streaming |
+| HTTP/2 windows/connections/streams | `<inventory>` | 并发与 backpressure 测试 | 影响连接复用和流控 |
+| keepalive | `<inventory>` | 跨 LB idle 测试 | 需同时满足 client/proxy/upstream 约束 |
+| pending/connection circuit breaker | `<inventory>` | overload + recovery 测试 | 阈值必须保护 SLO 而非隐藏 queue |
 
-最常踩坑的是前两个——SSE 跑几分钟就被 timeout 剪断、用户投诉。
+先用一条超过目标 duration 的低速流验证 timeout 与 buffering，再做并发/backpressure/cancellation；失败时用逐跳 trace 定位是哪一层终止。
 
 ---
 
 **2. 按 output token 累计计费 + 对路由路径侵入最小？**
 
-**思路**：在 **API Server 出口（vLLM 自己）** 或 **Envoy ExtProc/Lua 在响应流过滤时计数**，**不要**在中间路由层做。
+**思路**：在受信任的 accounting 边界关联认证后的 tenant、request ID、响应 usage 和最终状态；不要从 Prometheus 聚合 counter 反推单租户账单。
 
 **最小侵入方案**：
 
-1. **vLLM 已经在 `metrics` 里暴露 `vllm:generation_tokens_total{model, user_id}`**——如果用户 ID 已经通过 header 传到 vLLM，直接订阅这个 metric 就有计费数据
-2. **Envoy Lua filter on response_body**：解析 SSE chunk（`data: {"choices":[{"text":"..."}]}`），统计 token 数（用 tiktoken Lua 或简单字数估算），写入 Redis 用户计数
+1. vLLM 的 `generation_tokens_total` 是服务聚合 counter，不应假设带 `user_id` 高基数标签，也不能单独形成可审计账单。
+2. 在受信任的 gateway/accounting 服务中关联 tenant、request ID 与 OpenAI usage 字段；流式场景验证最终 usage chunk、取消和错误是否仍产生完整记录。
 
 **为什么不在路由层**：
 
@@ -407,22 +406,22 @@ A: Istio multi-cluster（mesh federation）或者 Cilium ClusterMesh。但**跨 
 **核心架构**：
 
 ```
-client → Envoy (Lua: count_response_tokens) → vLLM
-                  ↓
-              Redis (user_token_usage hash)
-                  ↑
-         Billing service 周期性拉
+client → authenticated gateway → vLLM
+             │ request_id          │ usage/final status
+             └──── accounting sink ┘
+                       ↓
+             immutable audit / billing ledger
 ```
 
 ---
 
-**3. mTLS 让 NCCL 启动卡死，用哪两种 CRD/配置排除？**
+**3. 怀疑 mesh 捕获 NCCL 流量时怎样处理？**
 
-**根本原因**：mTLS sidecar（Istio）拦截了 NCCL 的 P2P 流量（GPU 间 RDMA / TCP），但 NCCL 用自己的握手协议，与 mTLS 不兼容。
+先用 proxy log、iptables/eBPF state、socket/flow capture 与最小 collective test 证明重定向；“初始化卡住”本身也可能来自拓扑、NCCL 配置或 rank discovery。
 
 **排除方案**：
 
-1. **PeerAuthentication** 设 NCCL 端口为 `DISABLE`（关闭 mTLS）：
+1. 若端口固定且 TCP 路径确被 sidecar 捕获，可在锁定 Istio 版本中评估精确的 capture exclusion / port-level policy：
 ```yaml
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
@@ -432,12 +431,10 @@ spec:
   selector:
     matchLabels: { app: vllm }
   portLevelMtls:
-    "29500": { mode: DISABLE }      # NCCL TCP discovery
-    "29501": { mode: DISABLE }
-    # NCCL P2P 端口（动态）也要全放
+    "<verified-service-port>": { mode: DISABLE }
 ```
 
-2. **AuthorizationPolicy / NetworkPolicy** 允许 NCCL 端口段：
+2. NetworkPolicy/AuthorizationPolicy 只开放实际 transport 需要的源、目的和端口，并通过 deny test 证明没有扩大横向访问：
 ```yaml
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -450,7 +447,7 @@ spec:
   rules:
   - to:
     - operation:
-        ports: ["29500-29600", "60000-65535"]   # NCCL 用的范围
+        ports: ["<verified-port>"]
 ```
 
 或者更简单：
@@ -467,27 +464,20 @@ metadata:
 
 ```bash
 # 看 NCCL 在等什么
-NCCL_DEBUG=INFO  → 查 log
+NCCL_DEBUG=INFO  # 在隔离复现中采集，注意日志敏感信息
 # 看 istio-proxy 有没有拦截
 kubectl logs <pod> -c istio-proxy | grep "29500\|RST"
 ```
 
 ---
 
-**4. Ambient mode 比 Sidecar 的最大好处？**
+**4. 怎样比较 Ambient 与 Sidecar？**
 
-**Sidecar mode**：每个 LLM pod 多一个 envoy 容器（~100 MB 内存、几% CPU）。8 卡 TP 部署 = 8 个 sidecar = ~800 MB 浪费 + 网络多一跳。
+**Sidecar mode**：每个 workload Pod 有代理，策略与资源归属直观，但要承担 per-Pod 资源、捕获规则和 rollout 成本。
 
-**Ambient mode**：sidecar 被替换为**节点级共享代理（ztunnel）+ 可选的 L7 waypoint**。每节点 1 个 ztunnel 处理所有 pod 的 mTLS，pod 内不嵌任何代理。
+**Ambient mode**：使用节点级 ztunnel 与可选 waypoint，把 L4 secure overlay 和 L7 policy 分开。
 
-**最大好处 for LLM**：
-
-1. **网络路径减少一跳**：sidecar 模式下流量走 `pod → sidecar → 网络 → sidecar → pod`（双 sidecar）；ambient 是 `pod → ztunnel(节点) → 网络 → ztunnel(节点) → pod`，每端少一次进出 pod 网络栈。LLM 流量包大（KB-MB chunk），这一跳省下来对吞吐有感
-2. **资源大幅节省**：8 卡 TP × N pod 不再每 pod 一个 sidecar，节点级共享，**节点上 sidecar 总成本 1 个**
-3. **NCCL 兼容性更好**：ambient 默认走 L4（TCP-level mTLS），不像 sidecar 那样需要复杂的端口豁免——NCCL 跑得过去几率高
-4. **升级**：升级 ztunnel 不重启 LLM pod；sidecar 升级需要每 pod 重启（NCCL group 要重建）
-
-**生产建议**：新部署优先 Ambient（Istio 1.22+ stable）；已有 sidecar 部署可以渐进迁移。详见 https://istio.io/latest/docs/ops/ambient/。
+比较时记录：proxy/waypoint CPU 与内存、TTFT/streaming overhead、L4/L7 policy coverage、NCCL/RDMA 是否被捕获、证书轮换、节点级故障域和升级是否影响 workload。只有这些验收都通过，才能做迁移结论。参见 [Istio Ambient 官方文档](https://istio.io/latest/docs/ambient/)。
 
 ## 下一步
 
@@ -499,7 +489,7 @@ kubectl logs <pod> -c istio-proxy | grep "29500\|RST"
 
 ## Sources
 
-- [Production-Grade LLM Inference at Scale with KServe, llm-d, and vLLM](https://llm-d.ai/blog/production-grade-llm-inference-at-scale-kserve-llm-d-vllm)
-- [Serving Multiple LLMs on Kubernetes with llm-d, Istio, and LiteLLM](https://medium.com/@prasannanattuthurai/serving-multiple-llms-on-kubernetes-with-intelligent-routing-using-llm-d-istio-and-litellm-7d33760d1001)
-- [Kubernetes Gateway API in 2026: Envoy, Istio, Cilium, Kong](https://dev.to/mechcloud_academy/kubernetes-gateway-api-in-2026-the-definitive-guide-to-envoy-gateway-istio-cilium-and-kong-2bkl)
-- [Service Mesh Debugging: When Istio Breaks Your Inference Pipeline](https://www.kubenatives.com/p/service-mesh-debugging-when-istio)
+- [Gateway API Inference Extension](https://gateway-api-inference-extension.sigs.k8s.io/)
+- [Istio traffic management](https://istio.io/latest/docs/concepts/traffic-management/)
+- [Istio security](https://istio.io/latest/docs/concepts/security/)
+- [Istio Ambient mode](https://istio.io/latest/docs/ambient/)

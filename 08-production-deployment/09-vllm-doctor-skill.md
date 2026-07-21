@@ -1,6 +1,6 @@
 # 09. 把 playbook 编成 agent：vllm-doctor skill
 
-> **谁该读这一篇？** SRE / 平台工程师；想把 §06-08 的人工流程交给 agent 自动跑、又不想被它误伤生产的人。
+> **谁该读这一篇？** SRE / 平台工程师；想让 agent 自动收集只读证据、生成处置计划，同时把每一次集群变更牢牢留在人类审批边界内的人。
 >
 > **前置阅读：** [`05-slo-and-observability.md`](./05-slo-and-observability.md)、[`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md)、[`07-incident-playbook.md`](./07-incident-playbook.md)、[`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md)
 >
@@ -12,7 +12,9 @@
 > 3. 在没有真实集群的情况下用 fixture mode 完整跑一遍
 > 4. 自己往 skill 里加一条新 playbook（扩展模板）
 
-§07-incident-playbook 给了 8 个真实案例，每个都按"症状 → 诊断 → 整改 → 长期"四段写。问题是：on-call 凌晨 3 点收到告警，理论上要照着文档敲 PromQL、跑 kubectl、改 env、滚 deployment——实操中，第 1 步往往就卡 5 分钟。`vllm-doctor` 就是为这一刻设计的：把这 8 个 playbook 编成一份 agent 可执行的 SOP，让 Claude Code 自己跑完探测、决策、整改、验证、报告。
+> **当前复核（2026-07-20）：** 本章的 `vllm-doctor` 是教程中的 agent 设计，不是 vLLM 上游内置 skill。默认权限必须只读；扩缩、重启、改配置、抓取可能含 prompt/secret 的 artifact 都必须走显式审批、精确 scope、dry-run、rollback 和审计日志。
+
+§07-incident-playbook 给了 8 个案例，每个都按"症状 → 诊断 → 整改 → 长期"四段写。问题是：on-call 时需要快速找到证据和正确 runbook。`vllm-doctor` 是本教程的设计练习：把 playbook 编成 agent 可辅助执行的 SOP。agent 可自动收集只读证据和生成建议；生产整改仍由权限策略与人工审批控制。
 
 ---
 
@@ -28,11 +30,11 @@ skill 解决方案是三件套：
 
 | 资产 | skill 里的对应物 | 解决的问题 |
 | --- | --- | --- |
-| 决策树（§07-04 第 511-551 行） | `scripts/triage.py` | 自动按 Golden 3 指标路由到 playbook |
-| 命令模板（散落在 §06-§07 各处） | `scripts/golden3.sh` / `kv_pressure_diag.sh` / `nccl_diag.sh` / `remediate_*.sh` | 一键拉指标、抓证据、执行整改 |
-| 上线前 checklist（§06 第 293-311 行） | `reference/checklist-prelaunch.md` | 防患于未然 |
+| 决策树（§07 的合成场景） | `scripts/triage.py` | 按显式服务阈值生成 playbook 假设；缺证据/阈值时 fail closed |
+| 命令模板（§06-§07） | `scripts/golden3.sh` / `kv_pressure_diag.sh` / `nccl_diag.sh` / `remediate_*.sh` | 拉只读证据；remediate 只生成候选计划 |
+| 上线前 checklist | `reference/checklist-prelaunch.md` | 防患于未然 |
 
-**关键约束**：skill **不是 ChatOps bot**——它跑在你本地的 Claude Code 会话里，用你的 kubeconfig，受 Claude Code 的工具权限管理。不会主动改生产，所有 L3（高破坏性）动作都会用 `AskUserQuestion` 弹确认。
+**关键约束**：skill **不是 ChatOps bot**。它默认只读；任何会改变 cluster/gateway/node/process/filesystem/external state 的动作，无论标成 L2 还是 L3，都必须展示唯一 target、current state、command、blast radius、rollback/stop condition，并逐条取得显式批准。
 
 ---
 
@@ -59,7 +61,7 @@ flowchart TB
 | --- | --- | --- |
 | 0 探测 | `scripts/connect_probe.sh` | — |
 | 1 拉指标 | `scripts/golden3.sh` + `reference/promql-cheatsheet.md` | §05 (§3 4 大金信号) |
-| 2 决策 | `scripts/triage.py` | §07-hands-on/04 (L511-551) |
+| 2 决策 | `scripts/triage.py` | §07 的合成场景与当前运行证据 |
 | 3 深度诊断 | `playbooks/<id>.md` 中的 Triage Commands 节 | §07-incident-playbook |
 | 4 整改 | `scripts/remediate_<id>.sh` | §06 (§7 速查表) + §07 各 case |
 | 5 验证 | `triage.py --verify` | — |
@@ -74,35 +76,35 @@ flowchart TB
 §07-04 已经给出 30 秒决策树原型。skill 把它写成可执行的 Python：
 
 ```
-TTFT_p99 > SLO?
-├ YES → queue > 50?
-│       ├ YES → KV ≥ 0.95? → playbook 03 (gpu-oom)
-│       │       否则        → playbook 01 (preempt-cascade)
-│       └ NO  → KV ≥ 0.9? → 01 ;  否则 → 06 (cold-start)
+TTFT_p99 > approved SLO?
+├ YES → queue > validated waterline?
+│       ├ YES → KV 高 + preempt/queue 高 → playbook 01 (preempt-cascade)
+│       └ NO  → KV 越过本池水位? → 01 ;  否则 → 06 (cold-start)
 ├ NO  → throughput ≈ 0 AND running > 0 → playbook 02 (nccl-hang)
-        → prefix_cache_hit < 0.5     → 05 (cache regression)
-        → request_failed > 0.1/s     → 04 (retry storm)
-        → format_compliance < 0.9    → 07 (output quality)
+        → prefix_cache_hit 低于版本化 workload 基线 → 05 (cache regression)
+        → gateway/client failure attempts 越过本地基线 → 04 (retry storm)
+        → 已观察 OOMKilled/runtime OOM → 03 (gpu-oom)
+        → format_compliance 低且有业务指标 → 07 (output quality)
 ```
 
 8 个 playbook 的命中条件速查：
 
 | ID | 名称 | 主要触发条件 | 排除项 |
 | --- | --- | --- | --- |
-| 01 | preempt-cascade | KV≥0.9 + preempt≥0.5/s（或 TTFT 高+queue 高） | OOMKilled → 03；throughput=0 → 02 |
-| 02 | nccl-hang | throughput≈0 AND running>0 持续 60s+ | running=0 不算（没流量） |
-| 03 | gpu-oom | KV≥0.95 + queue/preempt 高，或 OOMKilled exit 137 | CPU OOM 走容器 memory limit |
-| 04 | retry-storm | request_failed_rate>0.1/s 且 KV 不算高 | KV 也高 → 真过载，走 01 |
-| 05 | cache-hit-regression | prefix_cache_hit<0.5 | 单 pod 重启后短暂回落属正常 |
-| 06 | cold-start | TTFT 高但 KV/queue 都低，running 少 | 70B+ 模型本来就 5-10 min |
-| 07 | output-quality | format_compliance<0.9 或 thumbs-down 突增 | 客户端 prompt 变了 → 不是 vLLM 问题 |
-| 08 | lora-thrash | LoRA loading_seconds_count 飙升 + 切换时 TTFT 尖刺 | 单 LoRA 单租户无此问题 |
+| 01 | preempt-cascade | KV 越过本池水位 + preempt/queue 退化 | OOMKilled → 03；throughput=0 → 02 |
+| 02 | nccl-hang | throughput 无进展 AND running>0 超过批准窗口 | running=0 不算（没流量） |
+| 03 | gpu-oom | OOMKilled/runtime OOM 明确证据 | 高 KV 但无 OOM → 01 |
+| 04 | retry-storm | 网关/客户端失败尝试率越过本地基线 | vLLM 无通用 HTTP failure counter；缺信号则不路由 |
+| 05 | cache-hit-regression | prefix token 命中率显著低于版本化基线 | 单 pod 重启后的回落仍需按 warmup 曲线验证 |
+| 06 | cold-start | TTFT 高但 KV/queue 都低，running 少 | 对照本模型 cold/warm ready 基线 |
+| 07 | output-quality | 自定义质量 gate 失败或反馈率突增 | prompt/template 变化也是待定位输入，不先归责 |
+| 08 | lora-thrash | 控制面 load/unload 反复 + TTFT 时间对齐 | 当前无通用 LoRA loading histogram |
 
-**Dry-run 验证表**（skill 自带 7 个 fixture，路由结果如下）：
+**Dry-run 验证表**（下列数字仅为合成 fixture，不是生产阈值）：
 
 | Fixture | KV | preempt | throughput | running | cache_hit | format | 命中 playbook | 备选 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 抢占级联 | 0.95 | 0.6 | 100 | 50 | 0.8 | 1.0 | **03-gpu-oom** | 01-preempt-cascade |
+| 1 抢占级联 | 0.95 | 0.6 | 100 | 50 | 0.8 | 1.0 | **01-preempt-cascade** | — |
 | 2 NCCL hang | 0.5 | 0 | 0 | 8 | 0.8 | 1.0 | **02-nccl-hang** | — |
 | 3 冷启动 | 0.3 | 0 | 5 | 2 | 0.7 | 1.0 | **06-cold-start** | — |
 | 4 cache 塌方 | 0.6 | 0 | 200 | 20 | 0.3 | 1.0 | **05-cache-hit-regression** | — |
@@ -110,7 +112,7 @@ TTFT_p99 > SLO?
 | 6 输出质量 | 0.5 | 0 | 100 | 10 | 0.8 | 0.6 | **07-output-quality** | — |
 | 7 健康 | 0.5 | 0 | 100 | 10 | 0.8 | 1.0 | **none** | — |
 
-> 注意 fixture 1：KV=0.95 同时触发"高位 OOM 边缘"和"抢占级联"两条规则。`triage.py` 选信心更高的 `03-gpu-oom`，把 `01-preempt-cascade` 列为 alternative。报告里两条都会出现，给人审视。
+> 注意 fixture 1：高 KV 是容量压力证据，不是 OOM 证据。只有 K8s termination reason 或 runtime log 明确显示 OOM，才命中 `03-gpu-oom`。
 
 兜底：`confidence < 0.5` → skill 不会强行进 playbook，而是把 Golden 3 截图给用户、建议人工核对客户端日志或开 OTel trace。
 
@@ -122,23 +124,23 @@ agent 不应该所有动作都问、也不应该一条都不问。`vllm-doctor` 
 
 | 级别 | 例子 | 授权策略 | 必做记录 |
 | --- | --- | --- | --- |
-| **L1** 只读 / 旁路 | `kubectl describe`、`py-spy dump`、抓证据 | 直接做 | 输出归档到 `$INCIDENT_DIR/evidence/` |
-| **L2** 受控扰动 | 改 env（`MAX_NUM_SEQS`）、调 gateway rate limit、`kubectl scale` | 直接做 | `actions.log` 落 command + **rollback command** |
-| **L3** 高破坏性 | `kubectl delete pod -l <lws>`、`taint node`、`rollout undo` | 单条 `AskUserQuestion` 弹确认（含 blast radius 说明） | 同上 |
+| **L1** 只读 / 旁路 | `kubectl describe`、脱敏日志、抓证据 | 可直接做 | 输出归档到 `$INCIDENT_DIR/evidence/` |
+| **L2** 有状态变更 | 改 env、gateway policy、`kubectl scale` | **逐条显式批准** | current + command + rollback + stop condition |
+| **L3** 高破坏性 | delete/restart/taint/rollback | **逐条显式批准** | 同上，并说明不可逆部分 |
 
 ### 三个典型决策
 
-**A · 抢占级联**：L2 是 `kubectl set env deploy/vllm MAX_NUM_SEQS=32`（直接做，记 rollback `MAX_NUM_SEQS-`）；L3 是 `kubectl rollout restart deploy/vllm`（必须问，理由"所有 replica 滚动重启，期间整体容量临时下降"）。
+**A · 抢占级联**：先只读确认 workload、当前参数和 service curve。若建议改 `max_num_seqs`，必须给出精确资源、旧值、候选值、预期指标方向与 rollback；用户批准后才执行。
 
-**B · NCCL hang**：L3 是 `kubectl delete pods -l leaderworkerset.sigs.k8s.io/group-key=<group>` —— **必须整组重启，不是单 pod**。NCCL group 跨 rank，只删一个会让剩下 N-1 个继续等死锁；而整组同时重启会重新建立 collective communicator。这是 skill 设计里和直觉相反、必须写进 playbook 的细节。
+**B · collective stall**：先确认部署单元。多 Pod collective 可能需要整组恢复，单 Pod 多 GPU 则恢复该 Pod；不能把 LWS selector 当通用命令。任何 restart/delete 都要审批。
 
-**C · 整改没有回滚**：扩 replica 是 L2，回滚是 L3（缩回去会重新引发抢占）。这种情况 `remediate_<id>.sh` 在 `rollback:` 字段直接写 `(none — 缩回去会重新引发抢占)`，agent 不会自动回退。
+**C · 没有安全 rollback**：把这一点作为 stop condition/风险报告给用户，不执行“先改再看”。`remediate_<id>.sh` 只生成计划，不提供免审批执行开关。
 
 ---
 
 ## 5. 端到端演示：以"抢占级联"为例
 
-走一遍真实 incident 流程（用 fixture mode 模拟，所有命令在 README 安装完 skill 后都能复现）：
+走一遍合成 incident 流程（fixture mode 只验证分类与计划生成，不连接集群）：
 
 ### Step 1 · 触发
 
@@ -183,22 +185,19 @@ export PROM_URL=http://prom.example:9090
 
 ```json
 {
-  "playbook": "03-gpu-oom",
-  "confidence": 0.9,
-  "reason": "kv=0.95 接近 OOM 边缘 + 队列/抢占同时高",
-  "alternatives": [
-    {"playbook": "01-preempt-cascade", "confidence": 0.85,
-     "reason": "kv=0.95 preempt=0.60/s + TTFT/queue 高"}
-  ]
+  "playbook": "01-preempt-cascade",
+  "confidence": 0.85,
+  "reason": "kv=0.95 preempt=0.60/s + TTFT/queue 高",
+  "alternatives": []
 }
 ```
 
-agent 进入 `playbooks/03-gpu-oom.md`，先看是否真的出现过 OOMKilled / exit 137。日志里没有 → 把 alternative `01-preempt-cascade` 升为主线（playbook 03 的 root-cause 判定明确指引这一步）。
+agent 进入 `playbooks/01-preempt-cascade.md`，继续用只读 evidence 区分长度分布、sequence/token budget、路由热点和真实容量不足。
 
 ### Step 5 · Phase 3 深度诊断（playbook 01）
 
 ```bash
-# 自动跑：
+# 经用户确认 incident 输出目录后，只读运行：
 bash scripts/kv_pressure_diag.sh $INCIDENT_DIR/evidence/kv
 ```
 
@@ -231,17 +230,18 @@ bash scripts/kv_pressure_diag.sh $INCIDENT_DIR/evidence/kv
   rollback: kubectl rollout undo deploy/vllm -n vllm
 ```
 
-agent 自动跑前两条 L2，落 `actions.log`；L3 弹 AskUserQuestion：
+脚本只打印这份候选计划。agent 先把第一条 L2 的 target/current/rollback 展示给用户；只有用户批准才执行，然后验证，不自动继续第二条。
 
 > 接下来要做 L3：`kubectl rollout restart deploy/vllm -n vllm`。影响：所有 replica 滚动重启，期间整体容量临时下降。是否执行？
 
-用户答"跳过"，因为前两条 L2 应该够了。
+用户可批准或跳过；跳过不会触发替代 mutation，报告记录“未执行”。
 
 ### Step 7 · Phase 5 验证
 
 ```bash
+: "${VERIFY_INTERVAL_SECONDS:?set from the playbook observation window}"
 for i in 1 2 3; do
-  sleep 60
+  sleep "$VERIFY_INTERVAL_SECONDS"
   bash scripts/golden3.sh > $INCIDENT_DIR/verify-$i.json
 done
 python3 scripts/triage.py --verify verify-1.json verify-2.json verify-3.json
@@ -251,7 +251,7 @@ python3 scripts/triage.py --verify verify-1.json verify-2.json verify-3.json
 
 ```json
 {
-  "status": "RESOLVED",
+  "status": "NO_ACTIVE_ROUTE",
   "samples": [
     {"playbook": "none", ...},
     {"playbook": "none", ...},
@@ -259,6 +259,8 @@ python3 scripts/triage.py --verify verify-1.json verify-2.json verify-3.json
   ]
 }
 ```
+
+`NO_ACTIVE_ROUTE` 只说明通用路由器没再命中，不能单独宣告恢复；还要满足命中 playbook 的全部 Verification gate。缺指标或阈值时必须返回 `INSUFFICIENT_EVIDENCE`。
 
 ### Step 8 · Phase 6 报告
 
@@ -268,18 +270,18 @@ python3 scripts/triage.py --verify verify-1.json verify-2.json verify-3.json
 # Incident Report 2026-05-29T03:11
 
 ## 命中 playbook
-03-gpu-oom (conf 0.9) → 切换主线为 01-preempt-cascade（alternative）
+01-preempt-cascade (conf 0.85)
 
 ## 执行的整改
-- L2  MAX_NUM_SEQS=32 (rollback: MAX_NUM_SEQS-)
-- L2  scale lws +2 (rollback: 回到原值)
+- L2  MAX_NUM_SEQS=<approved value>（逐条批准后执行）
+- L2  scale <resolved target>（未批准则记录 skipped）
 - L3  rollout restart  ← 跳过（用户选择）
 
 ## 恢复结果
-RESOLVED （3 次重采样 Golden 3 全绿）
+RESOLVED（3 次重采样无 active route，且 playbook 专属 gate 全部通过）
 
 ## 长期改进
-1. KEDA 加 kv_cache_usage_perc > 0.8 触发扩容（不只看 queue）
+1. KEDA 联合观察 kv_cache_usage_perc、queue 与本池容量实验水位
 2. 长上下文请求走单独 pod 池
    → reference/checklist-prelaunch.md 第 4、6 条
 ```
@@ -332,19 +334,20 @@ done
 ```
 
 预期：
-- `/tmp/preempt.json` → `playbook: 03-gpu-oom`（alt 01）
+- `/tmp/preempt.json` → `playbook: 01-preempt-cascade`
 - `/tmp/nccl.json` → `playbook: 02-nccl-hang`
 - `/tmp/cold-start.json` → `playbook: 06-cold-start`
 - `/tmp/healthy.json` → `playbook: none`
 
-**可调阈值**（决策树边界，按你的 SLO 改）：
+**线上必填阈值**（来自服务 SLO、容量实验和版本化 workload 基线；`REPLACE_WITH_...` 必须替换成数值）：
 
 ```bash
-export TTFT_SLO_MS=2000          # TTFT p99 阈值
-export QUEUE_HIGH=50             # 队列高位
-export KV_HIGH=0.9               # KV 高位
-export KV_CRITICAL=0.95          # KV 危险
-export PREEMPT_HIGH_PER_SEC=0.5  # 抢占速率高位
+export TTFT_SLO_MS="REPLACE_WITH_APPROVED_SLO_MS"
+export QUEUE_HIGH="REPLACE_WITH_VALIDATED_QUEUE_WATERLINE"
+export KV_HIGH="REPLACE_WITH_VALIDATED_KV_WATERLINE"
+export PREEMPT_HIGH_PER_SEC="REPLACE_WITH_VALIDATED_PREEMPT_RATE"
+export PREFIX_CACHE_DROP_FROM="REPLACE_WITH_VERSIONED_WORKLOAD_BASELINE"
+export RUNNING_LOW="REPLACE_WITH_VALIDATED_LOW_RUNNING_BOUNDARY"
 ```
 
 ---
@@ -353,15 +356,15 @@ export PREEMPT_HIGH_PER_SEC=0.5  # 抢占速率高位
 
 想加一类新故障（比如"speculative decoding 命中率塌方"）？5 步：
 
-1. **写 playbook markdown**：复制 `playbooks/05-cache-hit-regression.md` 当模板，改成 `09-spec-decode-regression.md`。统一含 Symptom Reconfirm / Triage Commands / Root Cause 判定 / Remediate (L1/L2/L3) / Verification / Long-term 六节。
+1. **写 playbook markdown**：复制 `playbooks/05-cache-hit-regression.md` 当模板，改成 `09-spec-decode-regression.md`。统一含 Symptom Reconfirm / Triage Commands / Root Cause 判定 / Remediate（只读 / 需逐命令批准）/ Verification / Long-term 六节。
 2. **加 triage.py 路由分支**：在 `route()` 里加几行
    ```python
-   if spec_acceptance_rate < 0.4:
+   if spec_acceptance_rate < SPEC_ACCEPTANCE_BASELINE:
        candidates.append((0.7, "09-spec-decode-regression",
-                          f"spec_acceptance={spec_acceptance_rate:.2f} < 0.4"))
+                          "spec acceptance below the versioned workload baseline"))
    ```
 3. **golden3.sh 多拉一个指标**：加 `spec_acceptance_rate=$(q '...')` 进 JSON 输出。
-4. **写 remediate 脚本（可选）**：`scripts/remediate_09.sh`，按 L1/L2/L3 列动作。如果整改只有"换模型"这种重操作，可省略脚本，让 agent 直接读 playbook markdown 里的命令。
+4. **写 remediate 脚本（可选）**：脚本只能生成计划；测试禁止 `eval`、apply 模式或任何 mutation 执行通道。所有 L2/L3 逐条审批。
 5. **回头给 §07-incident-playbook 加一条对应 case**（让书面 runbook 也覆盖到）—— 但这是后续工作，本 skill 第一版不强求。
 
 模板内容尽量短：决策逻辑写清楚就够，命令尽量复用现有脚本。
@@ -380,7 +383,7 @@ skill 是 notebook 的"运行时投影"：
 - 每个 playbook markdown 末尾有 `<!-- source: ../../08-production-deployment/07-incident-playbook.md case N -->` 注释作为契约
 - 后续可以写 CI 检查脚本，对比两边的关键命令是否仍一致（一期不强求，记一笔）
 
-**永远以 notebook 为权威**——skill 是它的"自动化版本"，不是替代品。读者排障时如果 skill 给的整改建议看起来怪怪的，去查对应的 notebook 章节核对。
+notebook 与 skill 都不是 runtime 权威。锁定源码、当前 `/metrics`、部署清单和运行证据优先；两份文档冲突时 fail closed，停止 mutation 并修正文档/测试。
 
 ---
 
@@ -388,32 +391,32 @@ skill 是 notebook 的"运行时投影"：
 
 - skill 把 §06-§08 的失效模式表 + incident playbook + Golden 3 决策树编成一份 agent 可执行的 SOP
 - 7 阶段工作流：探测 → Golden 3 → 决策树 → 深度诊断 → 三级整改 → 验证 → 报告
-- 三级整改授权：L1/L2 自动跑，L3 弹 `AskUserQuestion`——agent 既能"自动"又不会"自残"
+- 三级分类只用于解释风险：L1 只读可自动；L2/L3 任何 mutation 都逐条显式批准
 - fixture mode 让没有真集群的读者也能完整跑一遍
-- skill 内容自包含，但 notebook 是权威，两边通过 source 注释维持契约
+- skill 与 notebook 通过 source 注释和测试防漂移；runtime evidence 与锁定源码优先
 
 ## 自检
 
 > 不用照着原文复述，重点是把现象、机制、源码入口和取舍讲顺。
 
-**1. 为什么 NCCL hang 的 L3 整改必须重启整个 LWS group，不能只删一个 pod？**
+**1. 为什么 NCCL hang 的重建动作必须先解析完整并行部署单元，不能默认只删一个 pod？**
 
-NCCL 是集合通信，所有 rank 必须同时在通信器里。删一个 pod 留下 N-1 个继续等死锁。整组同时重启才能重新建立 collective communicator。skill 的 `remediate_02.sh` 用 `kubectl delete pods -l leaderworkerset.sigs.k8s.io/group-key=<group>` 而不是 `delete pod <name>`，就是这个原因。
+NCCL 是集合通信，一个 rank 异常可能让其他 rank 等待。部署可能是单 Pod 多 GPU，也可能是 LWS 等多 Pod group；先从实际 rank/拓扑解析完整单元，再生成 drain/rebuild 计划。`remediate_02.sh` 只输出候选计划，不直接渲染删除命令。
 
-**2. fixture 1（KV=0.95、preempt=0.6/s、queue 高）为什么命中 `03-gpu-oom` 而不是 `01-preempt-cascade`？**
+**2. fixture 1（KV=0.95、preempt=0.6/s、queue 高）为什么命中 `01-preempt-cascade`？**
 
-`triage.py` 给"KV ≥ 0.95（critical 边缘）+ queue/preempt 高"的组合更高信心（0.9），高于"抢占级联"的 0.85。两条都报，03 是主线、01 是 alternative。agent 在 Phase 3 会先按 03 做 OOM 排查；若日志里没有 exit 137，按 playbook 03 的 root-cause 判定切换到 01。
+KV 高 + preemption/queue 是抢占压力证据；高 KV 本身不证明 OOM。只有 `OOMKilled` 或 runtime OOM log 等明确证据才路由 `03-gpu-oom`。
 
 **3. 加一条新 playbook 至少要改哪几个文件？**
 
-至少 2 个：`playbooks/<id>.md`（新建）+ `scripts/triage.py`（加路由分支）。常配套：`scripts/golden3.sh`（多拉一个指标）+ `scripts/remediate_<id>.sh`（如果整改可自动）。
+至少 2 个：`playbooks/<id>.md`（新建）+ `scripts/triage.py`（加路由分支）。常配套：`scripts/golden3.sh`（多拉一个指标）+ `scripts/remediate_<id>.sh`（只生成结构化候选计划）。
 
 **4. 何时不应该触发 skill？**
 
 - 初次部署 vLLM 还没起来 → 没指标可拉，用 `reference/checklist-prelaunch.md` 走人工 checklist
 - Prometheus 没接 vLLM metrics → Phase 1 拉空
 - 只是想做配置审查（不是排障）→ 还是用 checklist
-- Golden 3 全绿 + 客户端没体感故障 → 不是真事故，不要瞎跑
+- 通用路由没有命中且没有用户症状 → 不执行 mutation；若有症状但缺信号，标记 `INSUFFICIENT_EVIDENCE` 并补只读证据
 
 ## 下一步
 
@@ -429,6 +432,6 @@ NCCL 是集合通信，所有 rank 必须同时在通信器里。删一个 pod �
 
 - [`.claude/skills/vllm-doctor/SKILL.md`](../.claude/skills/vllm-doctor/SKILL.md) —— 工作流权威定义
 - [`.claude/skills/vllm-doctor/playbooks/01..08-*.md`](../.claude/skills/vllm-doctor/playbooks/) —— 8 个 playbook
-- [`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md) L511-551 —— Golden 3 决策树原型
-- [`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md) L204-218 失效模式速查表、L293-311 上线前 checklist
-- [`07-incident-playbook.md`](./07-incident-playbook.md) —— 8 个真实 case 的原始描述
+- [`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md) —— profiling 与证据收集方法
+- [`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md) —— 失效模式与安全演练约束
+- [`07-incident-playbook.md`](./07-incident-playbook.md) —— 8 个合成场景

@@ -2,19 +2,18 @@
 
 ## Symptom Reconfirm
 - 多租户 LoRA 部署下：
-  - 同一 LoRA 反复 load / unload，`vllm:lora_loading_seconds` 高频出现
-  - TTFT 在切换 LoRA 时尖刺（基础模型推理快，但 LoRA 切换慢）
-  - LoRA slot 命中率（如果有指标）持续走低
+  - 经审计的控制面事件显示同一 adapter 反复 load/unload
+  - TTFT 尖刺与 adapter 切换时间对齐
+  - `vllm:lora_requests_info` 显示 waiting/running adapter 压力；数据并行场景先注意源码警告，该 gauge 可能误导
 - 排除：单 LoRA 单租户场景不会有这个问题
 
 ## Triage Commands
 
 ```bash
-# 1. LoRA 加载次数 / 加载耗时
-curl -sS "$PROM_URL/api/v1/query?query=sum(rate(vllm:lora_loading_seconds_count[5m]))" \
-  > "$INCIDENT_DIR/evidence/lora-load-rate.json"
-curl -sS "$PROM_URL/api/v1/query?query=histogram_quantile(0.99,sum(rate(vllm:lora_loading_seconds_bucket[5m]))by(le))" \
-  > "$INCIDENT_DIR/evidence/lora-load-p99.json"
+# 1. 当前源码只提供 LoRA request info gauge，不提供通用 loading latency
+# histogram。加载事件/耗时从实际 adapter 控制面或网关审计指标读取。
+curl -sS -G --data-urlencode 'query=vllm:lora_requests_info' \
+  "$PROM_URL/api/v1/query" > "$INCIDENT_DIR/evidence/lora-info.json"
 
 # 2. 当前 max_loras / max_lora_rank 配置
 first_pod=$(kubectl get pods -n ${VLLM_NAMESPACE:-vllm} -l ${VLLM_SERVICE_LABEL:-app.kubernetes.io/name=vllm} -o jsonpath='{.items[0].metadata.name}')
@@ -22,41 +21,36 @@ kubectl exec -n ${VLLM_NAMESPACE:-vllm} $first_pod -- bash -lc \
   'env | grep -E "MAX_LORAS|MAX_LORA_RANK|MAX_CPU_LORAS"' \
   > "$INCIDENT_DIR/evidence/lora-env.txt"
 
-# 3. 流量里出现的 LoRA 数（用于和 max_loras 对比）
-kubectl logs -n ${VLLM_NAMESPACE:-vllm} -l ${VLLM_SERVICE_LABEL:-app.kubernetes.io/name=vllm} \
-  --tail=2000 | grep -oE 'lora_request.*name=[^ ]+' | sort -u | wc -l \
-  > "$INCIDENT_DIR/evidence/distinct-loras-2k.txt"
+# 3. 活跃 adapter 数从经脱敏的路由/控制面指标读取，不通过生产日志
+# 猜测；若没有该信号，根因标记 unconfirmed。
 ```
 
 ## Root Cause 判定
 
 | 现象 | 根因 |
 | --- | --- |
-| 活跃 LoRA 数 > `MAX_LORAS` 而且远大于 | GPU slot 不够，LRU 一直在替换 |
-| LoRA 加载耗时 p99 > 2 s | LoRA 文件存远端（NFS/OSS），加载慢 |
-| 单 pod 上同时 max_loras + max_cpu_loras 都满 | CPU 缓存也满了，必须从存储拉 |
+| waiting adapter 与控制面 load/unload 同时反复 | slot/admission 压力假设较强 |
+| 加载耗时与存储延迟时间对齐 | 制品存储是候选原因；用 I/O 数据确认 |
+| 实际活跃 adapter 超过已测 GPU/CPU 容量 | 容量不足；需核对配置与 adapter rank/size |
 
 ## Remediate
 
-- **L1**：抓证据
-- **L2（直接做）**：
-  - 调大 `MAX_LORAS`（典型 4 → 8 或 16，取决于显存）
-  - 调大 `MAX_CPU_LORAS`（CPU 侧缓存，命中减少远端拉取）
-  - 把 LoRA 仓库镜像到本地 SSD
-- **L3（弹确认）**：
+- **L1（只读）**：抓证据
+- **L2（需逐命令批准）**：按 adapter rank/size 和目标硬件容量实验调整 GPU/CPU slot，或更改制品缓存；先验证 OOM、质量、启动和一致性。
+- **L3（需逐命令批准）**：
   - 改路由策略：相同 LoRA 的请求 sticky 到同一 pod（降低切换频率）—— 影响：负载不均
   - 给热门 LoRA 起独立 pod 池 —— 影响：成本
 
 ## Verification
 
-- LoRA 加载速率 5 分钟内降 50%+
-- 切换 LoRA 时 TTFT 尖刺消失（p99 回归基线 ± 20%）
+- 覆盖代表 adapter 工作集后，重复 load/unload 事件回到批准基线
+- TTFT、OOM、质量和负载均衡全部满足 gate
 
 ## Long-term
 
-- 多租户 LoRA 上线前估算并发活跃 LoRA 数，设 `MAX_LORAS` 至少 = p95 并发活跃数
+- 多租户 LoRA 上线前用 adapter rank/size 与并发工作集做容量实验，再设 slot 与 admission
 - LoRA 仓库走 PV/PVC 本地缓存
 - LoRA 大小标准化（不同 rank 混着用会让显存预算更难算）
 - 见 `09-advanced-features/04-lora-serving.md` 详解
 
-<!-- source: ../../09-advanced-features/04-lora-serving.md L90-140 -->
+<!-- source: ../../09-advanced-features/04-lora-serving.md -->

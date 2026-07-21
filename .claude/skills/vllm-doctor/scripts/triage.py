@@ -5,14 +5,12 @@
   python3 triage.py < golden3.json                    # 单次路由
   python3 triage.py --verify v1.json v2.json v3.json  # 三次采样判定是否恢复
 
-环境变量（可调阈值）：
-  TTFT_SLO_MS              默认 2000
-  QUEUE_HIGH               默认 50
-  KV_HIGH                  默认 0.9
-  KV_CRITICAL              默认 0.95
-  PREEMPT_HIGH_PER_SEC     默认 0.5
-  PREFIX_CACHE_DROP_FROM   默认 0.5  （命中率绝对值低于该阈值视为塌方）
-  FORMAT_COMPLIANCE_LOW    默认 0.9
+线上路由必须显式提供本服务验证过的阈值：
+  TTFT_SLO_MS, QUEUE_HIGH, KV_HIGH, PREEMPT_HIGH_PER_SEC,
+  PREFIX_CACHE_DROP_FROM, RUNNING_LOW
+若传入网关失败率或格式合规率，还要提供 REQUEST_FAILED_HIGH 或
+FORMAT_COMPLIANCE_LOW。仅离线 fixture 可设置
+VLLM_DOCTOR_USE_EXAMPLE_THRESHOLDS=1 使用脚本内合成阈值。
 """
 
 from __future__ import annotations
@@ -22,34 +20,95 @@ import os
 import sys
 
 
-def env_f(name: str, default: float) -> float:
+EXAMPLE_MODE = os.environ.get("VLLM_DOCTOR_USE_EXAMPLE_THRESHOLDS") == "1" or bool(
+    os.environ.get("VLLM_DOCTOR_FIXTURE")
+)
+
+
+def env_f(name: str, example: float) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return example if EXAMPLE_MODE else None
     try:
-        return float(os.environ.get(name, default))
+        return float(raw)
     except ValueError:
-        return default
+        return None
 
 
 TTFT_SLO_MS = env_f("TTFT_SLO_MS", 2000)
 QUEUE_HIGH = env_f("QUEUE_HIGH", 50)
 KV_HIGH = env_f("KV_HIGH", 0.9)
-KV_CRITICAL = env_f("KV_CRITICAL", 0.95)
 PREEMPT_HIGH = env_f("PREEMPT_HIGH_PER_SEC", 0.5)
 PREFIX_CACHE_LOW = env_f("PREFIX_CACHE_DROP_FROM", 0.5)
+RUNNING_LOW = env_f("RUNNING_LOW", 5)
+REQUEST_FAILED_HIGH = env_f("REQUEST_FAILED_HIGH", 0.1)
 FORMAT_COMPLIANCE_LOW = env_f("FORMAT_COMPLIANCE_LOW", 0.9)
 THROUGHPUT_DEAD = 1e-6  # 视为 0
 
 
 def route(g: dict) -> dict:
     """返回 {playbook, confidence, reason, alternatives}."""
-    ttft = float(g.get("ttft_p99_ms", 0))
-    queue = float(g.get("queue", 0))
-    kv = float(g.get("kv_usage", 0))
-    tput = float(g.get("throughput", 0))
-    running = float(g.get("running", 0))
-    cache_hit = float(g.get("prefix_cache_hit_rate", 1))
-    preempt = float(g.get("preempt_rate_per_sec", 0))
-    failed = float(g.get("request_failed_rate", 0))
-    fmt_ok = float(g.get("format_compliance_rate", 1))
+    required = (
+        "ttft_p99_ms",
+        "queue",
+        "kv_usage",
+        "throughput",
+        "running",
+        "prefix_cache_hit_rate",
+        "preempt_rate_per_sec",
+    )
+    missing = [key for key in required if g.get(key) is None]
+    if missing:
+        return {
+            "playbook": "none",
+            "confidence": 0.0,
+            "reason": "insufficient evidence; missing metrics: " + ", ".join(missing),
+            "alternatives": [],
+        }
+
+    threshold_config = {
+        "TTFT_SLO_MS": TTFT_SLO_MS,
+        "QUEUE_HIGH": QUEUE_HIGH,
+        "KV_HIGH": KV_HIGH,
+        "PREEMPT_HIGH_PER_SEC": PREEMPT_HIGH,
+        "PREFIX_CACHE_DROP_FROM": PREFIX_CACHE_LOW,
+        "RUNNING_LOW": RUNNING_LOW,
+    }
+    if g.get("request_failed_rate") is not None:
+        threshold_config["REQUEST_FAILED_HIGH"] = REQUEST_FAILED_HIGH
+    if g.get("format_compliance_rate") is not None:
+        threshold_config["FORMAT_COMPLIANCE_LOW"] = FORMAT_COMPLIANCE_LOW
+    missing_thresholds = [
+        name for name, value in threshold_config.items() if value is None
+    ]
+    if missing_thresholds:
+        return {
+            "playbook": "none",
+            "confidence": 0.0,
+            "reason": "insufficient evidence; missing thresholds: "
+            + ", ".join(missing_thresholds),
+            "alternatives": [],
+        }
+
+    assert TTFT_SLO_MS is not None
+    assert QUEUE_HIGH is not None
+    assert KV_HIGH is not None
+    assert PREEMPT_HIGH is not None
+    assert PREFIX_CACHE_LOW is not None
+    assert RUNNING_LOW is not None
+
+    ttft = float(g["ttft_p99_ms"])
+    queue = float(g["queue"])
+    kv = float(g["kv_usage"])
+    tput = float(g["throughput"])
+    running = float(g["running"])
+    cache_hit = float(g["prefix_cache_hit_rate"])
+    preempt = float(g["preempt_rate_per_sec"])
+    failed_raw = g.get("request_failed_rate")
+    failed = None if failed_raw is None else float(failed_raw)
+    fmt_raw = g.get("format_compliance_rate")
+    fmt_ok = None if fmt_raw is None else float(fmt_raw)
+    oom_killed = float(g.get("oom_killed") or 0)
 
     candidates: list[tuple[float, str, str]] = []
 
@@ -65,9 +124,9 @@ def route(g: dict) -> dict:
     ttft_bad = ttft > TTFT_SLO_MS
     queue_bad = queue >= QUEUE_HIGH
 
-    if kv >= KV_CRITICAL and (preempting or queue_bad):
+    if oom_killed > 0:
         candidates.append(
-            (0.9, "03-gpu-oom", f"kv={kv:.2f} 接近 OOM 边缘 + 队列/抢占同时高")
+            (0.95, "03-gpu-oom", f"observed oom_killed={oom_killed:.0f}")
         )
     if kv_pressure and (preempting or (ttft_bad and queue_bad)):
         candidates.append(
@@ -75,7 +134,12 @@ def route(g: dict) -> dict:
         )
 
     # 重试雪崩：失败率突增 + 队列异常但 KV 不算高（KV 高就是真过载，不是雪崩）
-    if failed > 0.1 and not kv_pressure:
+    if (
+        failed is not None
+        and REQUEST_FAILED_HIGH is not None
+        and failed > REQUEST_FAILED_HIGH
+        and not kv_pressure
+    ):
         candidates.append(
             (0.75, "04-retry-storm", f"request_failed={failed:.2f}/s 上升但 kv={kv:.2f} 不算紧")
         )
@@ -87,13 +151,17 @@ def route(g: dict) -> dict:
         )
 
     # 冷启动：TTFT 高但 KV/queue 不高，多半在加载
-    if ttft_bad and not kv_pressure and queue < QUEUE_HIGH and running < 5:
+    if ttft_bad and not kv_pressure and queue < QUEUE_HIGH and running < RUNNING_LOW:
         candidates.append(
             (0.6, "06-cold-start", f"TTFT={ttft:.0f}ms 高，但 KV/queue 都低，running={running:.0f} 少")
         )
 
     # 输出质量：格式合规率塌
-    if fmt_ok < FORMAT_COMPLIANCE_LOW:
+    if (
+        fmt_ok is not None
+        and FORMAT_COMPLIANCE_LOW is not None
+        and fmt_ok < FORMAT_COMPLIANCE_LOW
+    ):
         candidates.append(
             (0.7, "07-output-quality", f"format_compliance={fmt_ok:.2f} < {FORMAT_COMPLIANCE_LOW}")
         )
@@ -122,11 +190,21 @@ def route(g: dict) -> dict:
 
 
 def verify(samples: list[dict]) -> dict:
-    """三次采样都未命中任何 playbook → RESOLVED；否则附最严重的一次。"""
+    """汇总路由状态；真正恢复仍需逐条满足命中 playbook 的验证门。"""
     routings = [route(s) for s in samples]
+    insufficient = [
+        routing
+        for routing in routings
+        if routing["reason"].startswith("insufficient evidence")
+    ]
+    if insufficient:
+        return {
+            "status": "INSUFFICIENT_EVIDENCE",
+            "samples": routings,
+        }
     if all(r["playbook"] == "none" for r in routings):
         return {
-            "status": "RESOLVED",
+            "status": "NO_ACTIVE_ROUTE",
             "samples": routings,
         }
     worst = max(routings, key=lambda r: r["confidence"])

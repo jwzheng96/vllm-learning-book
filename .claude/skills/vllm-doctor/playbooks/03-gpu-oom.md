@@ -1,11 +1,11 @@
 # Playbook 03: GPU OOM / OOMKilled
 
 ## Symptom Reconfirm
-- 任一满足：
+- 至少一项**明确 OOM 证据**：
   - Pod 状态 `OOMKilled`（exit code 137）
   - 日志里 `torch.cuda.OutOfMemoryError`
-  - `DCGM_FI_DEV_FB_USED / total > 0.98` 且 `vllm:gpu_cache_usage_perc > 0.95`
-- 排除：CPU OOM（看 `dmesg | grep -i oom`，目标进程是 Python 主进程不是 vllm worker → 走容器 memory limit）
+- 高 DCGM 显存占用或高 `vllm:kv_cache_usage_perc` 只能作为相关证据，不能单独确认 OOM。
+- 用 Pod termination reason、container memory 指标和 runtime log 区分 GPU OOM、容器 CPU memory limit 与节点压力；不要默认读取宿主机 `dmesg`。
 
 ## Triage Commands
 
@@ -36,33 +36,27 @@ kubectl exec -n ${VLLM_NAMESPACE:-vllm} $first_pod -- bash -lc \
 
 | 现象 | 根因 |
 | --- | --- |
-| 持续高位 `FB_used` 然后突刺到 100% | 激活内存峰值（长 prompt 进 prefill）撞天花板 |
-| 仅启动后立刻 OOM | `--gpu-memory-utilization` 设太高（>0.92）+ allocator 碎片 |
-| OOM 集中在某些 pod | 模型权重大小漂移（混了 FP16 / FP8 quantization 配错） |
-| OOM 在切换 LoRA 时 | LoRA slot 没清干净，见 `08-lora-thrash` |
+| OOM 与长 prompt/prefill 时间对齐 | 激活峰值是候选原因；用请求长度与 profiler 复核 |
+| 仅启动后立刻 OOM | 权重/配置/可用显存不匹配；分别核对，不预设 allocator 碎片 |
+| OOM 集中在某些 pod | 核对 GPU/MIG、模型 digest、参数和其他进程的差异 |
+| OOM 与 LoRA load 时间对齐 | adapter 内存预算是候选原因，见 `08-lora-thrash` |
 
 ## Remediate
 
-- **L2（直接做）**：
-  - 降 `GPU_MEMORY_UTILIZATION` 0.95 → 0.85（留 10% 给峰值）
-  - 改 `KV_CACHE_DTYPE=fp8`（如果硬件支持），KV 体积砍半
-  - 调 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 缓解碎片
-  - 降 `MAX_NUM_SEQS` 至 32 或更低
-- **L3（弹确认）**：
-  - 滚动重启加载新配置
-  - 切到更高 SKU 的节点池（cost 影响）
+- **L2（需逐命令批准）**：根据复现实验一次只改一个变量，例如降低 admission/seq budget、收紧请求长度，或在已验证质量与 backend 支持后测试 KV dtype。候选值来自目标模型的容量测试。
+- **L3（需逐命令批准）**：drain 后滚动重启或切换节点池；先确认稳定池容量、cold-start 与回滚命令。
 
 ## Verification
 
-- 重启后 5 分钟内 `OOMKilled` 事件计数 = 0
-- `DCGM_FI_DEV_FB_USED / total < 0.92` 持续 5 分钟
-- `vllm:gpu_cache_usage_perc < 0.9`
+- 覆盖事故请求长度和并发的观测窗口内没有新 OOM 证据
+- DCGM 显存与 `vllm:kv_cache_usage_perc` 回到该模型池压测得到的安全区间
+- TTFT/TPOT/质量与吞吐没有因处置越过批准 gate
 
 ## Long-term
 
-- 模型上线前用 `--profile-num-tokens` 估激活峰值
-- `gpu_memory_utilization` 留 ≥ 15% headroom
-- DCGM 告警阈值 `FB_used > 0.92` 提前通知
+- 上线前用真实长度/并发矩阵测量激活与 KV 峰值
+- `gpu_memory_utilization` 与 admission headroom 由故障点反推，并记录模型/硬件适用范围
+- DCGM 告警阈值来自本节点池基线，并和 OOM/重启证据联合判断
 - 见 `reference/checklist-prelaunch.md` 第 8 条
 
-<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md L54-76 -->
+<!-- source: ../../08-production-deployment/06-reliability-and-failure-modes.md -->
