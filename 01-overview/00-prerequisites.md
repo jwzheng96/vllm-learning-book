@@ -28,16 +28,26 @@ vLLM 解决的是这样一类问题：
 
 ```mermaid
 flowchart LR
-    A["1. Token<br/>& Tokenizer"] --> B["2. Transformer<br/>Attention 回顾"]
-    B --> C["3. 自回归生成"]
-    C --> D["4. KV Cache<br/>必须存在的原因"]
-    D --> E["5. Prefill vs Decode"]
-    E --> F["6. GPU 内存层级<br/>HBM / SRAM"]
-    F --> G["7. Memory-bound<br/>vs Compute-bound"]
-    G --> H["8. Batching"]
-    H --> I["9. 分布式并行<br/>TP / PP / DP"]
-    I --> J["10. 推理服务指标<br/>TTFT / TPOT / 吞吐"]
-    J --> K["11. vLLM<br/>登场"]
+    subgraph S1["① 基础概念"]
+        direction TB
+        A["1. Token<br/>& Tokenizer"] --> B["2. Transformer<br/>Attention 回顾"]
+        B --> C["3. 自回归生成"]
+        C --> D["4. KV Cache<br/>必须存在的原因"]
+        D --> E["5. Prefill vs Decode"]
+    end
+    subgraph S2["② 性能视角"]
+        direction TB
+        F["6. GPU 内存层级<br/>HBM / SRAM"]
+        F --> G["7. Memory-bound<br/>vs Compute-bound"]
+        G --> H["8. Batching"]
+    end
+    subgraph S3["③ 系统视角"]
+        direction TB
+        I["9. 分布式并行<br/>TP / PP / DP"]
+        I --> J["10. 推理服务指标<br/>TTFT / TPOT / 吞吐"]
+        J --> K["11. vLLM<br/>登场"]
+    end
+    S1 --> S2 --> S3
 
     classDef base fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
     classDef perf fill:#fef3c7,stroke:#b45309,color:#1a1f29;
