@@ -9,8 +9,9 @@
 #   2. The site will be available at https://<user>.github.io/<repo>/
 #
 # Notes:
-#   - PDF/EPUB are NOT built in CI by default (xelatex install is large).
-#     Uncomment the pdf-epub step if you want them included.
+#   - PDF/EPUB are built in CI alongside the HTML site and published to the
+#     Pages root (downloadable at /vllm-learning.pdf and /vllm-learning.epub).
+#     Mermaid diagrams are pre-rendered to PNG via mermaid-cli.
 name: Deploy vLLM learning docs
 
 on:
@@ -57,18 +58,35 @@ jobs:
         # override needed.
         run: python3 build_html.py
 
-      # Uncomment to also produce PDF/EPUB on every push.
-      # - name: Install pandoc + xelatex
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended fonts-noto-cjk
-      # - name: Build PDF + EPUB
-      #   env:
-      #     VLLM_LEARNING_DST: ${{ github.workspace }}/_site
-      #   run: |
-      #     # Linux uses Noto Sans CJK SC instead of PingFang SC.
-      #     sed -i 's|PingFang SC|Noto Sans CJK SC|g' build_pdf_epub.py
-      #     python3 build_pdf_epub.py
+      - name: Install pandoc + xelatex + mermaid-cli (for PDF/EPUB)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended \
+            texlive-latex-extra texlive-fonts-extra \
+            fonts-noto-cjk fonts-noto-cjk-extra librsvg2-bin poppler-utils
+          # ElegantBook + dependencies (not in Debian's texlive packages)
+          sudo tlmgr init-usertree 2>/dev/null || true
+          sudo tlmgr update --self
+          sudo tlmgr install \
+            elegantbook fvextra tcolorbox newunicodechar framed \
+            comment csquotes biblatex trimspaces environ mdframed zref needspace \
+            tex-gyre newtx tikzfill pdfcol etoc fixtounicode \
+            adforn anyfontsize appendix apptools bbding enumitem esint esvect \
+            footmisc makecell manfnt multirow titlesec tocloft yhmath \
+            mathrsfs rsfs jknapltx
+          # mermaid-cli needs node + a headless chromium for diagram rendering.
+          sudo npm i -g @mermaid-js/mermaid-cli
+          # cairosvg for SVG→PNG cover/favicon (pure python, but needs libcairo).
+          python3 -m pip install cairosvg
+
+      - name: Build PDF + EPUB
+        # PDF: ElegantBook (green theme) with TikZ vector cover, framed code
+        #   blocks, Unicode fallback fonts. Mermaid diagrams pre-rendered to PNG.
+        # EPUB: hand-tuned stylesheet (epub.css, wine-red theme), cover JPEG
+        #   extracted from the PDF's first page.
+        env:
+          VLLM_LEARNING_DST: ${{ github.workspace }}/_site
+        run: python3 build_pdf_epub.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

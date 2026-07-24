@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- vLLM 学习手册 favicon：翻开的书本 + 酒红主色 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#8b1538"/>
+  <g fill="none" stroke="#f4ede0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- 书脊与左右页 -->
+    <path d="M32 18 L32 48"/>
+    <path d="M32 20 C26 17 19 16 12 17 L12 47 C19 46 26 47 32 50"/>
+    <path d="M32 20 C38 17 45 16 52 17 L52 47 C45 46 38 47 32 50"/>
+    <!-- 页面文字示意线 -->
+    <path d="M17 25 L27 23" stroke-width="1.5" opacity="0.7"/>
+    <path d="M17 30 L27 28" stroke-width="1.5" opacity="0.7"/>
+    <path d="M17 35 L25 33" stroke-width="1.5" opacity="0.7"/>
+    <path d="M37 23 L47 25" stroke-width="1.5" opacity="0.7"/>
+    <path d="M37 28 L47 30" stroke-width="1.5" opacity="0.7"/>
+    <path d="M37 33 L45 35" stroke-width="1.5" opacity="0.7"/>
+  </g>
+</svg>

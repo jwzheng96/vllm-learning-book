@@ -1,0 +1,146 @@
+% ===== ElegantBook customizations for 《vLLM 学习手册》 =====
+% 借鉴 ai-agent-book 的 preamble 设计，适配 vLLM 推理工程主题。
+% Accent color: ElegantBook green theme 的深绿，搭配酒红点缀。
+
+% ── Microtype: disable protrusion ────────────────────────────────
+% ElegantBook loads microtype, but its protrusion pass trips over
+% \newunicodechar-defined glyphs (extra } in \MT@is@char). Disabling
+% protrusion keeps tracking/expansion (the visually useful parts) while
+% avoiding the conflict.
+\microtypesetup{protrusion=false}
+
+% ── Counter format: use arabic for sub-levels ────────────────────
+% ElegantBook's default uses \alph for subsubsection-level theorem
+% counters, which overflows past 26. Force arabic to handle 60-chapter
+% books with deep numbering.
+\renewcommand{\thesubsubsection}{\arabic{subsubsection}}
+
+% ── Front matter page numbering: roman instead of Alph ───────────
+% ElegantBook's \maketitle sets \pagenumbering{Alph}, which overflows
+% past 26 pages (our front matter is ~25 pages of TOC + title). Patch
+% \maketitle to restore roman numbering right after the title page.
+\AtBeginDocument{%
+  \let\origmaketitle\maketitle
+  \renewcommand{\maketitle}{\origmaketitle\pagenumbering{roman}}%
+}
+
+% ── Unicode glyph fallback ────────────────────────────────────────
+\usepackage{newunicodechar}
+\IfFontExistsTF{Arial Unicode MS}{\newfontfamily\fallbackfont{Arial Unicode MS}}{\IfFontExistsTF{Noto Sans CJK SC}{\newfontfamily\fallbackfont{Noto Sans CJK SC}}{\newfontfamily\fallbackfont{DejaVu Sans}}}
+\IfFontExistsTF{Heiti SC}{\newunicodechar{★}{{\fontspec{Heiti SC}★}}}{\IfFontExistsTF{Noto Sans CJK SC}{\newunicodechar{★}{{\fontspec{Noto Sans CJK SC}★}}}{\newunicodechar{★}{{\fontspec{DejaVu Sans}★}}}}
+\newunicodechar{✓}{{\fallbackfont ✓}}
+\newunicodechar{✗}{{\fallbackfont ✗}}
+\newunicodechar{→}{{\fallbackfont →}}
+\newunicodechar{←}{{\fallbackfont ←}}
+\newunicodechar{↔}{{\fallbackfont ↔}}
+% Subscripts / superscripts used in KV cache notation
+\newunicodechar{₀}{{\fallbackfont ₀}}
+\newunicodechar{₁}{{\fallbackfont ₁}}
+\newunicodechar{₂}{{\fallbackfont ₂}}
+\newunicodechar{₃}{{\fallbackfont ₃}}
+\newunicodechar{₄}{{\fallbackfont ₄}}
+\newunicodechar{₅}{{\fallbackfont ₅}}
+\newunicodechar{₆}{{\fallbackfont ₆}}
+\newunicodechar{₇}{{\fallbackfont ₇}}
+\newunicodechar{₈}{{\fallbackfont ₈}}
+\newunicodechar{₉}{{\fallbackfont ₉}}
+% Math / symbols
+\newunicodechar{≈}{{\fallbackfont ≈}}
+\newunicodechar{≤}{{\fallbackfont ≤}}
+\newunicodechar{≥}{{\fallbackfont ≥}}
+\newunicodechar{×}{{\fallbackfont ×}}
+\newunicodechar{÷}{{\fallbackfont ÷}}
+\newunicodechar{·}{{\fallbackfont ·}}
+% Greek letters used inline
+\newunicodechar{α}{{\fallbackfont α}}
+\newunicodechar{β}{{\fallbackfont β}}
+\newunicodechar{γ}{{\fallbackfont γ}}
+\newunicodechar{δ}{{\fallbackfont δ}}
+\newunicodechar{ε}{{\fallbackfont ε}}
+\newunicodechar{θ}{{\fallbackfont θ}}
+\newunicodechar{λ}{{\fallbackfont λ}}
+\newunicodechar{μ}{{\fallbackfont μ}}
+\newunicodechar{π}{{\fallbackfont π}}
+\newunicodechar{σ}{{\fallbackfont σ}}
+\newunicodechar{τ}{{\fallbackfont τ}}
+\newunicodechar{φ}{{\fallbackfont φ}}
+\newunicodechar{ω}{{\fallbackfont ω}}
+
+% ── Code/monospace font ───────────────────────────────────────────
+\IfFontExistsTF{Menlo}{\setmonofont[Scale=0.86]{Menlo}}{\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont[Scale=0.85]{DejaVu Sans Mono}}{}}
+
+% ── tcolorbox (ElegantBook already loads it; add libraries) ──────
+\tcbuselibrary{skins,breakable}
+
+% ── TikZ (for the cover) ─────────────────────────────────────────
+\usepackage{tikz}
+\usetikzlibrary{fadings}
+
+% Theme accent color: deep green (classic technical-book tone).
+% Drives headings, rules, links, code chrome and the cover.
+\definecolor{structurecolor}{RGB}{30,99,65}
+
+% Accent shade for code/figure chrome
+\colorlet{accent}{structurecolor}
+\colorlet{accentbg}{structurecolor!6}
+\colorlet{accentrule}{structurecolor!35}
+
+% ── Wrap long lines in code blocks ───────────────────────────────
+\usepackage{fvextra}
+\fvset{breaklines=true,breakanywhere=true,%
+  breaksymbolleft={\footnotesize\textcolor{accentrule}{$\hookrightarrow$}\,}}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\},breaklines,breakanywhere}
+
+% ── Code blocks: subtle framed box ───────────────────────────────
+\newtcolorbox{codebox}{%
+  breakable, enhanced,
+  colback=black!3, colframe=accentrule,
+  boxrule=0.5pt, leftrule=2.5pt,
+  left=0.7em, right=0.6em, top=0.4em, bottom=0.4em,
+  arc=0.6mm,
+  before skip=0.7em, after skip=0.7em
+}
+\renewenvironment{Shaded}{\begin{codebox}}{\end{codebox}}
+\renewenvironment{verbatim}%
+  {\VerbatimEnvironment\begin{codebox}\begin{Verbatim}}%
+  {\end{Verbatim}\end{codebox}}
+
+% ── Figures: force [H] ────────────────────────────────────────────
+\usepackage{float}
+\let\origfigure\figure
+\let\origendfigure\endfigure
+\renewenvironment{figure}[1][htbp]{\origfigure[H]}{\origendfigure}
+\setkeys{Gin}{width=\linewidth,height=0.42\textheight,keepaspectratio}
+
+% ── Figure captions ──────────────────────────────────────────────
+\usepackage{caption}
+\IfFontExistsTF{Heiti SC}{\setCJKfamilyfont{capcjksf}[AutoFakeBold=2.5]{Heiti SC}}{\IfFontExistsTF{Noto Sans CJK SC}{\setCJKfamilyfont{capcjksf}[AutoFakeBold=2.5]{Noto Sans CJK SC}}{\setCJKfamilyfont{capcjksf}[AutoFakeBold=2.5]{DejaVu Sans}}}
+\DeclareCaptionFont{cjkmatch}{\CJKfamily{capcjksf}}
+\captionsetup{font={normalsize,sf,bf,cjkmatch}, labelformat=empty, skip=4pt, justification=centering}
+
+% ── Blockquotes: accent left bar ─────────────────────────────────
+\renewenvironment{quote}{%
+  \begin{tcolorbox}[
+    blanker, breakable,
+    borderline west={2.5pt}{0pt}{accent},
+    colback=accent!4,
+    left=1em, right=0.6em, top=0.5em, bottom=0.5em,
+    before skip=0.6em, after skip=0.6em
+  ]%
+}{%
+  \end{tcolorbox}%
+}
+
+% ── Paragraph indent ─────────────────────────────────────────────
+\setlength{\parindent}{2em}
+
+% ── CJK fonts: macOS first, CI (Linux) fallback to Noto ──────────
+\IfFontExistsTF{Songti SC}{%
+  \setCJKmainfont[AutoFakeBold=2.5]{Songti SC}%
+  \setCJKsansfont[AutoFakeBold=2.5]{Heiti SC}%
+  \setCJKmonofont[AutoFakeBold=2.5]{Songti SC}%
+}{%
+  \setCJKmainfont[AutoFakeBold=2.5]{Noto Sans CJK SC}%
+  \setCJKsansfont[AutoFakeBold=2.5]{Noto Sans CJK SC}%
+  \setCJKmonofont[AutoFakeBold=2.5]{Noto Sans CJK SC}%
+}

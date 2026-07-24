@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Deploy vllm-learning-html/ to a GitHub Pages site.
+# Deploy the built site to a GitHub Pages repo.
 #
 # Usage:
 #   ./deploy_gh_pages.sh git@github.com:<user>/<repo>.git [branch]
 #
 # Behavior:
-#   - Initializes a fresh git repo inside vllm-learning-html/ (gitignored otherwise)
+#   - Initializes a fresh git repo inside _site/ (gitignored otherwise)
 #   - Commits everything, pushes to <branch> (default: gh-pages) on the given remote
 #   - Force-push (this branch is a build artifact, not source of truth)
 #
@@ -20,10 +20,10 @@ set -euo pipefail
 
 REMOTE="${1:-}"
 BRANCH="${2:-gh-pages}"
-# Default to the sibling vllm-learning-html/ next to this script's directory,
-# but allow VLLM_LEARNING_DST to override.
+# Default to ./_site/ inside the repo (same output dir as build_html.py and
+# the Pages CI workflow), but allow VLLM_LEARNING_DST to override.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HTML_DIR="${VLLM_LEARNING_DST:-$SCRIPT_DIR/../vllm-learning-html}"
+HTML_DIR="${VLLM_LEARNING_DST:-$SCRIPT_DIR/_site}"
 
 if [[ -z "$REMOTE" ]]; then
   cat <<EOF

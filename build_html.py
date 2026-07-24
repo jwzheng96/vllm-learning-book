@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import markdown
@@ -66,6 +67,48 @@ SECTIONS_META: dict[str, tuple[str, str]] = {
 
 # Backward-compat alias kept for search index "section" field.
 SECTION_TITLES_ZH = {k: f"{p} · {n}" for k, (p, n) in SECTIONS_META.items()}
+
+# Canonical site URL for Open Graph / Twitter card absolute URLs.
+# Override with VLLM_LEARNING_SITE_URL; empty disables absolute canonical URLs.
+SITE_URL = os.environ.get(
+    "VLLM_LEARNING_SITE_URL",
+    "https://jwzheng96.github.io/vllm-learning-book/",
+)
+
+_SITE_DESCRIPTION = (
+    "一份写给大模型推理工程入门者的源码教程：60 章 · 24K+ 行，"
+    "从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。"
+    "每章都用语义锚点对照锁定 commit 的 vLLM 源码。"
+)
+
+# Download card injected into the README page. Links point to the PDF/EPUB
+# artifacts produced by build_pdf_epub.py in CI (also published to the site
+# root). Missing artifacts simply 404 — the card itself always renders.
+_DOWNLOAD_CARD = """
+<div class="download-card">
+  <div class="download-card-title">📥 下载离线版</div>
+  <div class="download-card-links">
+    <a href="vllm-learning.pdf" class="download-btn">PDF</a>
+    <a href="vllm-learning.epub" class="download-btn">EPUB</a>
+  </div>
+  <div class="download-card-note">由 CI 自动构建，随站点更新。</div>
+</div>
+"""
+
+
+def _page_description(title: str, raw: str) -> str:
+    """First meaningful sentence of the page, or the site-wide description."""
+    if title == "vLLM 学习手册":
+        return _SITE_DESCRIPTION
+    # Take the first non-empty, non-heading, non-frontmatter line as a snippet.
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith("---") or s.startswith(">"):
+            continue
+        # Strip markdown link syntax for a clean description.
+        clean = re.sub(r"[\[\]`*_]", "", s)
+        return clean[:140]
+    return _SITE_DESCRIPTION
 
 
 def discover_files() -> list[tuple[str, Path]]:
@@ -764,6 +807,44 @@ pre.mermaid svg, .mermaid svg {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+
+/* ---- README download card ---- */
+.download-card {
+  margin: 1.5rem 0 2rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.download-card .download-card-title {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+.download-card .download-card-links {
+  display: flex;
+  gap: 0.75rem;
+}
+.download-card .download-btn {
+  display: inline-block;
+  padding: 0.4rem 1.1rem;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: opacity 0.15s;
+}
+.download-card .download-btn:hover { opacity: 0.85; }
+.download-card .download-card-note {
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+}
 """
 
 # ============================================================
@@ -776,8 +857,26 @@ TEMPLATE = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{title} · vLLM 学习手册</title>
+  <meta name="description" content="{description}">
+  <meta name="author" content="vllm-learning">
+  <meta name="theme-color" content="#8b1538">
+  <link rel="icon" type="image/svg+xml" href="{root}favicon.svg">
+  <link rel="apple-touch-icon" href="{root}favicon.svg">
   <link rel="stylesheet" href="{css_link}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <!-- Open Graph / social preview -->
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="vLLM 学习手册">
+  <meta property="og:title" content="{og_title}">
+  <meta property="og:description" content="{description}">
+  <meta property="og:image" content="{og_image}">
+  <meta property="og:url" content="{canonical_url}">
+  <!-- Twitter card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{og_title}">
+  <meta name="twitter:description" content="{description}">
+  <meta name="twitter:image" content="{og_image}">
 </head>
 <body>
   <div class="app-layout">
@@ -1249,6 +1348,8 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
     if rel == "README":
         breadcrumb = ""
         reading_time = ""
+        # Inject the download card at the top of the README hero area.
+        body = _DOWNLOAD_CARD + body
     else:
         section = rel.split("/")[0]
         part_label, part_name = SECTIONS_META.get(section, ("", section))
@@ -1292,8 +1393,20 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
     page_nav = "\n".join(nav_parts)
 
     sidebar = build_sidebar(files, rel, css_depth)
+    canonical_url = f"{SITE_URL.rstrip('/')}/{rel}.html" if SITE_URL else ""
+    description = _page_description(title, raw)
+    # OG title: for the README (title == book name) don't append the suffix,
+    # otherwise we get "vLLM 学习手册 · vLLM 学习手册".
+    og_title = title if title == "vLLM 学习手册" else f"{title} · vLLM 学习手册"
+    # OG image: absolute URL (social crawlers need it); fall back to relative
+    # when SITE_URL is unset so local builds still resolve.
+    og_image = f"{SITE_URL.rstrip('/')}/og-cover.png" if SITE_URL else f"{root_prefix}og-cover.png"
     return TEMPLATE.format(
         title=title,
+        og_title=og_title,
+        description=description,
+        canonical_url=canonical_url,
+        og_image=og_image,
         css_link=css_link,
         root=root_prefix,
         sidebar=sidebar,
@@ -1302,6 +1415,60 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
         reading_time=reading_time,
         page_nav=page_nav,
     )
+
+
+# ============================================================
+#                        STATIC ASSETS
+# ============================================================
+
+def _svg_to_png(svg_path: Path, png_path: Path, width: int) -> bool:
+    """Convert an SVG to PNG. Returns True on success.
+
+    Tries cairosvg (pure python) then rsvg-convert (system). Returns False
+    if neither is available — callers treat the result as best-effort.
+    """
+    try:
+        import cairosvg  # type: ignore
+        cairosvg.svg2png(url=str(svg_path), write_to=str(png_path), output_width=width)
+        if png_path.exists():
+            return True
+    except Exception:
+        pass
+    rsvg = shutil.which("rsvg-convert")
+    if rsvg:
+        res = subprocess.run(
+            [rsvg, "-w", str(width), "-o", str(png_path), str(svg_path)],
+            capture_output=True, text=True,
+        )
+        if res.returncode == 0 and png_path.exists():
+            return True
+    return False
+
+
+def copy_static_assets() -> None:
+    """Copy favicon + OG cover into _site/, converting SVGs to PNG where needed.
+
+    favicon.svg is copied as-is (modern browsers support SVG favicons).
+    og-cover.svg is converted to og-cover.png for social-platform compatibility
+    (Twitter/Facebook/LinkedIn only reliably preview PNG/JPG). If conversion
+    tools are absent, the SVG is still copied as a fallback.
+    """
+    assets = SRC / "assets"
+
+    favicon = assets / "favicon.svg"
+    if favicon.exists():
+        shutil.copy2(favicon, DST / "favicon.svg")
+        print("  favicon.svg")
+
+    og_svg = assets / "og-cover.svg"
+    if og_svg.exists():
+        og_png = DST / "og-cover.png"
+        if _svg_to_png(og_svg, og_png, width=1200):
+            print("  og-cover.png")
+        else:
+            # Fallback: copy the SVG so at least something resolves.
+            shutil.copy2(og_svg, DST / "og-cover.svg")
+            print("  og-cover.svg (PNG conversion unavailable — install cairosvg or librsvg2)")
 
 
 # ============================================================
@@ -1335,6 +1502,7 @@ def main() -> None:
 
     (DST / "style.css").write_text(CSS, encoding="utf-8")
     (DST / ".nojekyll").write_text("", encoding="utf-8")
+    copy_static_assets()
 
     files = discover_files()
     print(f"Found {len(files)} markdown files")

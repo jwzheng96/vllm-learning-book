@@ -1,0 +1,370 @@
+/* ==========================================================================
+   vLLM 学习手册 — EPUB stylesheet
+   借鉴 ai-agent-book 的 EPUB 样式设计，适配酒红主题（#8b1538），
+   与 HTML 在线站配色一致。参考 learnbyexample 的 EPUB 最佳实践。
+   ========================================================================== */
+
+:root {
+  color-scheme: light dark;
+  --accent: #8b1538;          /* 酒红，与在线站主色一致 */
+  --accent-light: #fdf2f5;    /* 提示框淡背景 */
+  --code-bg: #f5f5f5;         /* 代码块背景 */
+  --code-text: #1f2328;       /* 代码块前景 */
+  --border: #d0d7de;          /* 普通边框 */
+  --muted: #57606a;           /* 次要文字 */
+}
+
+/* 暗色模式覆盖（部分阅读器支持 prefers-color-scheme） */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent-light: #2e1620;
+    --code-bg: #161b22;
+    --code-text: #e6edf3;
+    --border: #30363d;
+    --muted: #8b949e;
+  }
+}
+
+/* 注意：老 Kindle (KF8) 和 EPUB2 阅读器不支持 CSS 自定义属性，
+   整条 var() 声明会被丢弃。因此每个 var() 声明前都写了一条
+   字面量颜色的兜底声明——不支持的阅读器用字面量，支持的用 var()。 */
+
+/* ── 正文基础 ──────────────────────────────────────────────────────────── */
+
+body {
+  font-family: system-ui, -apple-system, "PingFang SC", "PingFang TC",
+               "Noto Sans CJK SC", "Noto Sans CJK TC", "Source Han Sans",
+               sans-serif;
+  line-height: 1.75;
+  orphans: 2;
+  widows: 2;
+}
+
+p {
+  margin: 0 0 0.8em 0;
+}
+
+/* ── 标题 ──────────────────────────────────────────────────────────────── */
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3;
+  break-after: avoid;
+  font-weight: 600;
+}
+
+/* H1 = 章标题：每章新起一页 + 居中 + 主色 */
+h1 {
+  break-before: recto;
+  font-size: 1.85em;
+  margin: 2.5em 0 1.2em 0;
+  padding-bottom: 0.4em;
+  border-bottom: 2px solid #8b1538;
+  border-bottom: 2px solid var(--accent);
+  color: #8b1538;
+  color: var(--accent);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+h1:first-of-type {
+  break-before: auto;
+}
+
+/* H2 = 节标题 */
+h2 {
+  font-size: 1.4em;
+  margin: 2em 0 0.8em 0;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--border);
+}
+
+/* H3 = 子节：主色 */
+h3 {
+  font-size: 1.18em;
+  margin: 1.6em 0 0.6em 0;
+  color: #8b1538;
+  color: var(--accent);
+  padding-left: 0.5em;
+}
+
+h4 {
+  font-size: 1.05em;
+  margin: 1.3em 0 0.5em 0;
+  color: #57606a;
+  color: var(--muted);
+}
+
+/* ── 章节编号弱化 ──────────────────────────────────────────────────────── */
+
+.section-header-number {
+  font-size: 0.7em;
+  font-weight: 400;
+  color: #57606a;
+  color: var(--muted);
+  vertical-align: 0.15em;
+  margin-right: 0.4em;
+  letter-spacing: 0.05em;
+}
+
+h1 .section-header-number {
+  font-size: 0.5em;
+  display: block;
+  margin-bottom: 0.4em;
+  letter-spacing: 0.2em;
+}
+
+nav#toc .section-header-number,
+nav#TOC .section-header-number {
+  font-size: 0.85em;
+  color: #57606a;
+  color: var(--muted);
+  font-weight: 400;
+  margin-right: 0.3em;
+}
+
+/* ── 链接 ──────────────────────────────────────────────────────────────── */
+
+a {
+  color: #8b1538;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* ── 图片 / 图 ─────────────────────────────────────────────────────────── */
+
+img, svg {
+  display: block;
+  height: auto;
+  margin: 1.2em auto;
+  max-width: 100%;
+}
+
+figure {
+  margin: 1.5em 0;
+  break-inside: avoid;
+}
+
+figcaption {
+  color: #57606a;
+  color: var(--muted);
+  font-size: 0.88em;
+  text-align: center;
+  margin-top: 0.5em;
+}
+
+/* ── 代码块 ────────────────────────────────────────────────────────────── */
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas",
+               "Source Code Pro", monospace;
+  font-size: 0.9em;
+}
+
+p code, li code {
+  background: #f5f5f5;
+  background: var(--code-bg);
+  color: #1f2328;
+  color: var(--code-text);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+  word-break: break-word;
+}
+
+pre {
+  background: #f5f5f5;
+  background: var(--code-bg);
+  color: #1f2328;
+  color: var(--code-text);
+  padding: 0.9em 1em;
+  margin: 1em 0;
+  border-radius: 0.4em;
+  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1em;
+  white-space: pre-wrap;
+}
+
+pre.sourceCode, div.sourceCode {
+  background: #f5f5f5;
+  background: var(--code-bg);
+  border-radius: 0.4em;
+}
+
+/* Apple Books 已知 bug 修复 */
+@media screen {
+  .sourceCode {
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+  }
+}
+
+/* ── 表格 ──────────────────────────────────────────────────────────────── */
+
+table {
+  border-collapse: collapse;
+  display: block;
+  font-size: 0.88em;
+  margin: 1em 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+th, td {
+  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
+  padding: 0.4em 0.7em;
+  vertical-align: top;
+}
+
+th {
+  background: #fdf2f5;
+  background: var(--accent-light);
+  font-weight: 600;
+  text-align: left;
+}
+
+tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* ── 引用 / 提示框 ────────────────────────────────────────────────────── */
+
+blockquote {
+  margin: 1.2em 0;
+  padding: 0.8em 1.2em;
+  border-left: 0.3em solid #8b1538;
+  border-left: 0.3em solid var(--accent);
+  background: #fdf2f5;
+  background: var(--accent-light);
+  border-radius: 0 0.4em 0.4em 0;
+}
+
+blockquote p {
+  margin: 0.4em 0;
+}
+
+blockquote p:first-child {
+  margin-top: 0;
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+blockquote blockquote {
+  margin: 0.6em 0;
+  border-left-width: 0.2em;
+}
+
+/* ── 列表 ──────────────────────────────────────────────────────────────── */
+
+ul, ol {
+  margin: 0.5em 0 0.8em 0;
+  padding-left: 1.5em;
+}
+
+li {
+  margin: 0.25em 0;
+}
+
+/* ── 水平线 ────────────────────────────────────────────────────────────── */
+
+hr {
+  border: none;
+  border-top: 1px solid #d0d7de;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* ── 目录 ──────────────────────────────────────────────────────────────── */
+
+nav#toc ol, nav#toc ul,
+nav#TOC ol, nav#TOC ul {
+  list-style: none;
+  padding-left: 1em;
+  margin: 0.3em 0;
+}
+
+nav#toc > ol.toc, nav#toc > ul,
+nav#TOC > ol, nav#TOC > ul {
+  padding-left: 0;
+}
+
+nav#toc > ol.toc > li.chapter-group,
+nav#TOC > ol > li.chapter-group {
+  list-style: none;
+  margin: 2.5em 0;
+}
+
+nav#toc > ol.toc > li.chapter-group > a,
+nav#TOC > ol > li.chapter-group > a {
+  display: block;
+  font-size: 1.2em;
+  font-weight: bold;
+  margin-bottom: 1em;
+  text-align: center;
+  color: #8b1538;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+nav#toc a, nav#TOC a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ── 标题页 ────────────────────────────────────────────────────────────── */
+
+.title, h1.title {
+  text-align: center;
+  font-size: 2em;
+  margin: 3em 0 0.5em 0;
+  border-bottom: none;
+  color: #8b1538;
+  color: var(--accent);
+  break-before: auto;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 1.1em;
+  color: #57606a;
+  color: var(--muted);
+  margin-bottom: 2em;
+}
+
+.author {
+  text-align: center;
+  font-size: 1em;
+  color: #57606a;
+  color: var(--muted);
+  margin: 1em 0;
+}
+
+/* ── 数学公式 ──────────────────────────────────────────────────────────── */
+
+math {
+  font-size: 1.05em;
+}
+
+/* ── 小屏优化 ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 30em) {
+  body { font-size: 0.95em; }
+  pre { font-size: 0.78em; padding: 0.7em; }
+  h1 { font-size: 1.5em; }
+  h2 { font-size: 1.2em; }
+  table { font-size: 0.82em; }
+}

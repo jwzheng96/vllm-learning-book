@@ -184,6 +184,10 @@ def discover_chapters(repo_root: Path) -> Tuple[PurePosixPath, ...]:
         if not directory.is_dir():
             continue
         for markdown_path in directory.glob("*.md"):
+            # README.md in each Part directory is a navigation index, not a
+            # tutorial chapter — exclude it from chapter discovery.
+            if markdown_path.name == "README.md":
+                continue
             paths.append(PurePosixPath(section) / markdown_path.name)
     return tuple(sorted(paths, key=lambda item: item.as_posix()))
 

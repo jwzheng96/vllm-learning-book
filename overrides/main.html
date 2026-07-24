@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {{ super() }}
+  {% if page.content and "mermaid" in page.content %}
+  <script type="module">
+    import mermaid from "https://unpkg.com/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    function renderMermaid() {
+      var isDark = document.body.getAttribute("data-md-color-scheme") === "slate";
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: isDark ? "dark" : "default",
+        themeVariables: isDark ? {} : {
+          primaryColor: "#3F51B5",
+          primaryTextColor: "#ffffff",
+          primaryBorderColor: "#303F9F",
+          lineColor: "#5C6BC0",
+          secondaryColor: "#E8EAF6",
+          tertiaryColor: "#C5CAE9",
+          fontFamily: "inherit"
+        }
+      });
+      // Unescape: textContent gives the raw text (browsers decode entities)
+      document.querySelectorAll("div.mermaid").forEach(function(el) {
+        el.setAttribute("data-mermaid", el.textContent);
+      });
+      mermaid.run({
+        nodes: document.querySelectorAll("div.mermaid")
+      });
+    }
+
+    // Initial render
+    renderMermaid();
+
+    // mkdocs-material SPA navigation: re-render after instant page swap
+    document.addEventListener("DOMContentSwapped", renderMermaid);
+  </script>
+  {% endif %}
+{% endblock %}

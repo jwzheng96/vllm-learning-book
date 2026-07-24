@@ -1,0 +1,115 @@
+/* vLLM 学习手册 — mkdocs-material 主题微调（克制版） */
+
+/* 内容区宽度 */
+.md-grid {
+  max-width: 1280px;
+}
+
+/* 中文正文行距 */
+.md-typeset {
+  line-height: 1.8;
+}
+
+/* Mermaid 图表居中 */
+.mermaid {
+  text-align: center;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* ---- 侧栏：章/小节层级缩进 ---- */
+
+/* 章标题（section label）：加粗 + 主色 */
+.md-nav--primary .md-nav__item--section > .md-nav__link {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--md-primary-fg-color);
+  margin-top: 1.2em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* 小节列表：整体缩进 + 左侧竖线，体现"属于上一级章" */
+.md-nav--primary .md-nav__item--section > .md-nav {
+  margin-left: 0.6em;
+  border-left: 2px solid var(--md-default-fg-color--lighter);
+  padding-left: 0.5em;
+}
+
+/* 小节项：字号稍小、颜色稍淡 */
+.md-nav--primary .md-nav__item--section .md-nav .md-nav__link {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* 当前页高亮更明显 */
+.md-nav--primary .md-nav__item--active > .md-nav__link {
+  font-weight: 600;
+}
+
+/* ---- 正文提示框/引用块 ---- */
+/* 章首导读（谁该读/前置/耗时/学完能）用淡靛蓝卡片风，克制不抢主色 */
+
+.md-typeset blockquote {
+  border-left: 3px solid #C5CAE9;
+  background: #F5F6FA;
+  border-radius: 0 6px 6px 0;
+  padding: 0.8em 1.2em;
+  margin: 1.2em 0;
+  color: #37474F;
+}
+
+[data-md-color-scheme="slate"] .md-typeset blockquote {
+  border-left-color: #3949AB;
+  background: rgba(63, 81, 181, 0.08);
+  color: #CFD8DC;
+}
+
+/* ---- 代码块：用 GitHub 风格的中性配色，不用 indigo ---- */
+
+.md-typeset pre > code {
+  /* 语法高亮：中性暖色系，避免和主色 indigo 撞 */
+  --md-code-hl-keyword-color: #D73A49;        /* 红：关键字 */
+  --md-code-hl-string-color:  #032F62;        /* 深蓝：字符串 */
+  --md-code-hl-comment-color: #6A737D;        /* 灰：注释 */
+  --md-code-hl-number-color:  #005CC5;        /* 蓝：数字 */
+  --md-code-hl-function-color:#6F42C1;        /* 紫：函数名 */
+  --md-code-hl-constant-color:#005CC5;
+  --md-code-hl-name-color:    #24292E;
+  --md-code-hl-operator-color:#D73A49;
+  --md-code-hl-punctuation-color:#24292E;
+  --md-code-hl-generic-color: #6A737D;
+}
+
+/* 暗色模式：GitHub Dark 风格 */
+[data-md-color-scheme="slate"] .md-typeset pre > code {
+  --md-code-hl-keyword-color: #FF7B72;
+  --md-code-hl-string-color:  #A5D6FF;
+  --md-code-hl-comment-color: #8B949E;
+  --md-code-hl-number-color:  #79C0FF;
+  --md-code-hl-function-color:#D2A8FF;
+  --md-code-hl-constant-color:#79C0FF;
+  --md-code-hl-name-color:    #C9D1D9;
+  --md-code-hl-operator-color:#FF7B72;
+  --md-code-hl-punctuation-color:#C9D1D9;
+  --md-code-hl-generic-color: #8B949E;
+}
+
+/* 隐藏代码块的行号锚点链接（§ 标记） */
+.md-typeset pre > code a[href^="#__codelineno"] {
+  display: none;
+}
+
+/* 隐藏代码块标题栏（如果有 filename/title 标签） */
+.md-typeset .highlighttable .linenos,
+.md-typeset .highlight .filename {
+  display: none;
+}
+
+/* 带 ⚠️ 的警告类引用：琥珀色左边线 + 淡黄底 */
+.md-typeset blockquote p:first-child {
+  margin-top: 0;
+}
+.md-typeset blockquote p:last-child {
+  margin-bottom: 0;
+}

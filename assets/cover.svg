@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- vLLM 学习手册 PDF/EPUB 封面 1600×2400 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 2400" width="1600" height="2400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5e0d24"/>
+      <stop offset="1" stop-color="#8b1538"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="2400" fill="url(#bg)"/>
+  <!-- 顶部细线装饰 -->
+  <rect x="200" y="260" width="1200" height="2" fill="#f4ede0" opacity="0.5"/>
+
+  <!-- 主标题 -->
+  <text x="800" y="980" text-anchor="middle"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="150" font-weight="700" fill="#f4ede0" letter-spacing="8">vLLM 学习手册</text>
+
+  <!-- 副标题 -->
+  <text x="800" y="1130" text-anchor="middle"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="56" font-weight="400" fill="#f4ede0" opacity="0.85" letter-spacing="4">A Code-Level Tutorial</text>
+
+  <!-- 分隔圆点 -->
+  <circle cx="800" cy="1260" r="6" fill="#f4ede0" opacity="0.6"/>
+
+  <!-- 统计行 -->
+  <text x="800" y="1360" text-anchor="middle"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="48" font-weight="400" fill="#f4ede0" opacity="0.8">
+    <tspan>60 章</tspan>
+    <tspan dx="48">·</tspan>
+    <tspan dx="48">24K+ 行</tspan>
+    <tspan dx="48">·</tspan>
+    <tspan dx="48">源码对照</tspan>
+  </text>
+
+  <!-- 底部装饰 -->
+  <rect x="200" y="2080" width="1200" height="2" fill="#f4ede0" opacity="0.5"/>
+  <text x="800" y="2180" text-anchor="middle"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="40" font-weight="400" fill="#f4ede0" opacity="0.7" letter-spacing="3">
+    从 PagedAttention 到 K8s 生产部署
+  </text>
+</svg>

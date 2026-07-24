@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- vLLM 学习手册 社交分享封面 1200×630 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5e0d24"/>
+      <stop offset="1" stop-color="#8b1538"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- 左侧书本图标 -->
+  <g transform="translate(90, 215)" fill="none" stroke="#f4ede0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M100 0 L100 200"/>
+    <path d="M100 8 C72 0 48 -4 16 0 L16 192 C48 188 72 192 100 200"/>
+    <path d="M100 8 C128 0 152 -4 184 0 L184 192 C152 188 128 192 100 200"/>
+    <path d="M36 30 L84 22" stroke-width="2" opacity="0.7"/>
+    <path d="M36 50 L84 42" stroke-width="2" opacity="0.7"/>
+    <path d="M36 70 L84 62" stroke-width="2" opacity="0.7"/>
+  </g>
+
+  <!-- 右侧标题区 -->
+  <text x="360" y="260"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="78" font-weight="700" fill="#f4ede0">vLLM 学习手册</text>
+
+  <text x="362" y="330"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="32" font-weight="400" fill="#f4ede0" opacity="0.85">
+    A Code-Level Tutorial for LLM Inference Engineers
+  </text>
+
+  <!-- 底部统计条 -->
+  <rect x="362" y="395" width="3" height="60" fill="#f4ede0" opacity="0.6"/>
+  <text x="382" y="430"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="30" font-weight="500" fill="#f4ede0" opacity="0.9">
+    60 章 · 24K+ 行 · 源码对照锁定
+  </text>
+  <text x="382" y="470"
+        font-family="PingFang SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif"
+        font-size="26" font-weight="400" fill="#f4ede0" opacity="0.75">
+    PagedAttention → 调度 → 分布式 → K8s 生产部署
+  </text>
+</svg>

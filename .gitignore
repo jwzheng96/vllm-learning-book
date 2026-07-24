@@ -24,3 +24,5 @@ venv/
 .vscode/
 *.swp
 *~
+/_web/
+/.zcode/
