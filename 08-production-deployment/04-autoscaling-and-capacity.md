@@ -180,7 +180,7 @@ $$\text{replicas} = \left\lceil \frac{\text{peak offered RPS}}{\text{measured su
 
 其中：
 
-- $\overline{\text{duration}} \approx \text{TTFT} + \overline{\text{output\_tokens}} \times \text{TPOT}$
+- $\overline{\text{duration}} \approx \text{TTFT} + \overline{\text{output tokens}} \times \text{TPOT}$
 - Little's Law 的 $L=\lambda W$ 用来交叉检查 in-flight 数，不把 KV 能容纳的 context 数误当作可持续吞吐
 - `headroom factor` 由 burst、单副本故障、测量误差和扩容 lead time 决定
 
