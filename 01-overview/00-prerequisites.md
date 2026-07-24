@@ -211,38 +211,43 @@ sequenceDiagram
 **关键观察**：K_i、V_i 只依赖 token i 的输入，**算一次就固定了**。所以——把它们**缓存起来**，下次直接读。这就是 **KV cache**（Key-Value cache）。
 
 ```mermaid
-flowchart LR
-    subgraph Step5["生成第 5 个 token"]
-        T5["tokens 0..4"] --> KV5["算 K_0..4, V_0..4<br/>(全新)"]
-        KV5 --> Cache5[("KV Cache")]
-        KV5 --> A5["Attention"]
+%%{init: {"themeVariables": {"fontSize": "18px"}} }%%
+flowchart TD
+    subgraph Step5["① 生成第 5 个 token —— 没 cache，只能全量重算"]
+        direction TB
+        S5A["输入 tokens 0..4"]:::step
+        S5B["算 K0..4 V0..4 —— <b>5 个全部重算</b>"]:::step
+        S5A --> S5B
     end
-    subgraph Step6["生成第 6 个 token"]
-        T6["tokens 0..5"]
-        T6 --> K6["只算 K_5, V_5<br/>(新增 1 个)"]
-        Cache5 -.读取 K_0..4, V_0..4.-> A6["Attention"]
-        K6 --> Cache6[("KV Cache (扩 1 行)")]
-        K6 --> A6
+    Cache[("KV Cache<br/>存历史 K/V<br/>越攒越多")]:::cache
+    subgraph Step6["② 生成第 6 个 token —— 有 cache，只算新增的 1 个"]
+        direction TB
+        S6A["输入 tokens 0..5"]:::step
+        S6B["只算 K5 V5 —— <b>仅 1 个新增</b>"]:::step
+        S6A --> S6B
     end
+
+    S5B -->|"第 5 步：5 个全写入"| Cache
+    S6B -->|"第 6 步：1 个追加"| Cache
+    Cache -. "第 6 步：直接读 K0..4<br/>不用重算" .-> S6B
+
     classDef step fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
     classDef cache fill:#fef3c7,stroke:#b45309,color:#1a1f29;
-    class T5,T6,KV5,K6,A5,A6 step;
-    class Cache5,Cache6 cache;
 ```
 
 ### 4.1 KV cache 多大？
 
 一个 token 在一个 attention 层占的 KV 大小（每 token 都要存 K 和 V 两份）：
 
-$$\text{per\_token\_layer\_bytes} = 2 \times \text{hidden\_size} \times \text{dtype\_bytes}$$
+$$\text{per token per layer} = 2 \times \text{hidden size} \times \text{dtype bytes}$$
 
 整个模型 $N$ 层累加：
 
-$$\text{per\_token\_total} = N \times 2 \times \text{hidden\_size} \times \text{dtype\_bytes}$$
+$$\text{per token total} = N \times 2 \times \text{hidden size} \times \text{dtype bytes}$$
 
 Llama-3-70B 实例：$N = 80$、hidden = 8192、BF16（2 字节）：
 
-$$\text{per\_token} = 80 \times 2 \times 8192 \times 2 = 2{,}621{,}440 \text{ 字节} \approx 2.5 \text{ MB}$$
+$$\text{per token} = 80 \times 2 \times 8192 \times 2 = 2{,}621{,}440 \text{ 字节} \approx 2.5 \text{ MB}$$
 
 一个 4K token 的请求 → 10 GB KV！一张 80GB H100 也装不下几个并发请求。
 
@@ -466,24 +471,33 @@ Batching 提高吞吐，**但单请求延迟可能略增**（要等 batch 凑够
 - 有 bubble（流水启动期的空闲）
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "18px"}} }%%
 flowchart TB
-    subgraph DP["DP · 数据并行（模型复制）"]
-        DP1["卡 0<br/>完整模型"] --- DP2["卡 1<br/>完整模型"]
+    subgraph DP["<b>DP · 数据并行</b> —— 切【数据】，模型整份复制"]
+        direction LR
+        D1["卡0<br/>完整模型<br/>批 A"]:::a
+        D2["卡1<br/>完整模型<br/>批 B"]:::a
+        D1 ~~~ D2
     end
-    subgraph TP["TP · 张量并行（切一层）"]
-        TP1["卡 0<br/>Layer.left"] --- TP2["卡 1<br/>Layer.right"]
-        TP1 -. AllReduce .- TP2
+    subgraph TP["<b>TP · 张量并行</b> —— 切【权重矩阵】，每层劈两半"]
+        direction LR
+        T1["卡0<br/>Layer 左半<br/>(QKV/MLP 列切)"]:::b
+        T2["卡1<br/>Layer 右半"]:::b
+        T1 <-. 每层末尾 AllReduce .-> T2
     end
-    subgraph PP["PP · 流水并行（切若干层）"]
-        PP1["卡 0<br/>Layer 0-15"] --> PP2["卡 1<br/>Layer 16-31"]
+    subgraph PP["<b>PP · 流水并行</b> —— 切【层】，按层段分卡"]
+        direction LR
+        P1["卡0<br/>Layer 0–15"]:::c
+        P2["卡1<br/>Layer 16–31"]:::c
+        P1 -->|"hidden 传下一段"| P2
     end
+
+    %% 强制三段竖排，避免被布局器横铺成扁条
+    DP ~~~ TP ~~~ PP
 
     classDef a fill:#eff5ff,stroke:#2563eb,color:#1a1f29;
     classDef b fill:#fef3c7,stroke:#b45309,color:#1a1f29;
     classDef c fill:#dcfce7,stroke:#15803d,color:#1a1f29;
-    class DP1,DP2 a;
-    class TP1,TP2 b;
-    class PP1,PP2 c;
 ```
 
 **实际配置**：同机器 8 卡几乎都用 TP=8；跨机器再叠 PP。详见 `05-distributed/01-tp-pp-ep.md`。
