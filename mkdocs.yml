@@ -10,6 +10,10 @@ edit_uri: edit/main
 # docs are assembled into _web/ by scripts/build_site.sh
 docs_dir: _web
 
+# Hook: unescape Mermaid source after Markdown→HTML (pymdownx escapes it)
+hooks:
+  - scripts/mermaid_unescape.py
+
 theme:
   name: material
   language: zh

@@ -21,20 +21,30 @@
           fontFamily: "inherit"
         }
       });
-      // Unescape: textContent gives the raw text (browsers decode entities)
+
+      // pymdownx fence_div_format HTML-escapes the source (-> becomes --&gt;).
+      // Fix: read textContent (browser decodes entities back to raw text),
+      // then replace the div's innerHTML with a fresh unescaped text node
+      // so mermaid.run() receives clean source.
       document.querySelectorAll("div.mermaid").forEach(function(el) {
-        el.setAttribute("data-mermaid", el.textContent);
+        var raw = el.textContent;
+        el.textContent = raw;
       });
+
       mermaid.run({
         nodes: document.querySelectorAll("div.mermaid")
       });
     }
 
-    // Initial render
     renderMermaid();
 
-    // mkdocs-material SPA navigation: re-render after instant page swap
-    document.addEventListener("DOMContentSwapped", renderMermaid);
+    // Re-render on theme toggle
+    document.addEventListener("click", function(e) {
+      var btn = e.target.closest(".md-header__button");
+      if (btn && btn.title && btn.title.indexOf("模式") !== -1) {
+        setTimeout(function() { location.reload(); }, 200);
+      }
+    });
   </script>
   {% endif %}
 {% endblock %}
