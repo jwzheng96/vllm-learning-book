@@ -107,8 +107,14 @@ cp -r .claude/skills/vllm-doctor ~/.claude/skills/   # 安装
 ## ⭐ Star History
 
 <a href="https://star-history.com/#jwzheng96/vllm-learning-book&Date">
+  <img alt="Star History" src="https://img.shields.io/github/stars/jwzheng96/vllm-learning-book?style=social" width="auto" />
+</a>
+
+<!-- star-history.com 的动态 SVG 图表（api.star-history.com 当前 503，恢复后替换回：
+<a href="https://star-history.com/#jwzheng96/vllm-learning-book&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jwzheng96/vllm-learning-book&type=Date" width="100%" />
 </a>
+-->
 
 ---
 
