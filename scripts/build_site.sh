@@ -23,9 +23,9 @@ for d in "$ROOT"/0*-*/; do
   for f in "$d"*.md; do
     [ -f "$f" ] || continue
     [ "$(basename "$f")" = "README.md" ] && continue
-    # Strip leading "NN. " or "NNb. " numbering from H1 headings — the nav
-    # sidebar already shows chapter ordering, so the manual prefix is noise.
-    sed -E 's/^(#+ )[0-9]+[a-z]?\. /\1/' "$f" > "$DEST/$part/$(basename "$f")"
+    # Strip leading "N. " numbering from ALL headings — mkdocs auto-numbers
+    # sections, so the manual "2.1", "8.2" prefixes are redundant.
+    sed -E 's/^(#+ )[0-9]+(\.[0-9]+)*\.? /\1/' "$f" > "$DEST/$part/$(basename "$f")"
   done
 done
 
