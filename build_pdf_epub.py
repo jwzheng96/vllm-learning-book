@@ -87,16 +87,20 @@ def discover_files_by_part() -> list[tuple[str, list[Path]]]:
 
 
 def _demote_headings(md_text: str) -> str:
-    """Demote all Markdown headings by one level (# → ##, ## → ###, etc.).
+    """Demote all Markdown headings by one level (# → ##, ## → ###, etc.)
+    AND strip manual numbering prefixes (2.1, 8.2, etc.).
 
-    This lets each Part directory become a \\chapter while each .md file's
-    original H1 becomes a \\section within that chapter.
+    Demotion lets each Part directory become a \\chapter while each .md
+    file's original H1 becomes a \\section within that chapter.
+    Numbering is stripped because pandoc --number-sections auto-numbers.
     """
     lines = md_text.splitlines()
     result = []
     for line in lines:
         if re.match(r'^#{1,5} ', line):
-            result.append('#' + line)
+            # strip "N." or "N.M." prefix, then demote
+            stripped = re.sub(r'^(#+ )[0-9]+(\.[0-9]+)*\.? ', r'\1', line)
+            result.append('#' + stripped)
         else:
             result.append(line)
     return '\n'.join(result)
