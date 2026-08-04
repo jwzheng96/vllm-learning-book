@@ -64,13 +64,13 @@ notes = ["static source review complete; current-SHA GPU run not performed"]
 path = "01-overview/05-process-and-ipc-internals.md"
 status = "reviewed"
 reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
-reviewed_at = "2026-07-20T18:13:06Z"
+reviewed_at = "2026-08-04T18:15:00Z"
 source_contracts = true
 commands_checked = true
 metrics_checked = true
 diagrams_checked = true
 hardware_verified = []
-notes = ["static source review complete; current-SHA GPU run not performed"]
+notes = ["process, ZMQ, shared-memory, and source-contract review refreshed; current-SHA GPU run not performed"]
 
 [[review]]
 path = "02-core-concepts/01-paged-attention.md"
@@ -659,6 +659,18 @@ metrics_checked = true
 diagrams_checked = true
 hardware_verified = []
 notes = ["static source review complete; current-SHA GPU run not performed"]
+
+[[review]]
+path = "08-production-deployment/13-384-h100-glm-deepseek-deployment.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-08-04T18:15:00Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["static source and command review complete; 384-GPU hardware run not performed"]
 
 [[review]]
 path = "09-advanced-features/01-sampling-and-logits.md"

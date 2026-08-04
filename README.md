@@ -15,7 +15,7 @@
 [![vLLM](https://img.shields.io/badge/vllm-b23bd73_(2026--07--20)-1a4d80)](https://github.com/vllm-project/vllm/tree/b23bd73f540175f9e117eaee5029cd7d8df63964)
 
 > 一份写给大模型推理工程入门者的源码教程。
-> **60 章 · 24K+ 行**，从 PagedAttention 论文到 K8s 生产部署，覆盖整条链路。
+> **61 章 · 26K+ 行**，从 PagedAttention 论文到 384 卡 H100 生产部署，覆盖整条链路。
 > 每章都用可刷新语义锚点对照锁定 commit 的 vLLM 源码，可以“读笔记 ↔ 跳源码”无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**
@@ -130,7 +130,7 @@ flowchart TB
 - [`02-architecture.md`](01-overview/02-architecture.md) — 三层进程、四个核心数据结构、一步推理的完整数据流。
 - [`03-v0-vs-v1.md`](01-overview/03-v0-vs-v1.md) — V1 重构改了什么，为什么改。
 - [`04-project-structure.md`](01-overview/04-project-structure.md) — 1700+ 文件按模块分类导航（这章很长，按需查阅）。
-- [`05-process-and-ipc-internals.md`](01-overview/05-process-and-ipc-internals.md) — fork vs spawn / ZMQ ROUTER-DEALER / 共享内存 MessageQueue 零拷贝。
+- [`05-process-and-ipc-internals.md`](01-overview/05-process-and-ipc-internals.md) — 从进程/地址空间讲到 ZMQ socket pattern、共享内存状态机与 384 卡分布式通信边界。
 
 ### 2. 核心概念 · `02-core-concepts/` — 5 章
 
@@ -187,7 +187,7 @@ flowchart TB
 - [`07-tuning-playbook.md`](07-hands-on/07-tuning-playbook.md) — 从症状到单变量、可回滚调优实验。
 - [`08-production-capstone.md`](07-hands-on/08-production-capstone.md) — 交付可运维、可扩容、可回滚的证据包。
 
-### 8. 生产部署 · `08-production-deployment/` — 12 章
+### 8. 生产部署 · `08-production-deployment/` — 13 章
 
 - [`01-deployment-architectures.md`](08-production-deployment/01-deployment-architectures.md) — vLLM Production Stack / llm-d / AIBrix 三套参考栈对比。
 - [`02-smart-routing-and-load-balancing.md`](08-production-deployment/02-smart-routing-and-load-balancing.md) — prefix-cache aware / session sticky / 负载打分。
@@ -201,6 +201,7 @@ flowchart TB
 - [`10-gpu-utilization-and-tail-latency.md`](08-production-deployment/10-gpu-utilization-and-tail-latency.md) — 🆕 全链路性能诊断：GPU-Util 为何是谎言、MBU/MFU、带宽/利用率为何打不满、长尾 8 类根因与处置。
 - [`11-security-and-multi-tenancy.md`](08-production-deployment/11-security-and-multi-tenancy.md) — 威胁模型、auth、quota、artifact / LoRA trust、脱敏与 tenant isolation。
 - [`12-upgrades-rollbacks-and-compatibility.md`](08-production-deployment/12-upgrades-rollbacks-and-compatibility.md) — 兼容矩阵、golden、shadow / canary、drain 与 rollback。
+- [`13-384-h100-glm-deepseek-deployment.md`](08-production-deployment/13-384-h100-glm-deepseek-deployment.md) — 🆕 48 节点/384×H100 实战：GLM-5.1、GLM-5.2、DeepSeek-V4-Flash 的副本内并行、集群切分、上线门禁、故障处置与递进面试深挖。
 
 ### 9. 应用特性 · `09-advanced-features/` — 5 章
 

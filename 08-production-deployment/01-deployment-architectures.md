@@ -335,6 +335,7 @@ hit rate
 ## 下一步
 
 - 下一节：[`02-smart-routing-and-load-balancing.md`](./02-smart-routing-and-load-balancing.md)（把"Smart Router"这一层拆开看）
+- 384 卡实战：[`13-384-h100-glm-deepseek-deployment.md`](./13-384-h100-glm-deepseek-deployment.md)（把参考架构落成 GLM-5.1/5.2 与 DeepSeek-V4-Flash 的 48 节点部署）
 - 想看源码：`vllm/entrypoints/` 看单机入口、`vllm/v1/engine/` 看 EngineCore/Worker 拆分
 - 想动手：[`07-hands-on/01-setup.md`](../07-hands-on/01-setup.md) 先把单机 demo 跑通再上 K8s
 

@@ -441,6 +441,14 @@ environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
 source_areas = ["vllm/config/model.py", "vllm/config/observability.py", "vllm/entrypoints/openai/**"]
 
 [[chapter]]
+path = "08-production-deployment/13-384-h100-glm-deepseek-deployment.md"
+title = "13. 384 卡 H100 实战：GLM-5.1 / GLM-5.2 / DeepSeek-V4-Flash 分布式生产部署"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["examples/ray_serving/**", "vllm/config/parallel.py", "vllm/model_executor/models/**"]
+
+[[chapter]]
 path = "09-advanced-features/01-sampling-and-logits.md"
 title = "01. Sampling 全栈：从 logits 到 token"
 level = "advanced"
