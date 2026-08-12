@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟
 >
 > **学完能：**
+>
 > 1. 解释为什么 CPU/Memory 不足以单独驱动扩缩，选择 queue/SLO/resource 组合信号
 > 2. 配置并验证 KEDA Prometheus scaler
 > 3. 分解并实测 LLM cold-ready 各阶段及预热策略

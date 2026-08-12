@@ -7,6 +7,7 @@
 > **耗时：** 约 20 分钟（含两张 Mermaid 仔细看）。
 >
 > **学完能：**
+>
 > 1. 不看代码描述一个请求从 HTTP 进来到 token 流式返回的所有进程跳转。
 > 2. 列出 `SchedulerOutput`、`Request`、`KVCacheBlock`、`ModelRunnerOutput` 四个数据契约的关键字段。
 > 3. 在脑子里展开单次 step 的执行链：Scheduler → Executor → Worker → forward → Sampler → 输出。

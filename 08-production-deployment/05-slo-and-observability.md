@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 区分 TTFT / TPOT / TTLT / Throughput 四类 SLI，并按业务场景定 p99 SLO
 > 2. 把所有 vLLM metric 归到 4 大金信号（Latency/Traffic/Errors/Saturation）
 > 3. 写出生产必看的 5-10 条 PromQL 与 dashboard 面板

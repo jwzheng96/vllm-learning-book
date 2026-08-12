@@ -7,6 +7,7 @@
 > **耗时：** 约 18 分钟
 >
 > **学完能：**
+>
 > 1. 在 `csrc/` 里准确定位 5 个以上重要 kernel 文件并说出用途
 > 2. 解释 paged_attention v1 的 grid/block 设计（per head × per seq 一个 CTA）
 > 3. 描述 v2 的 split-K 解决的问题（decode 小 batch 填不满 SM）

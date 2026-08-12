@@ -2,7 +2,7 @@
 
 > **谁该读这一篇？** 已读过核心概念、源码走读与生产章节，准备把“知道名词”升级为“能解释机制、边界和验证方法”的工程师。
 >
-> **前置阅读：** [`02-core-concepts/`](../02-core-concepts/)、[`03-code-walkthrough/`](../03-code-walkthrough/)、[`05-distributed/`](../05-distributed/)、[`08-production-deployment/`](../08-production-deployment/)
+> **前置阅读：** [`PagedAttention`](../02-core-concepts/01-paged-attention.md)、[`入口与主循环`](../03-code-walkthrough/01-entry-points.md)、[`分布式并行`](../05-distributed/01-tp-pp-ep.md)、[`生产部署架构`](../08-production-deployment/01-deployment-architectures.md)
 >
 > **耗时：** 约 70 分钟；建议每题先口述，再看参考答案。
 >
@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；没有在当前 SHA 上执行 GPU benchmark。性能与默认值问题必须回答“目标版本 / 模型 / 硬件 / workload 下测得”，不能背固定倍数。
 >
 > **学完能：**
+>
 > 1. 每题先给 30 秒结论，再用 3 分钟讲机制与源码入口
 > 2. 主动补充生产取舍、验证信号、失败边界与回滚条件
 > 3. 面对追问时区分稳定契约、当前实现与待测假设

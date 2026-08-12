@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟。
 >
 > **学完能：**
+>
 > 1. 从 `ModelRunnerOutput` 追到 `RequestOutput` 与 OpenAI SSE chunk。
 > 2. 区分采样、stop、incremental detokenization、usage 与协议序列化职责。
 > 3. 分离 TTFT、ITL、scheduler/forward、detokenize 和网络 backpressure。

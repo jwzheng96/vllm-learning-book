@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟。
 >
 > **学完能：**
+>
 > 1. 沿当前 `Scheduler.schedule()` 的真实顺序解释 running / waiting / skipped waiting。
 > 2. 手算一个 step 的 token、encoder 与 KV block 预算。
 > 3. 准确描述 FCFS/PRIORITY 的 victim 选择和当前 recompute 抢占。

@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟
 >
 > **学完能：**
+>
 > 1. 在白板上画出 5 层 LLM 推理平台架构（Gateway / Smart Router / vLLM 集群 / KV 层级 / 控制平面）
 > 2. 区分 vLLM engine、Production Stack、Inference Gateway 与平台控制面的定位
 > 3. 解释单 Pod、多 Pod gang/LeaderWorkerSet 和普通 Deployment 各自适用边界
@@ -335,7 +336,9 @@ hit rate
 ## 下一步
 
 - 下一节：[`02-smart-routing-and-load-balancing.md`](./02-smart-routing-and-load-balancing.md)（把"Smart Router"这一层拆开看）
-- 384 卡实战：[`13-384-h100-glm-deepseek-deployment.md`](./13-384-h100-glm-deepseek-deployment.md)（把参考架构落成 GLM-5.1/5.2 与 DeepSeek-V4-Flash 的 48 节点部署）
+- 384 卡实战：[`13-384-h100-glm-deepseek-deployment.md`](./13-384-h100-glm-deepseek-deployment.md)（H100）与 [`14-384-ascend-910b-glm-deepseek-deployment.md`](./14-384-ascend-910b-glm-deepseek-deployment.md)（昇腾 910B）。
+- 部署后的端到端时延归因：[`15-end-to-end-latency-profiling-and-optimization.md`](./15-end-to-end-latency-profiling-and-optimization.md)。
+- Mooncake 分布式 KV 存储实战：[`16-mooncake-distributed-inference-storage.md`](./16-mooncake-distributed-inference-storage.md)。
 - 想看源码：`vllm/entrypoints/` 看单机入口、`vllm/v1/engine/` 看 EngineCore/Worker 拆分
 - 想动手：[`07-hands-on/01-setup.md`](../07-hands-on/01-setup.md) 先把单机 demo 跑通再上 K8s
 

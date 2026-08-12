@@ -9,6 +9,7 @@
 > **难度：** 进阶
 >
 > **学完能：**
+>
 > 1. 画出 Sampler.forward 的 5 个 Stage（raw logprobs → fp32 → processors → sample → gather）
 > 2. 解释 temperature / top-k / top-p / min-p 的语义差异与组合方式
 > 3. 说出 raw_logprobs 为什么用 pre-temperature 分布

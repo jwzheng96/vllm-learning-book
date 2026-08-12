@@ -9,6 +9,7 @@
 > **难度：** 进阶
 >
 > **学完能：**
+>
 > 1. 用兼容矩阵固定镜像、vLLM、模型、tokenizer、量化、驱动、GPU 和 API 契约。
 > 2. 设计同时覆盖正确性、质量、性能、可观测性与安全的 golden request 集。
 > 3. 区分 shadow、canary、滚动升级和蓝绿发布各自能证明什么。
@@ -379,4 +380,4 @@ flowchart LR
 
 ## 下一步
 
-完成生产章节后，进入 [`../09-advanced-features/01-multimodal.md`](../09-advanced-features/01-multimodal.md)。任何高级特性都应沿用本章的不可变制品、golden、可观测门和回滚证据。
+完成生产章节后，进入 [`../09-advanced-features/03-multimodal.md`](../09-advanced-features/03-multimodal.md)。任何高级特性都应沿用本章的不可变制品、golden、可观测门和回滚证据。

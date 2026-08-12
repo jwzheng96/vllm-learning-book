@@ -15,7 +15,7 @@
 [![vLLM](https://img.shields.io/badge/vllm-b23bd73_(2026--07--20)-1a4d80)](https://github.com/vllm-project/vllm/tree/b23bd73f540175f9e117eaee5029cd7d8df63964)
 
 > 一份写给大模型推理工程入门者的源码教程。
-> **61 章 · 26K+ 行**，从 PagedAttention 论文到 384 卡 H100 生产部署，覆盖整条链路。
+> **64 章 · 30K+ 行**，从 PagedAttention 论文到 384 卡 H100 / 昇腾 910B 生产部署、端到端 profiling 与 Mooncake 分布式 KV 存储，覆盖整条链路。
 > 每章都用可刷新语义锚点对照锁定 commit 的 vLLM 源码，可以“读笔记 ↔ 跳源码”无缝切换。
 >
 > 📖 在线阅读：**[jwzheng96.github.io/vllm-learning-book](https://jwzheng96.github.io/vllm-learning-book/)**
@@ -46,7 +46,7 @@
 
 所有跨章链接、内嵌 Mermaid、代码块都在两种模式下都能用。HTML 版额外有 lunr.js 全文搜索和阅读时间估算。
 
-源码版本、语义锚点、影响报告和人工复核的完整流程见 [`docs/source-sync.md`](docs/source-sync.md)。这里的“已验证”是 fail-closed 语义门禁：锁定 SHA 与子模块一致、源码锚点可解析、60 章 inventory 完整、没有 unmanaged source line，而且 `content-review.toml` 的每一章都在该 SHA 上完成 source / command / metric / diagram review。PR 与 Pages 使用 `validate --profile full --require-committed`；每周工作流只创建候选 PR，不会自动合并或发布。
+源码版本、语义锚点、影响报告和人工复核的完整流程见 [`docs/source-sync.md`](docs/source-sync.md)。这里的“已验证”是 fail-closed 语义门禁：锁定 SHA 与子模块一致、64 章 inventory 完整、源码锚点可解析、没有 unmanaged source line，而且 `content-review.toml` 的每一章都在该 SHA 上完成 source / command / metric / diagram review。PR 与 Pages 使用 `validate --profile full --require-committed`；每周工作流只创建候选 PR，不会自动合并或发布。
 
 文中任何硬件验证徽章都必须对应可索引、可复现的运行记录（锁定 commit、硬件、命令和结果）；只有静态源码复核时，不得标注为 GPU 已验证。手动 GPU workflow 见 `.github/workflows/gpu-validation.yml`：它只在预置 vLLM / driver 的 self-hosted NVIDIA runner 上运行 `scripts/gpu-validation.sh`，并归档脱敏证据；普通 CI 不安装或假装拥有 GPU toolchain。
 
@@ -107,7 +107,7 @@ flowchart TB
 
 适合要把服务从“能跑”推进到“可量化、可调优、可上线、可回滚”的工程团队。
 
-[`环境搭建`](07-hands-on/01-setup.md) → [`Benchmark 方法论`](07-hands-on/06-benchmark-methodology.md) → [`调优 Playbook`](07-hands-on/07-tuning-playbook.md) → [`部署架构`](08-production-deployment/01-deployment-architectures.md) → [`容量规划`](08-production-deployment/04-autoscaling-and-capacity.md) → [`SLO 与可观测性`](08-production-deployment/05-slo-and-observability.md) → [`安全与多租户`](08-production-deployment/11-security-and-multi-tenancy.md) → [`升级与回滚`](08-production-deployment/12-upgrades-rollbacks-and-compatibility.md) → [`生产 Capstone`](07-hands-on/08-production-capstone.md)
+[`环境搭建`](07-hands-on/01-setup.md) → [`Benchmark 方法论`](07-hands-on/06-benchmark-methodology.md) → [`调优 Playbook`](07-hands-on/07-tuning-playbook.md) → [`部署架构`](08-production-deployment/01-deployment-architectures.md) → [`容量规划`](08-production-deployment/04-autoscaling-and-capacity.md) → [`SLO 与可观测性`](08-production-deployment/05-slo-and-observability.md) → [`H100/910B 大规模部署`](08-production-deployment/13-384-h100-glm-deepseek-deployment.md) → [`端到端 Profiling`](08-production-deployment/15-end-to-end-latency-profiling-and-optimization.md) → [`Mooncake 分布式 KV 存储`](08-production-deployment/16-mooncake-distributed-inference-storage.md) → [`生产 Capstone`](07-hands-on/08-production-capstone.md)
 
 ### 面试冲刺
 
@@ -187,7 +187,7 @@ flowchart TB
 - [`07-tuning-playbook.md`](07-hands-on/07-tuning-playbook.md) — 从症状到单变量、可回滚调优实验。
 - [`08-production-capstone.md`](07-hands-on/08-production-capstone.md) — 交付可运维、可扩容、可回滚的证据包。
 
-### 8. 生产部署 · `08-production-deployment/` — 13 章
+### 8. 生产部署 · `08-production-deployment/` — 16 章
 
 - [`01-deployment-architectures.md`](08-production-deployment/01-deployment-architectures.md) — vLLM Production Stack / llm-d / AIBrix 三套参考栈对比。
 - [`02-smart-routing-and-load-balancing.md`](08-production-deployment/02-smart-routing-and-load-balancing.md) — prefix-cache aware / session sticky / 负载打分。
@@ -201,7 +201,10 @@ flowchart TB
 - [`10-gpu-utilization-and-tail-latency.md`](08-production-deployment/10-gpu-utilization-and-tail-latency.md) — 🆕 全链路性能诊断：GPU-Util 为何是谎言、MBU/MFU、带宽/利用率为何打不满、长尾 8 类根因与处置。
 - [`11-security-and-multi-tenancy.md`](08-production-deployment/11-security-and-multi-tenancy.md) — 威胁模型、auth、quota、artifact / LoRA trust、脱敏与 tenant isolation。
 - [`12-upgrades-rollbacks-and-compatibility.md`](08-production-deployment/12-upgrades-rollbacks-and-compatibility.md) — 兼容矩阵、golden、shadow / canary、drain 与 rollback。
-- [`13-384-h100-glm-deepseek-deployment.md`](08-production-deployment/13-384-h100-glm-deepseek-deployment.md) — 🆕 48 节点/384×H100 实战：GLM-5.1、GLM-5.2、DeepSeek-V4-Flash 的副本内并行、集群切分、上线门禁、故障处置与递进面试深挖。
+- [`13-384-h100-glm-deepseek-deployment.md`](08-production-deployment/13-384-h100-glm-deepseek-deployment.md) — 48 节点/384×H100：GLM-5.2、DeepSeek-V4-Flash/Pro 的副本内并行、H100 验证边界、上线门禁与故障处置。
+- [`14-384-ascend-910b-glm-deepseek-deployment.md`](08-production-deployment/14-384-ascend-910b-glm-deepseek-deployment.md) — 48 节点/384×910B：vLLM Ascend 软件栈、GLM-5.2 与 DeepSeek-V4 Flash/Pro 的 8/16/32 卡服务单元、HCCL、rank、Kubernetes 与发布 runbook。
+- [`15-end-to-end-latency-profiling-and-optimization.md`](08-production-deployment/15-end-to-end-latency-profiling-and-optimization.md) — 客户端到 kernel 的延迟账本：metrics/OTel/Torch profiler、H100 Nsight/NCCL、910B Ascend PT/MS Service Profiler 与模型专项优化闭环。
+- [`16-mooncake-distributed-inference-storage.md`](08-production-deployment/16-mooncake-distributed-inference-storage.md) — Mooncake P/D 直传、共享 DRAM/SSD KV 池、MultiConnector、RDMA、Prometheus、Kubernetes 与生产故障 Runbook。
 
 ### 9. 应用特性 · `09-advanced-features/` — 5 章
 
@@ -264,7 +267,7 @@ flowchart TB
 - V0 → V1 重构的三个最大改变是什么？为什么这么改？
 - KV 不够时怎么处理？V1 默认 recompute 还是 swap，为什么？
 
-每题都有专门展开，见 [`06-interview/`](06-interview/)。
+每题都有专门展开，见 [`06-interview/01-common-questions.md`](06-interview/01-common-questions.md)。
 
 ---
 

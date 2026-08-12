@@ -7,6 +7,7 @@
 > **耗时：** 约 14 分钟。
 >
 > **学完能：**
+>
 > 1. 在白板画出 No / Static / Continuous 三种 batching 的时间线，并说出 GPU 利用率差异。
 > 2. 用"token budget" 概念解释 `max_num_batched_tokens` 如何同时影响吞吐和延迟。
 > 3. 区分 vLLM 的 token-level 调度与 TGI 的 sequence-level 调度。

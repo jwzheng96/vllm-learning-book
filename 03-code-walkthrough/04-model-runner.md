@@ -7,6 +7,7 @@
 > **耗时：** 约 22 分钟
 >
 > **学完能：**
+>
 > 1. 复述 `execute_model` 的 5 大阶段（update_states → prepare_inputs → mm encoder → forward → sample），每阶段干了什么
 > 2. 解释 packed batch + `query_start_loc` 的设计为什么不需要 padding
 > 3. 默写 `slot_mapping` 的计算公式与 PagedAttention 写入端的关系

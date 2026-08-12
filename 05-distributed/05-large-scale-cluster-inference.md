@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 说清"规模上去"为什么是质变而不是量变——通信墙、故障墙、长尾墙三条。
 > 2. 画出一个大 MoE 服务单元的真实形态（DP-attention + 大 EP），并解释它为什么动辄上百卡。
 > 3. 对 6 类规模化典型故障，给出"现象 → 怀疑 → 验证 → 处置"的工业排查路径。
@@ -249,5 +250,5 @@ EP 越大，AllToAll 越是 all-pairs 通信。万卡尺度上，网络（IB/RoC
 - 机制回看：[`03-expert-parallel-deep-dive.md`](03-expert-parallel-deep-dive.md)（AllToAll 6 后端、EPLB 细节）、[`02-disaggregated.md`](02-disaggregated.md)（P/D 分离与 KV 传输）、[`01-tp-pp-ep.md`](01-tp-pp-ep.md) §11（故障传染）。
 - 生产配套：[`06-reliability-and-failure-modes.md`](../08-production-deployment/06-reliability-and-failure-modes.md)、[`07-incident-playbook.md`](../08-production-deployment/07-incident-playbook.md)、[`10-gpu-utilization-and-tail-latency.md`](../08-production-deployment/10-gpu-utilization-and-tail-latency.md)（长尾治理）。
 - 部署形态：[`01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)（llm-d / AIBrix 等集群级栈）、[`02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)（全局路由）。
-- 384 卡实战：[`13-384-h100-glm-deepseek-deployment.md`](../08-production-deployment/13-384-h100-glm-deepseek-deployment.md)（GLM-5.1/5.2 与 DeepSeek-V4-Flash 的具体并行、容量、门禁和故障演练）。
+- 384 卡实战：[`13-384-h100-glm-deepseek-deployment.md`](../08-production-deployment/13-384-h100-glm-deepseek-deployment.md)（H100）与 [`14-384-ascend-910b-glm-deepseek-deployment.md`](../08-production-deployment/14-384-ascend-910b-glm-deepseek-deployment.md)（昇腾 910B），覆盖 GLM-5.2 与 DeepSeek-V4 Flash/Pro 的具体并行、容量、门禁和故障演练。
 - 想看源码：`vllm/distributed/eplb/`（EPLB）、`vllm/v1/worker/dp_utils.py`（DP padding）、`vllm/v1/worker/ubatching.py`（微批重叠）、`vllm/distributed/device_communicators/all2all.py`（AllToAll 后端）。

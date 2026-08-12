@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟阅读 + 1-2 小时跑完 5 个实验。
 >
 > **学完能：**
+>
 > 1. 复现 prefix caching 对 TTFT 的提升（量化数字）
 > 2. 验证 `max-num-batched-tokens` 大小如何影响 TPOT 方差
 > 3. 看到 FP8 KV cache 让 num_blocks 接近翻倍

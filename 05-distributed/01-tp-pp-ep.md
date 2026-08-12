@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟。
 >
 > **学完能：**
+>
 > 1. 在白板画出 MLP 的 column → row parallel 切分，说出每层 2 次 AllReduce 的来源
 > 2. 解释 PP 的 bubble 是怎么产生的、推理为何不需要训练里的 1F1B 调度
 > 3. 描述 MoE 的 EP 通信（两次 AllToAll）和 EPLB 解决的负载问题

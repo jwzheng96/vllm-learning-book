@@ -664,13 +664,49 @@ notes = ["static source review complete; current-SHA GPU run not performed"]
 path = "08-production-deployment/13-384-h100-glm-deepseek-deployment.md"
 status = "reviewed"
 reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
-reviewed_at = "2026-08-04T18:15:00Z"
+reviewed_at = "2026-08-10T12:00:00Z"
 source_contracts = true
 commands_checked = true
 metrics_checked = true
 diagrams_checked = true
 hardware_verified = []
-notes = ["static source and command review complete; 384-GPU hardware run not performed"]
+notes = ["DeepSeek-V4-Pro support and H100 fail-closed boundary added; static source and command review complete; H100 hardware run not performed"]
+
+[[review]]
+path = "08-production-deployment/14-384-ascend-910b-glm-deepseek-deployment.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-08-10T12:00:00Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["vLLM Ascend 0.23 release line, latest official model tutorials, commands, rank layouts, and support boundaries statically reviewed; Ascend 910B hardware run not performed"]
+
+[[review]]
+path = "08-production-deployment/15-end-to-end-latency-profiling-and-optimization.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-08-10T12:00:00Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["ProfilerConfig, profile API, ObservabilityConfig, current metrics, NVIDIA profiling guide, and vLLM Ascend profiling guide statically reviewed; H100 and Ascend 910B hardware profiles not collected"]
+
+[[review]]
+path = "08-production-deployment/16-mooncake-distributed-inference-storage.md"
+status = "reviewed"
+reviewed_commit = "b23bd73f540175f9e117eaee5029cd7d8df63964"
+reviewed_at = "2026-08-11T12:00:00Z"
+source_contracts = true
+commands_checked = true
+metrics_checked = true
+diagrams_checked = true
+hardware_verified = []
+notes = ["MooncakeConnector, MooncakeStoreConnector, MultiConnector, embedded and standalone-store topology, metrics, commands, and official Mooncake deployment contracts statically reviewed; RDMA, SSD offload, and GPU hardware run not performed"]
 
 [[review]]
 path = "09-advanced-features/01-sampling-and-logits.md"

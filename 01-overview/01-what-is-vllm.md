@@ -7,6 +7,7 @@
 > **耗时：** 约 12 分钟。
 >
 > **学完能：**
+>
 > 1. 用一句话说出 vLLM 的定位，并复述 PagedAttention 论文里 KV 利用率 20-38% → 96% 的关键数字。
 > 2. 列出 vLLM 的三大武器（PagedAttention / Continuous Batching / Prefix Caching + Chunked Prefill）并对应它们解决的具体瓶颈。
 > 3. 区分 vLLM 与 TGI / TensorRT-LLM / SGLang / LMDeploy 的定位差异。

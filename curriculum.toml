@@ -442,11 +442,35 @@ source_areas = ["vllm/config/model.py", "vllm/config/observability.py", "vllm/en
 
 [[chapter]]
 path = "08-production-deployment/13-384-h100-glm-deepseek-deployment.md"
-title = "13. 384 卡 H100 实战：GLM-5.1 / GLM-5.2 / DeepSeek-V4-Flash 分布式生产部署"
+title = "13. 384 卡 H100 实战：GLM-5.1 / GLM-5.2 / DeepSeek-V4-Flash / Pro 分布式生产部署"
 level = "advanced"
 tracks = ["production", "interview"]
 environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
-source_areas = ["examples/ray_serving/**", "vllm/config/parallel.py", "vllm/model_executor/models/**"]
+source_areas = ["examples/ray_serving/**", "vllm/config/parallel.py", "vllm/model_executor/models/**", "vllm/models/deepseek_v4/**"]
+
+[[chapter]]
+path = "08-production-deployment/14-384-ascend-910b-glm-deepseek-deployment.md"
+title = "14. 384 卡昇腾 910B 实战：GLM-5.2 / DeepSeek-V4-Flash / Pro 大规模部署"
+level = "advanced"
+tracks = ["production", "interview"]
+environments = ["no-gpu", "multi-gpu"]
+source_areas = ["vllm/config/parallel.py", "vllm/model_executor/models/**", "vllm/v1/engine/**"]
+
+[[chapter]]
+path = "08-production-deployment/15-end-to-end-latency-profiling-and-optimization.md"
+title = "15. 端到端推理时延 Profiling：从客户端到 H100 / 910B Kernel 的优化闭环"
+level = "advanced"
+tracks = ["production", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["docs/contributing/profiling.md", "vllm/config/observability.py", "vllm/config/profiler.py", "vllm/entrypoints/serve/profile/**", "vllm/v1/metrics/**"]
+
+[[chapter]]
+path = "08-production-deployment/16-mooncake-distributed-inference-storage.md"
+title = "16. Mooncake 分布式推理存储：从 P/D KV 传输到 DRAM / SSD 共享缓存池"
+level = "advanced"
+tracks = ["production", "internals", "interview"]
+environments = ["no-gpu", "nvidia-gpu", "multi-gpu"]
+source_areas = ["docs/features/mooncake*.md", "examples/disaggregated/mooncake_connector/**", "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/**", "vllm/envs.py"]
 
 [[chapter]]
 path = "09-advanced-features/01-sampling-and-logits.md"

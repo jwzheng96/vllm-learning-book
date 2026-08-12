@@ -78,6 +78,30 @@ class BuildInventoryTests(unittest.TestCase):
         self.assertEqual(html_paths, self.paths)
         self.assertEqual(publication_paths, self.paths)
 
+    def test_auxiliary_markdown_is_published_outside_chapter_inventory(self):
+        auxiliary = [
+            self.root / "DEPLOY.md",
+            self.root / "07-hands-on/templates/experiment-report.md",
+        ]
+        for path in auxiliary:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {path.stem}\n", encoding="utf-8")
+
+        with patch.object(build_html, "SRC", self.root):
+            discovered = [rel for rel, _ in build_html.discover_auxiliary_files()]
+
+        self.assertEqual(
+            discovered,
+            ["07-hands-on/templates/experiment-report", "DEPLOY"],
+        )
+        self.assertEqual(
+            [
+                path.relative_to(self.root).as_posix()
+                for path in discover_chapter_files(self.root)
+            ],
+            self.paths,
+        )
+
     def test_missing_listed_file_is_rejected(self):
         (self.root / self.paths[0]).unlink()
         with self.assertRaisesRegex(ValueError, "does not exist"):
@@ -98,6 +122,24 @@ class BuildInventoryTests(unittest.TestCase):
         self.assertIn("源码教程 · 2 章", combined)
         self.assertIn(f"{expected_lines} 行", combined)
         self.assertNotIn("15K+", combined)
+
+    def test_blockquote_list_gets_block_level_separator(self):
+        source = "> **学完能：**\n> 1. 第一项\n> 2. 第二项\n"
+        normalized = build_html.normalize_block_boundaries(source)
+        self.assertEqual(
+            normalized,
+            "> **学完能：**\n>\n> 1. 第一项\n> 2. 第二项\n",
+        )
+
+    def test_tables_get_horizontal_scroll_container(self):
+        html = '<table class="three-line"><tr><td>x</td></tr></table>'
+        wrapped = build_html.wrap_tables(html)
+        self.assertEqual(
+            wrapped,
+            '<div class="table-scroll">'
+            '<table class="three-line"><tr><td>x</td></tr></table>'
+            '</div>',
+        )
 
 
 if __name__ == "__main__":

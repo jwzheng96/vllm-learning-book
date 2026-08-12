@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；支持的 target module、rank、量化 / MoE / 多模态组合与 kernel 路径需按目标模型和硬件重测。
 >
 > **学完能：**
+>
 > 1. 解释 Punica 思想如何让多 LoRA batching 仍然高效
 > 2. 描述 LoRAModelManager 注册 / 激活 / LRU swap 的关键状态
 > 3. 在白板上画出 LoRA-wrapped Linear 的 forward

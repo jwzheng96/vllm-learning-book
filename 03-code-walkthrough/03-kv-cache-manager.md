@@ -7,6 +7,7 @@
 > **耗时：** 约 22 分钟
 >
 > **学完能：**
+>
 > 1. 画出 `Scheduler → KVCacheManager → Coordinator → SingleType → BlockPool` 的三层抽象关系
 > 2. 在白板上画出 BlockPool 的内部数据结构（blocks 数组、free queue 双向链表、hash 表）
 > 3. 解释 `KVCacheBlock.ref_cnt` 的 5 个变化时机，以及"free 时为何要 reverse"

@@ -2,7 +2,7 @@
 
 > **谁该读这一篇？** 需要设计或面试讲解在线 LLM inference platform 的工程师、tech lead 与容量评审者。
 >
-> **前置阅读：** [`01-common-questions.md`](./01-common-questions.md)、[`05-distributed/`](../05-distributed/)、[`08-production-deployment/`](../08-production-deployment/)
+> **前置阅读：** [`01-common-questions.md`](./01-common-questions.md)、[`分布式并行`](../05-distributed/01-tp-pp-ep.md)、[`生产部署架构`](../08-production-deployment/01-deployment-architectures.md)
 >
 > **耗时：** 约 45 分钟
 >
@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；示例公式用于展示方法，不代表当前 SHA 的 GPU 实测容量。
 >
 > **学完能：**
+>
 > 1. 在给架构前问清模型、workload、SLO、硬件、质量、安全与变更窗口
 > 2. 用单位完整的权重 / KV / service demand / replica 公式给出第一版容量边界
 > 3. 比较单节点、replica DP、TP / PP / EP 与 P/D disaggregation，而非只报一个方案

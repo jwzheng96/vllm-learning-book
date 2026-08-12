@@ -7,6 +7,7 @@
 > **耗时：** 约 22 分钟
 >
 > **学完能：**
+>
 > 1. 解释 MLA 怎么让 KV 占用降到约 1/8，以及代价是什么
 > 2. 描述 Mamba state 与 KV block 的本质差异，以及 vLLM 怎么通过 SingleType 抽象统一管理
 > 3. 画出 MoE 一层 forward 的 Router → Align → Dispatch → Compute → Combine → Weighted sum 流程

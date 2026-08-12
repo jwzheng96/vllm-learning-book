@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；模型支持、processor 参数与 encoder 并行能力必须以目标模型在该版本的 registry / model implementation 为准。
 >
 > **学完能：**
+>
 > 1. 画出 image → placeholder token → encoder embed → LLM 的完整数据流
 > 2. 解释 EncoderCacheManager 的 LRU + ref_cnt 设计与 KV BlockPool 的相似/不同
 > 3. 描述 mm_hash 如何融入 prefix caching 的 block hash

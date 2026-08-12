@@ -7,6 +7,7 @@
 > **耗时：** 约 25 分钟。
 >
 > **学完能：**
+>
 > 1. 从 `/v1/chat/completions` 追到 `EngineCoreRequest`，说清每个进程边界。
 > 2. 区分 chat rendering、tokenization、input preprocessing 与 EngineCore request 初始化。
 > 3. 解释 prompt embeddings、LoRA、prompt adapter、多模态 feature 在哪一层改变输入或缓存键。

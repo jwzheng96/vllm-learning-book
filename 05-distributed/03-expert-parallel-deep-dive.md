@@ -7,6 +7,7 @@
 > **耗时：** 约 18 分钟。
 >
 > **学完能：**
+>
 > 1. 画出 MoE 一层的 dispatch → expert → combine 数据流，标出 AllToAll 的两个发生点。
 > 2. 区分 vLLM 的 6 个 all2all 后端的适用场景：AgRs / DeepEP-HT / DeepEP-LL / FlashInfer NVLink (2-sided / 1-sided) / Mori / NIXL-EP。
 > 3. 解释 "EP + DP" 组合为什么比纯 EP 更常见，以及 `tp_size * dp_size * pcp_size` 怎么决定 expert 切片数。

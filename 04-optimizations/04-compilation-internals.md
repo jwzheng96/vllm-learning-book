@@ -7,6 +7,7 @@
 > **耗时：** 约 35 分钟。
 >
 > **学完能：**
+>
 > 1. 解释 vLLM 为何自写 backend 而不直接 `torch.compile(model)`
 > 2. 画出 VllmBackend → CompilerManager → CompilerInterface 的 4 层抽象
 > 3. 描述 piecewise split 的切点策略与每段的编译/CUDA Graph 处理

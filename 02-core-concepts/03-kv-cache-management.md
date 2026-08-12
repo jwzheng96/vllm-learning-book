@@ -7,6 +7,7 @@
 > **耗时：** 约 20 分钟。
 >
 > **学完能：**
+>
 > 1. 复述启动阶段 `profile run` 算 num_blocks 的 5 步公式，并解释 `--gpu-memory-utilization` 默认 0.92 的含义与风险。
 > 2. 写出 KVCacheBlock / FreeKVCacheBlockQueue / cached_block_hash_to_block 三个数据结构的不变式。
 > 3. 画出一个请求"WAITING → RUNNING → FINISHED"过程中 KV block 的分配 / 复用 / 释放序列。

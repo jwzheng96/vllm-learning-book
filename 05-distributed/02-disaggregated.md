@@ -7,6 +7,7 @@
 > **耗时：** 约 12 分钟。
 >
 > **学完能：**
+>
 > 1. 解释为什么 prefill 和 decode 适合不同硬件配置（算术强度差）。
 > 2. 画出 disaggregated 的数据流（含 KV 转移触发点）。
 > 3. 列出 KV connector 接口的 3 个核心方法，知道 NIXL / LMCache / Mooncake 在该接口下怎么接入。
@@ -314,6 +315,7 @@ class KVConnectorBase(ABC):
 ## 下一步
 
 - 想看 KV connector 源码：`vllm/distributed/kv_transfer/` 与 `vllm/v1/kv_offload/`。
+- 想落地 Mooncake P/D 直传、共享 DRAM / SSD KV 池与 `MultiConnector`：[`08-production-deployment/16-mooncake-distributed-inference-storage.md`](../08-production-deployment/16-mooncake-distributed-inference-storage.md)。
 - 想看智能路由怎么帮 disaggregated 降低 KV 传输：[`08-production-deployment/02-smart-routing-and-load-balancing.md`](../08-production-deployment/02-smart-routing-and-load-balancing.md)。
 - 想理解部署平台怎么管两个集群（llm-d / Dynamo / AIBrix）：[`08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)。
 - 想做生产化故障预案：[`08-production-deployment/06-reliability-and-failure-modes.md`](../08-production-deployment/06-reliability-and-failure-modes.md)。

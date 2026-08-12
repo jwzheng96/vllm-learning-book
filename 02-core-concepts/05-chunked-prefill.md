@@ -7,6 +7,7 @@
 > **耗时：** 约 12 分钟。
 >
 > **学完能：**
+>
 > 1. 画出"开 / 不开 chunked prefill"两种 step 时长对比图。
 > 2. 解释 chunk 内 attention 的 mask 怎么保证 causal 正确。
 > 3. 按业务（低 TTFT vs 低 TPOT）选 `max-num-batched-tokens`。

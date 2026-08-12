@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟。每节末尾的"在 vLLM 里"指出该概念后续章节会怎么用到。
 >
 > **学完能：**
+>
 > 1. 解释 LLM 自回归生成、KV cache 必要性、prefill vs decode 的根本差异。
 > 2. 用 roofline 模型说清 decode 阶段为什么是 memory-bound、batching 为什么能拉吞吐。
 > 3. 区分 DP / TP / PP，并指出哪种通信强依赖 NVLink。

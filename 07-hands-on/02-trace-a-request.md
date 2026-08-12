@@ -7,6 +7,7 @@
 > **耗时：** 约 20 分钟。
 >
 > **学完能：**
+>
 > 1. 打开 `VLLM_LOGGING_LEVEL=DEBUG` 和 stat logger 实时看 step 状态
 > 2. 在 Scheduler / KVCacheManager 里加 print，验证一个请求的每步决策
 > 3. 用 `/metrics` 端点读 Prometheus 指标，把数字翻译成请求行为

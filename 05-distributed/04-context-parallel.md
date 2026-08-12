@@ -7,6 +7,7 @@
 > **耗时：** 约 14 分钟。
 >
 > **学完能：**
+>
 > 1. 区分 PCP（Prefill CP）和 DCP（Decode CP）——它们是**两个独立**的并行维度。
 > 2. 解释 DCP 为什么"不增加 world_size"——它复用 TP 组的 GPU，本质是 attention 的另一种切法。
 > 3. 选 DCP 的通信后端：`ag_rs` vs `a2a`，以及为什么 MLA 模型用 `a2a` 能省 1/3 NCCL 调用。

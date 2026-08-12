@@ -7,6 +7,7 @@
 > **耗时：** 约 15 分钟。
 >
 > **学完能：**
+>
 > 1. 说清 vLLM block hash 是怎么算出来的（hash 函数、parent chain、extra_keys）。
 > 2. 解释为什么 LoRA / 多模态 / prompt_embeds 不能直接复用纯文本的 hash。
 > 3. 调出一个低命中率场景的 root cause（block_size 不对齐 / cache 容量不够 / hash 函数选错）。

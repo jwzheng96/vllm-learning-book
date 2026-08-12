@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；后端能力与 `auto` 选择策略可能随版本变化，部署前应在目标版本重新跑兼容性矩阵。
 >
 > **学完能：**
+>
 > 1. 区分 `auto` 与 xgrammar / guidance / outlines / lm-format-enforcer 四个显式后端的失败语义
 > 2. 画出 `grammar_init → grammar_bitmask → Sampler mask → accept_tokens` 的完整路径
 > 3. 解释 bitmask 数据结构如何节省显存与算力

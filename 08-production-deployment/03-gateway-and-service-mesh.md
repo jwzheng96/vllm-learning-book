@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 划清 API Gateway 与 Service Mesh 在 LLM 场景下的边界
 > 2. 用 Gateway API Inference Extension (InferencePool / EPP) 描述请求路径
 > 3. 配置 SSE / 长 body / 长超时的 Envoy 与 K8s Ingress 参数

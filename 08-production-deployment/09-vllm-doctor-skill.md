@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 说清"为什么 runbook 要升级成 skill"以及边界在哪
 > 2. 读懂 7 阶段工作流，把 §07 的 8 个 case 一一对应到 8 个 playbook
 > 3. 在没有真实集群的情况下用 fixture mode 完整跑一遍
@@ -423,7 +424,7 @@ KV 高 + preemption/queue 是抢占压力证据；高 KV 本身不证明 OOM。�
 - **装上**：`cp -r vllm-learning/.claude/skills/vllm-doctor ~/.claude/skills/`
 - **离线跑一遍**：按本节 §6 的 4 个 fixture
 - **想看决策细节**：[`.claude/skills/vllm-doctor/SKILL.md`](../.claude/skills/vllm-doctor/SKILL.md)
-- **想看 8 个 playbook 全文**：[`.claude/skills/vllm-doctor/playbooks/`](../.claude/skills/vllm-doctor/playbooks/)
+- **想看 8 个 playbook 全文**：从 [01-preempt-cascade.md](../.claude/skills/vllm-doctor/playbooks/01-preempt-cascade.md) 开始，目录中按 `01`～`08` 编号阅读。
 - **想看 PromQL 速查**：[`.claude/skills/vllm-doctor/reference/promql-cheatsheet.md`](../.claude/skills/vllm-doctor/reference/promql-cheatsheet.md)
 
 ---
@@ -431,7 +432,7 @@ KV 高 + preemption/queue 是抢占压力证据；高 KV 本身不证明 OOM。�
 ## Sources
 
 - [`.claude/skills/vllm-doctor/SKILL.md`](../.claude/skills/vllm-doctor/SKILL.md) —— 工作流权威定义
-- [`.claude/skills/vllm-doctor/playbooks/01..08-*.md`](../.claude/skills/vllm-doctor/playbooks/) —— 8 个 playbook
+- [`.claude/skills/vllm-doctor/playbooks/01-preempt-cascade.md`](../.claude/skills/vllm-doctor/playbooks/01-preempt-cascade.md) —— 8 个 playbook 的编号入口
 - [`07-hands-on/04-profiling-and-debugging.md`](../07-hands-on/04-profiling-and-debugging.md) —— profiling 与证据收集方法
 - [`06-reliability-and-failure-modes.md`](./06-reliability-and-failure-modes.md) —— 失效模式与安全演练约束
 - [`07-incident-playbook.md`](./07-incident-playbook.md) —— 8 个合成场景

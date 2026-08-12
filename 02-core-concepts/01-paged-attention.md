@@ -7,6 +7,7 @@
 > **耗时：** 约 18 分钟。
 >
 > **学完能：**
+>
 > 1. 在白板画出"OS 虚拟内存 ↔ PagedAttention"对照表（页 / 页表 / COW / 缺页）。
 > 2. 算清 `block_size=16` 的取舍，并能解释为什么不取 1 或 128。
 > 3. 描述一个请求从 prefill 到 decode 在 BlockPool / BlockTable 上的 KV 分配序列。

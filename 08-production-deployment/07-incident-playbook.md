@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 用"症状 → 排查 → 根因 → 修复 → 长期改进"的结构复盘任意 LLM 故障
 > 2. 把至少 4 个合成 case（NCCL hang / preempt cascade / cache 跌 / retry storm 等）推演清楚
 > 3. 写出可机械执行的 runbook 与决策树

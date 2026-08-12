@@ -7,6 +7,7 @@
 > **耗时：** 约 35 分钟
 >
 > **学完能：**
+>
 > 1. 解释为什么 `nvidia-smi` 的 GPU-Util 接近 100% 也不代表算力/带宽被用满，并改用 MBU / MFU 衡量。
 > 2. 说清 vLLM 里哪些指标来自 Scheduler，哪些来自请求完成统计，哪些来自 perf 估算计数器。
 > 3. 拿到一组 vLLM metric，用一张决策表定位瓶颈是排队、batch 太小、CPU bubble、KV 压力、通信还是理论上限。

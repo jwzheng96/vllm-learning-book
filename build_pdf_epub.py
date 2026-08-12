@@ -39,6 +39,18 @@ SECTIONS = [
     "09-advanced-features",
 ]
 
+LATEX_HEADER = r"""
+% Pandoc defines Highlighting with fancyvrb. Re-customize it after that
+% definition so long shell commands and source paths wrap inside A4 margins.
+\usepackage{fvextra}
+\RecustomVerbatimEnvironment{Highlighting}{Verbatim}{%
+  commandchars=\\\{\},%
+  breaklines=true,%
+  breakanywhere=true,%
+  breaksymbolleft={}}
+\setlength{\emergencystretch}{3em}
+"""
+
 
 def check_tool(name: str, install_hint: str) -> None:
     if shutil.which(name) is None:
@@ -93,25 +105,29 @@ def combine_files(files: list[Path]) -> str:
 
 def build_pdf(combined_md: Path, out_pdf: Path) -> None:
     print(f"\n[PDF] building {out_pdf} ...")
-    cmd = [
-        "pandoc",
-        str(combined_md),
-        "-o", str(out_pdf),
-        "--pdf-engine=xelatex",
-        "--toc",
-        "--toc-depth=2",
-        "--number-sections",
-        "--top-level-division=chapter",
-        "-V", "geometry:a4paper,margin=2cm",
-        "-V", "mainfont=PingFang SC",
-        "-V", "monofont=Menlo",
-        "-V", "CJKmainfont=PingFang SC",
-        "-V", "linkcolor=blue",
-        "-V", "colorlinks=true",
-        "-V", "fontsize=10pt",
-        "--highlight-style=tango",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        latex_header = Path(tmpdir) / "vllm-learning-header.tex"
+        latex_header.write_text(LATEX_HEADER, encoding="utf-8")
+        cmd = [
+            "pandoc",
+            str(combined_md),
+            "-o", str(out_pdf),
+            "--pdf-engine=xelatex",
+            "--include-in-header", str(latex_header),
+            "--toc",
+            "--toc-depth=2",
+            "--number-sections",
+            "--top-level-division=chapter",
+            "-V", "geometry:a4paper,margin=2cm",
+            "-V", "mainfont=PingFang SC",
+            "-V", "monofont=Menlo",
+            "-V", "CJKmainfont=PingFang SC",
+            "-V", "linkcolor=blue",
+            "-V", "colorlinks=true",
+            "-V", "fontsize=10pt",
+            "--highlight-style=tango",
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         print("STDOUT:\n" + res.stdout[-2000:])
         print("STDERR:\n" + res.stderr[-2000:])

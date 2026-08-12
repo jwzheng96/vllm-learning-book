@@ -51,6 +51,19 @@ SECTIONS = [
     "09-advanced-features",
 ]
 
+# Markdown resources linked from chapters but intentionally excluded from the
+# 64-chapter curriculum/search inventory. Publish them as standalone HTML so
+# chapter links do not become dead after ``.md`` -> ``.html`` rewriting.
+AUXILIARY_MD_GLOBS = [
+    "DEPLOY.md",
+    "docs/source-sync.md",
+    "artifacts/source-sync/latest-impact.md",
+    "07-hands-on/templates/*.md",
+    ".claude/skills/vllm-doctor/*.md",
+    ".claude/skills/vllm-doctor/playbooks/*.md",
+    ".claude/skills/vllm-doctor/reference/*.md",
+]
+
 # (part_label, part_name) for each top-level section.
 SECTIONS_META: dict[str, tuple[str, str]] = {
     "01-overview":              ("Part I",    "入门与架构"),
@@ -77,6 +90,17 @@ def discover_files() -> list[tuple[str, Path]]:
         rel = md.relative_to(SRC).with_suffix("").as_posix()
         files.append((rel, md))
     return files
+
+
+def discover_auxiliary_files() -> list[tuple[str, Path]]:
+    """Return linked Markdown resources that are not curriculum chapters."""
+    discovered: dict[str, Path] = {}
+    for pattern in AUXILIARY_MD_GLOBS:
+        for path in SRC.glob(pattern):
+            if path.is_file():
+                rel = path.relative_to(SRC).with_suffix("").as_posix()
+                discovered[rel] = path
+    return sorted(discovered.items())
 
 
 def page_title_from_file(path: Path) -> str:
@@ -509,13 +533,22 @@ aside.toc-rail {
 .markdown-body table,
 .markdown-body table.three-line {
     border-collapse: collapse;
-    margin: 22px 0;
-    width: 100%;
+    margin: 0;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
     font-size: 14.5px;
     line-height: 1.6;
     border: none;
     table-layout: auto;
     word-break: normal;
+}
+.markdown-body .table-scroll {
+    width: 100%;
+    max-width: 100%;
+    margin: 22px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .markdown-body table.three-line {
     border-top: 2px solid var(--border-strong);
@@ -655,6 +688,15 @@ pre.mermaid svg, .mermaid svg {
 }
 .markdown-body blockquote.lesson-meta strong {
     color: #a86420;
+}
+.markdown-body blockquote.lesson-meta ol,
+.markdown-body blockquote.lesson-meta ul {
+    margin: 8px 0 4px;
+    padding-left: 24px;
+}
+.markdown-body blockquote.lesson-meta li {
+    margin: 4px 0;
+    padding-left: 2px;
 }
 
 /* Optional custom callouts (use in markdown via raw HTML) */
@@ -1061,6 +1103,16 @@ def add_three_line_class(html: str) -> str:
     return re.sub(r'<table(\s*)>', r'<table class="three-line"\1>', html)
 
 
+def wrap_tables(html: str) -> str:
+    """给宽表格增加独立横向滚动容器，避免把正文列压得过窄。"""
+    return re.sub(
+        r'(<table class="three-line">.*?</table>)',
+        r'<div class="table-scroll">\1</div>',
+        html,
+        flags=re.DOTALL,
+    )
+
+
 _table_sep_re = re.compile(r'^\s*\|[\s\-:|]+\|?\s*$')
 _ordered_list_re = re.compile(r"^\d+\.\s+\S")
 _unordered_list_re = re.compile(r"^[-*+]\s+\S")
@@ -1121,6 +1173,28 @@ def normalize_block_boundaries(text: str) -> str:
             out.append(line)
             continue
         prev = lines[i-1]
+
+        # Blockquote 内的列表也需要一个仍属于 blockquote 的空行：
+        #
+        #   > **学完能：**
+        #   >
+        #   > 1. 第一项
+        #
+        # 否则 python-markdown 会把编号项吞进同一个 <p>，页面上看起来像
+        # “分点没有换行”。这里在构建阶段兜底，源 Markdown 仍应保持规范空行。
+        if stripped.startswith(">") and prev.lstrip().startswith(">"):
+            current_inner = stripped[1:].lstrip()
+            previous_inner = prev.lstrip()[1:].lstrip()
+            current_is_list = bool(
+                _ordered_list_re.match(current_inner)
+                or _unordered_list_re.match(current_inner)
+            )
+            previous_is_list = bool(
+                _ordered_list_re.match(previous_inner)
+                or _unordered_list_re.match(previous_inner)
+            )
+            if current_is_list and previous_inner and not previous_is_list:
+                out.append(">")
 
         # 已是 block-friendly 上下文，无需插
         if _prev_is_block_friendly(prev):
@@ -1242,6 +1316,7 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
     body = reinsert_mermaid_blocks(body, mermaid_blocks)
     body = rewrite_md_links(body)
     body = add_three_line_class(body)
+    body = wrap_tables(body)
     body = tag_lesson_meta_blockquotes(body)
 
     title = page_title_from_file(path)
@@ -1263,31 +1338,37 @@ def convert_one(rel: str, path: Path, files: list[tuple[str, Path]]) -> str:
 
     # Build prev/next page navigation
     ordered_rels = [r for r, _ in files]
-    idx_p = ordered_rels.index(rel)
     file_map = dict(files)
     nav_parts = ['<nav class="page-nav">']
-    if idx_p > 0:
-        prev_rel = ordered_rels[idx_p - 1]
-        prev_title = page_title_from_file(file_map[prev_rel])
-        prev_href = f"{root_prefix}{prev_rel}.html"
-        nav_parts.append(
-            f'<a class="prev" href="{prev_href}">'
-            f'<span class="label">上一篇</span>'
-            f'<span class="title">{prev_title}</span></a>'
-        )
+    if rel in ordered_rels:
+        idx_p = ordered_rels.index(rel)
+        if idx_p > 0:
+            prev_rel = ordered_rels[idx_p - 1]
+            prev_title = page_title_from_file(file_map[prev_rel])
+            prev_href = f"{root_prefix}{prev_rel}.html"
+            nav_parts.append(
+                f'<a class="prev" href="{prev_href}">'
+                f'<span class="label">上一篇</span>'
+                f'<span class="title">{prev_title}</span></a>'
+            )
+        else:
+            nav_parts.append('<span class="placeholder"></span>')
+        if idx_p + 1 < len(ordered_rels):
+            next_rel = ordered_rels[idx_p + 1]
+            next_title = page_title_from_file(file_map[next_rel])
+            next_href = f"{root_prefix}{next_rel}.html"
+            nav_parts.append(
+                f'<a class="next" href="{next_href}">'
+                f'<span class="label">下一篇</span>'
+                f'<span class="title">{next_title}</span></a>'
+            )
+        else:
+            nav_parts.append('<span class="placeholder"></span>')
     else:
-        nav_parts.append('<span class="placeholder"></span>')
-    if idx_p + 1 < len(ordered_rels):
-        next_rel = ordered_rels[idx_p + 1]
-        next_title = page_title_from_file(file_map[next_rel])
-        next_href = f"{root_prefix}{next_rel}.html"
-        nav_parts.append(
-            f'<a class="next" href="{next_href}">'
-            f'<span class="label">下一篇</span>'
-            f'<span class="title">{next_title}</span></a>'
+        nav_parts.extend(
+            ['<span class="placeholder"></span>',
+             '<span class="placeholder"></span>']
         )
-    else:
-        nav_parts.append('<span class="placeholder"></span>')
     nav_parts.append('</nav>')
     page_nav = "\n".join(nav_parts)
 
@@ -1351,6 +1432,14 @@ def main() -> None:
         out_path = DST / f"{rel}.html"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(html, encoding="utf-8")
+
+    auxiliary_files = discover_auxiliary_files()
+    for rel, path in auxiliary_files:
+        html = convert_one(rel, path, files)
+        out_path = DST / f"{rel}.html"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(html, encoding="utf-8")
+    print(f"  auxiliary pages ({len(auxiliary_files)} docs)")
 
     (DST / "index.html").write_text(
         (DST / "README.html").read_text(encoding="utf-8"), encoding="utf-8"

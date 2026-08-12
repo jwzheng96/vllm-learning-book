@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；endpoint 是否挂载、pooling task、归一化与 score 语义都由目标模型 / pooler 决定。
 >
 > **学完能：**
+>
 > 1. 解释 pooling runner 复用了哪些引擎能力，以及为什么不能预设固定加速倍数
 > 2. 在 sequence-level 与 token-level 输出、CLS / Mean / Last / All / Step 中正确选型
 > 3. 描述 BGE-M3 的 dense、sparse、ColBERT 任务怎样由不同 pooler 分支暴露

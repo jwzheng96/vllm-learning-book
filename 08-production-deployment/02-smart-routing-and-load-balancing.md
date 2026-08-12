@@ -7,6 +7,7 @@
 > **耗时：** 约 30 分钟
 >
 > **学完能：**
+>
 > 1. 解释 round-robin / least-conn 的基线价值与失配条件
 > 2. 列举 cache-aware / load-aware / LoRA-aware / session-sticky 四类信号
 > 3. 描述 push / pull / estimate 三种 cache 状态同步方案的取舍

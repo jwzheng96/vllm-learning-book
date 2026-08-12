@@ -7,6 +7,7 @@
 > **耗时：** 约 18 分钟
 >
 > **学完能：**
+>
 > 1. 写出算术强度（存算比）的定义，并算出 H100 / A100 的 roofline 拐点。
 > 2. 用一行算式证明 prefill 的存算比 ≈ batch 内 token 数、decode 的存算比 ≈ 并发请求数，从而推出谁 compute-bound、谁 memory-bound。
 > 3. 用 Llama-3-70B 的真实显存和带宽，算出 batch=1 decode 的理论 token/s 上限，并解释为什么加 batch 能几乎免费地拉吞吐。

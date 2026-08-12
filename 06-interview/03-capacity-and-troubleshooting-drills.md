@@ -11,6 +11,7 @@
 > **当前性说明：** 本章按 vLLM `b23bd73f540175f9e117eaee5029cd7d8df63964` 静态复核；所有数值题都是明确假设下的教学演算，不是当前 SHA 的硬件 benchmark。
 >
 > **学完能：**
+>
 > 1. 计算 weight、KV、request、batch、world size、goodput 与 replica reserve
 > 2. 每一步保留单位、假设、中间值和 sanity check
 > 3. 对八类常见故障先列证据，再做单变量缓解与回滚

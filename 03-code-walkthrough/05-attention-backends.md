@@ -7,6 +7,7 @@
 > **耗时：** 约 18 分钟
 >
 > **学完能：**
+>
 > 1. 列出 vLLM 主流 attention backend 和它们的适用硬件 / 模型
 > 2. 解释 Backend / Impl / MetadataBuilder 三件套接口的职责划分
 > 3. 默写 KV cache 张量的 5 维 shape，每一维含义和 FlashAttention 期望布局
