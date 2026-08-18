@@ -242,6 +242,14 @@ baseline evidence
 4. prefix hit rate 上升为什么可能没有业务收益？
 5. 何时 `--enforce-eager` 只是诊断工具？
 
+### 参考答案
+
+1. 不需要立即扩容。KV 95% 但没有 preemption、queue 和 SLO 问题，可能只是健康的高利用率；先看增长趋势、峰值、长上下文分布、故障余量和 capacity forecast。只有接近水位且 goodput/恢复余量不足才扩容。
+2. 这是 TTFT 与吞吐的显式 trade-off。按业务 SLO 选择满足 TPOT p99、TTFT 和 goodput 的最大 token budget，不能只追求其中一项；用固定 open-loop 流量做阶梯 A/B。
+3. 低 GPU util 可能来自低到达率/小 batch、CPU tokenize 或 scheduler 瓶颈、网络/IPC/NCCL 等待、KV/内存带宽瓶颈、冷启动/compile、错误重试或观测采样误导。要用 queue、token throughput、MBU/MFU、trace 和系统指标分层定位。
+4. 命中率只说明 prefix 被复用，不说明 load latency、命中 token 数、SLO 或成本。若命中的是短 prefix，或外部 Store load 占满网络/CPU，hit rate 上升也可能不带来 goodput 收益。
+5. `--enforce-eager` 适合隔离 CUDA Graph/compile 是否导致错误、OOM 或长尾；它牺牲启动后的性能和可能的 graph 优势。诊断完成后应恢复生产模式，用同一 workload 验证，而不是把 eager 当成最终优化。
+
 ## 下一步
 
 [`08-production-capstone.md`](08-production-capstone.md) 把服务、benchmark、调优、容量与事故处理合成一个可展示项目。

@@ -1946,6 +1946,19 @@ KV Store 是可丢失、可重建的派生缓存。正确性目标应是：
 9. 怎样用四组对照分离 P2P 与共享 Store 的收益？
 10. 为什么 namespace 隔离不能替代租户安全隔离？
 
+### 参考答案
+
+1. `MooncakeConnector` 面向一次请求，把 P 端生成的 KV 直接交给指定 D 端；请求结束后主要处理 transfer ownership 和释放。`MooncakeStoreConnector` 按 block key 把 KV 放进共享池，可跨请求/实例 lookup、load、save 和 eviction；它不自动完成 P/D 请求配对。
+2. `global_segment_size` 在 embedded 模式按 rank 生效；8 个 rank 配 80 GB 目标量级是 `8×80=640 GiB`，还要加 local buffer、OS、pinned memory、vLLM 和 runtime。512 GiB 主机照抄会直接过度承诺。
+3. standalone-store 的 vLLM requester 必须是 `global_segment_size=0`；外部 resource-owning `mooncake_client` 才配置非零 segment，例如 `256GB`。否则每个 vLLM rank 可能重复持有 Store 资源或触发模式校验失败。
+4. 先核对 `PYTHONHASHSEED`、`cache_prefix`、model/tokenizer/template revision、block size/KV dtype/layout 和 TP/DP namespace；再看实际 token IDs 与 Store owner/metadata 是否一致。Put 成功不代表另一个进程的 key 语义相同。
+5. Master 是控制面/metadata 协调者，KV 热数据仍由 requester/owner 通过 TCP/RDMA 传输。Master metrics 正常只证明控制面可访问，不能证明 NIC、RDMA registration、owner client、SSD 或 P/D bootstrap 数据面正常。
+6. Master 开启 `--enable_offload=true`；owner `mooncake_client` 开启 `--enable_offload=true` 并配置 SSD 路径；vLLM Store JSON 设置 `"enable_offload": true`。还要用目录增长、tier log 和实际 disk hit 验证，而不是只看进程 Ready。
+7. 先按 tier 分开：DRAM hit 也慢看 NIC/NUMA/owner CPU/线程和 keys-per-call；只有 SSD hit 慢看 NVMe await、IOPS、promotion/staging；网络慢看 RDMA/TCP throughput/drop；requester 同步慢则看接收线程、scheduler resume 和 `load_get` 与 engine TTFT 的差值。
+8. `transfer_id` 绑定 P/D 的一次 KV 传输，attempt 防止重试的迟到响应污染新请求，deadline 控制资源生命周期，cancel 触发 P/D/Store cleanup。缺失这些字段会导致重复 decode、泄漏 block 或把旧传输写进新请求。
+9. 做四组固定 workload：none、P2P、Store、Multi。比较 TTFT/TPOT/goodput、lookup/load/save bytes、网络/CPU/SSD 和错误；这样才能把 direct transfer、共享命中和组合后的资源争用分离出来。
+10. namespace 只防止 key 冲突/误命中，不提供身份认证、访问控制、加密、quota、审计或 SSD 擦除。多租户仍需独立安全域、网络策略、凭据、数据保留和敏感 KV 处理。
+
 ## 下一步
 
 - P/D 原理与 connector 抽象：[`../05-distributed/02-disaggregated.md`](../05-distributed/02-disaggregated.md)

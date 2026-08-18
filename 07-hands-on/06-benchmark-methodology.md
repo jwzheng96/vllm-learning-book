@@ -266,6 +266,14 @@ manifest 保存每个文件的 SHA-256。密钥、完整 prompt、用户 ID、Au
 4. prefix caching A/B 的 warmup 如何避免污染？
 5. 何时应把结果标为 inconclusive？
 
+### 参考答案
+
+1. `--request-rate inf` 是尽快发送，属于闭环/饱和式压力，不代表生产 open-loop 的稳定到达率。生产应按目标 request rate 发送，并记录客户端 missed schedule、重试和排队。
+2. throughput 上升但 goodput 下降，说明系统做了更多 token，却有更多请求违反 TTFT/TPOT、错误或质量门。上线决策应优先 goodput@SLO，随后分析是不是过载、长尾或错误重试造成。
+3. 平均长度相同仍可能有不同 p95/p99、prefix 命中率、burst、reasoning/tool 分布和输出长度相关性；这些会改变 KV、调度和 tail latency。至少按长度桶和请求类型分层比较。
+4. 预热阶段固定一套重复顺序，明确 cold/warm 状态；A/B 使用独立 namespace 或清空/隔离本地与外部 cache，并等待 save 完成后再测 hit。否则 B 可能只是继承 A 的热 cache。
+5. 当 workload、版本、硬件、warmup、样本量或客户端行为不一致，或者置信区间覆盖决策阈值时，应标为 inconclusive。不要用少量不稳定样本强行给出“优化有效/无效”。
+
 ## 下一步
 
 [`07-tuning-playbook.md`](07-tuning-playbook.md) 把指标症状映射为单变量调优实验。

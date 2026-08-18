@@ -176,6 +176,14 @@ waiting 请求可能处于异步加载外部 KV 或 encoder cache 的状态；Sc
 4. cache hit token 为什么不消耗 forward token budget？
 5. `preempted_req_ids` 对持久 `InputBatch` 有什么意义？
 
+### 参考答案
+
+1. `num_new_tokens == 0` 可能是：请求已经完成本轮所需 token；KV/connector/grammar/encoder 等前置条件尚未就绪；本步 token budget 已耗尽；或者请求被取消、抢占、等待外部 load。要结合 `num_computed_tokens`、waiting reason、connector output 和 request status 区分，不能直接当成 scheduler bug。
+2. preempt 表示本步资源已经不足，继续准入 waiting 会让 KV 压力更大并造成抖动。停止准入是一次 fail-safe：先释放 victim、回滚本步计划并让系统恢复可调度状态，再在后续 step 重新评估。
+3. 具体比较规则要读当前 scheduler 的 priority key；通常 priority 数值越小优先级越高，victim 从低优先级/更适合释放的请求中选，再用到达时间、运行状态等字段打破平局。不要把“数值大”直觉当成优先级高，必须以配置和排序 key 为准。
+4. cache hit token 已经有 KV，forward 不需要重新计算这些 token；它只减少新 token 的计算需求。因此 hit token 不消耗本步 forward token budget，但仍可能消耗 lookup、block allocation 和外部 load 的时间与资源。
+5. 持久 `InputBatch` 不会因为一次抢占就丢失请求行。`preempted_req_ids` 告诉 runner 清理或重置这些请求的持久状态，避免旧 block table、采样状态或 slot 映射在重算时污染新 batch。
+
 ## 下一步
 
 - [`02b-scheduling-policies.md`](02b-scheduling-policies.md)：公平性、优先级与抢占代价。

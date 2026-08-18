@@ -298,6 +298,13 @@ A: 不会。cached 但 ref_cnt=0 的 block 仍在 free queue 里，可以被新�
 3. 想跨 vLLM 实例共享 prefix cache，至少要改哪两项配置？
 4. 由 hit/query counters 算出的 5 分钟命中率从 70% 掉到 5%。给出 3 个可能的 root cause 并说怎么验证。
 
+### 参考答案
+
+1. 链式 hash 通常写成 `H₃ = hash(H₂ || tokens[32..47] || extra_keys)`，其中 `H₂` 是前一个 block 的 hash，`extra_keys` 包含影响 KV 语义的模型、LoRA 等上下文。如果 `tokens[16..31]` 改动，`H₂` 已改变，后续 `H₃` 也会改变，即使第三个 block 的 token 本身没变。
+2. 默认不能直接命中。LoRA 会改变线性层输出和后续 KV，cache key 必须把 adapter 身份纳入 `extra_keys`；A/B 使用不同 LoRA 时应隔离。只有明确证明 adapter 不影响该段隐状态，才可以设计共享，但不能凭 prompt 相同推断共享安全。
+3. 至少要让所有实例使用相同的模型/tokenizer、block/hash 语义和固定 `PYTHONHASHSEED`，并配置同一个外部 KV connector/store 与一致的 `cache_prefix`。还要确保路由把请求送到真正共享的 Store，而不是每个 Pod 的本地 L1。
+4. 可能原因包括：hash seed 或 namespace 改变；tokenizer/template/model revision 漂移；路由从热实例切到冷实例或缓存被大量淘汰。验证时分别比较进程环境、`cache_prefix`/版本指纹、token IDs、命中长度分布和 eviction/store bytes，不能只看一个 hit counter。
+
 ## 下一步
 
 - 下一节 [`05-chunked-prefill.md`](05-chunked-prefill.md)：理解 prefix cache 命中后"剩余 prefill"是怎么切的。

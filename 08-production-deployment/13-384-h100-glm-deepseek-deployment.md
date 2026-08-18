@@ -1300,6 +1300,17 @@ DP8 用整节点换 HBM/运行态余量和简单故障域，适合建立第一�
 7. 1M 请求失败后客户端自动重试，为什么可能击穿整个池？在哪几层止损？
 8. 6 台 spare 同时承担 canary 与容灾，如何避免 rollout 把故障预算吃光？
 
+### 参考答案
+
+1. 先画 node→GPU→service unit→TP/PP/EP/DP communicator，再说明节点边界来自显存、NVLink/PCIe 和跨节点通信成本。GLM/Pro 的 TP 若跨节点会把高频 collective 放到 fabric；Flash 的 EP 也不能默认跨 48 节点，必须按 expert traffic、拓扑和实际 NCCL/DeepEP 支持验证。
+2. 不能由“启动成功”推出运行态安全。要做 128K×16 的长稳态、burst 和最大输出矩阵，记录每 rank peak HBM、KV usage、workspace/graph、OOM、preemption、queue、TTFT/TPOT 和完成率，并保留启动 profile 与 workload 指纹。
+3. 先核对 rank placement 和 GPU/NIC/NUMA 拓扑；再用 `NCCL_DEBUG=INFO`、通信错误/重传和 per-rank stage time 判断网络；最后比较 PP 各 stage 的 compute/idle 和 microbatch bubble。网络错误有链路/collective 异常，PP bubble 则通常是稳定的 stage imbalance。
+4. hot expert 会表现为 token/expert 分布倾斜和某 rank 的 MoE compute/all-to-all 时间高；GPU 降频要看时钟、温度、功耗和 DCGM；NIC 路径问题要看 per-NIC bytes、drop/ECN、NCCL/DeepEP wait。固定 workload 后逐项做对照，不能只看总吞吐。
+5. 不应直接上线。MTP5 acceptance 上升只是草稿命中率指标；若 p99 ITL 变差，可能是验证、额外 logits、同步或长尾请求成本增加。只有在质量、错误、TTFT/TPOT/goodput 和成本 gate 全部通过时才可灰度。
+6. 同时拉权重会竞争共享存储出口、节点 CPU、PCIe/NIC 和 page cache，导致在线副本 TTFT/TPOT 抖动。应做制品 fan-out/本地缓存、分批加载、带宽 quota 和 readiness gate，模型完整加载、profile/capture 和 golden 通过后才接流量。
+7. 失败请求若无幂等和指数退避，会在客户端、Gateway、P/D router、engine admission 各层重复计算，形成正反馈。止损顺序通常是限制客户端重试/hedging、Gateway 按 request ID 去重、服务端 admission/backpressure、熔断坏池，并保留有限容量给恢复流量。
+8. 先划出不可被 canary 占用的故障备用容量，再给 canary 设置最大节点数、SLO gate 和自动 abort；每次扩 canary 都重新计算 N+1/N+failure-domain 余量。rollout 不能把所有 spare 视为可用吞吐，否则真正故障时没有替换资源。
+
 ## 下一步
 
 - 对照昇腾 910B 部署：[`14-384-ascend-910b-glm-deepseek-deployment.md`](14-384-ascend-910b-glm-deepseek-deployment.md)

@@ -448,6 +448,13 @@
 3. 是否能把任意性能追问改写为“固定哪些变量、测哪些指标、什么条件否决”？
 4. 是否能指出本章至少五个不能跨版本承诺的实现细节？
 
+### 参考答案
+
+1. 不能只凭记忆判断。30 秒回答应先给结论，再说一个机制和一个证据入口；若涉及默认值或具体行号，还要说明目标 vLLM SHA。完整达标标准是能把答案落到源码、metrics 或可复现实验，而不是背术语。
+2. 至少应能画出 HTTP→API server→EngineCore→Scheduler→Worker→GPU→streaming 的主链路，以及 P/D、KV connector、NCCL 等跨组件路径。图上要标出数据类型、进程边界和同步点，否则只是文件名清单。
+3. 把性能追问改成四步：固定模型/硬件/workload；定义 TTFT、TPOT、goodput 等指标；只改一个变量并保存证据；预先写明否决条件和 rollback。这样才能区分真实优化与流量、cache 或 warmup 波动。
+4. 典型不可跨版本承诺包括默认 scheduler budget、backend 选择、metrics 名称、V0/V1 入口、compile/cudagraph 行为、KV connector 配置、quantization 支持和异常语义。回答时应给“当前锁定版本 + 验证方法”，而不是把历史经验说成稳定 API。
+
 ## 下一步
 
 - [`02-system-design.md`](./02-system-design.md)：把单点知识组织成需求优先的完整架构

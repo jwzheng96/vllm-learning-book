@@ -343,6 +343,13 @@ $$Cost_{per\ 1M\ good\ output\ tokens}=\frac{GPU\ hours\times price+platform\ co
 3. prefix-aware routing 如何同时避免热点和跨 tenant 错误复用？
 4. 若 canary 的 tokens/s 提升但 TPOT p99 和 quality 变差，应如何裁决？
 
+### 参考答案
+
+1. 最容易翻转架构的通常是：输入/输出长度和到达率分布、TTFT/TPOT p99 SLO、以及模型权重/KV 是否能放进单节点并满足 failure domain。高并发短请求可能偏 replica DP；超长上下文或 prefill/decode 资源明显不对称时才考虑 disaggregation。
+2. 用户数不等于同时运行请求，也不包含 token 长度、到达过程、SLO、失败余量和 goodput。replica 数应从 `peak arrival rate / goodput_per_replica_at_SLO` 推导，再加故障和 rollout headroom，而不是用一个“每卡并发”除法。
+3. Router 维护 prefix/cache locality 与负载分数的联合决策：优先把相同安全域和兼容指纹的 prefix 送到有命中的副本，同时设置负载上限、租户 namespace 和 fallback，防止一个热门 prefix 把单点打热或跨租户误复用。
+4. 先暂停扩大 canary，检查质量 golden、错误率、TTFT/TPOT p99、goodput 和 workload 可比性。只要 p99 或质量触发预先批准的 gate，就回滚；tokens/s 的提升不能抵消用户可见质量和 SLO 退化。
+
 ## 下一步
 
 - [`03-capacity-and-troubleshooting-drills.md`](./03-capacity-and-troubleshooting-drills.md)：把公式和故障树做成有解练习

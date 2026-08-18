@@ -374,6 +374,13 @@ $$T\approx\frac{4\times2^{30}\ byte\times8\ bit/byte}{80\times10^9\ bit/s}\appro
 3. 一个 AZ 同时损失三副本时，题 7 的 N+1 要怎样改？
 4. Retry storm 中“扩容”和“先停止重复工作”分别何时有效？
 
+### 参考答案
+
+1. `13B×2 bytes` 只是权重下界；部署还需要 KV cache、activation/workspace、CUDA/NCCL、CUDA Graph、allocator 碎片、LoRA/encoder cache 和安全余量，且 TP/PP 还会改变每 rank 分片与复制项。
+2. TTFT 和 TPOT 达标率往往相关但不独立，简单相乘隐含独立性假设，可能重复计算同一请求或掩盖尾延迟分布。应直接按请求判断“TTFT、TPOT、错误、质量全部通过”，计算 goodput@SLO。
+3. 若一个 AZ 可同时损失三副本，N+1 不够；至少按 failure-domain loss 重新计算，保留能在剩余 AZ 上承载峰值 goodput 的副本和 warm spare，并把跨 AZ 网络、容量和恢复时间纳入模型。
+4. 扩容适合真实到达率持续超过健康容量、且重复请求已被抑制的情况；retry storm 中首先停止无界重试、启用幂等/指数退避和 admission control，否则加的实例只会接收更多重复工作。止血后再按剩余有效流量扩容。
+
 ## 下一步
 
 - [`04-mock-interview-and-rubric.md`](./04-mock-interview-and-rubric.md)：把计算题放进完整五轮面试

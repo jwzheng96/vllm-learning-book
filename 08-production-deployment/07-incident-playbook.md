@@ -334,6 +334,13 @@ A: 标准结构：summary → timeline → impact → root cause → contributin
 3. 给一个 8k chat + 100k RAG 混部场景，画出 Gateway 按 prompt 长度路由的伪代码。
 4. 写出一份 blameless postmortem 的章节顺序，并说明 "action items" 至少应该覆盖哪 3 类。
 
+### 参考答案
+
+1. 五段是：症状确认 → 证据收集 → 根因假设 → 止血与恢复 → 长期修复。第一时间可敲：`curl .../metrics | grep -E 'num_requests|kv_cache'`、`kubectl describe pod <pod>`、`kubectl logs <pod> --since=10m | grep -Ei 'nccl|timeout|oom'`；随后再做逐 rank stack 和链路检查。
+2. 金信号三件套是 queue、KV/preemption、TTFT/请求延迟。可分别用 `vllm:num_requests_waiting`、`vllm:kv_cache_usage_perc`/`vllm:num_preemptions`、`histogram_quantile(0.99, sum by(le)(rate(vllm:time_to_first_token_seconds_bucket[5m])))`，并按 replica/模型分组。
+3. Router 先按 `input_tokens` 分桶：8K chat 送短上下文池，100K RAG 送长上下文池；每个池再按 prefix hash、KV 水位和 queue score 选择副本，超过预算返回 429 或降级。伪代码必须包含 deadline、tenant namespace 和 fallback，不能只写 if/else 长度判断。
+4. 顺序应是 summary、impact、timeline、detection、root cause、contributing factors、mitigation/recovery、action items、验证与负责人。action items 至少覆盖监控告警、自动化/流程、容量或架构，且每条有 owner、截止时间和验证证据。
+
 ## 下一步
 
 - 横向延展：[`09-advanced-features/`](../09-advanced-features/01-sampling-and-logits.md) 把高级特性也纳入 runbook 视角（如 LoRA 加载失败、structured output 校验失败）

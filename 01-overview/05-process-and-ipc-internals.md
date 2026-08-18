@@ -1029,6 +1029,21 @@ print(np.shares_memory(a, b))
 
 如果第 8、9、10 题能沿源码状态机讲清楚，才算真正理解这一章。
 
+### 参考答案
+
+1. **不一定。** 虚拟地址只是在每个进程自己的页表中有相同数值；两个页表可能映射到不同物理页。只有使用共享内存、同一 `mmap` 文件映射或显式 CUDA IPC，并核对映射关系，才能证明共享了同一物理存储。
+2. `fork` 采用写时复制，父子进程最初共享只读物理页，所以不会立刻多占 10 GiB。任一方写入某页时才触发 page fault，内核复制该页；实际增长量取决于被修改的页，而不是整个 heap 大小。
+3. `spawn` 会启动全新的解释器，只能通过 pickle 把 target、参数和必要状态传过去；`__main__` guard 防止子进程重新 import 主模块时再次执行启动逻辑，避免递归创建进程。
+4. ZMQ 的 `bind` / `connect` 是拓扑动作，描述谁拥有监听端点；它不等同于业务上的 server/client。一个业务 client 可以连接另一个业务 client 的 socket，真正的请求方向由 socket 类型和消息协议决定。
+5. ROUTER 端收到的 identity 是路由元数据，ROUTER 用它选择返回路径；转发给 DEALER 时通常只传业务帧，因此 DEALER 看不到 identity。若需要在业务层保留请求关联，必须显式放入 request ID。
+6. PUSH/PULL 是负载分发：一条消息只会交给一个下游 PULL。PUB/SUB 是广播：每个订阅者都可能收到消息，但订阅建立前的消息通常会丢失，且没有逐消费者确认。
+7. 不会。HWM 只表示队列水位；不同 socket 的满队列行为不同，可能阻塞、返回 `EAGAIN`、丢弃旧消息或丢弃新消息。生产代码必须根据 socket 类型、`SNDTIMEO/RCVTIMEO` 和错误码验证实际语义。
+8. notification 是“状态已变化”的提示，旧通知被新通知覆盖通常仍能由消费者重新读取最新状态，所以可以 `CONFLATE`。scheduler command 是有顺序、有副作用的增量操作，丢一条可能导致请求、KV block 或 worker 状态永久不一致。
+9. 这行代码把 `buffer` 的内容复制到目标 slice，因此它不是零拷贝；零拷贝只能说明元数据或 buffer 所有权被复用，不能把一次实际内存 copy 误说成零拷贝。应结合 `data_ptr`、shared-memory buffer 和 profile 证据判断。
+10. EngineCore 把 command 写入 worker ring 后等待 completion；远端 worker 若卡在 NCCL，相关 completion 不会产生，本地 ring slot 也不会释放，最终表现为 EngineCore 的 long wait、queue 堆积甚至 API 超时。根因在 collective，表象在 IPC。
+11. 若每个 TP=8 的服务单元占一台 8-GPU 节点，则 48 台共有 384 个 GPU worker；若每台节点上一个 EngineCore/服务单元，则约 48 个 EngineCore。TP 内的 NCCL 通常在节点内，DP 副本之间不需要同步；跨节点通信取决于 PP、EP 或具体部署拓扑。
+12. 不是同一个协议。API→Engine 通常是 ZMQ 上的 msgpack/OOB；Executor→Worker 是进程内/本机的 pickle5/OOB 与共享内存队列。它们都可借用 out-of-band buffer 降低复制，但 framing、生命周期和故障语义不同，不能互换。
+
 ## 下一步
 
 - 想继续看 scheduler 如何形成每一步执行决策：[`../03-code-walkthrough/02-scheduler.md`](../03-code-walkthrough/02-scheduler.md)

@@ -256,6 +256,14 @@ with requests.post(
 4. headers 已发送后发生 EngineCore error，HTTP 层还能做什么？
 5. 慢消费者为什么会反向影响 KV 容量？
 
+### 参考答案
+
+1. token 可能只是 UTF-8 多字节字符的一部分、BPE 合并尚未形成稳定文本、仍处于 stop string 的 look-behind 缓冲，或被 reasoning/tool parser 暂存。因此 sampled token 数会增加，但可见 `delta` 可能为空。
+2. 先查客户端连接池/事件循环和 Gateway buffering，再查响应 header 到首个 SSE event 的网络路径，最后核对服务端 engine TTFT 与 first serialized byte。若 engine TTFT 正常而 client TTFT 高，优先查引擎外链路，不要先调 attention。
+3. 计费应以服务端最终确认的 token usage、request finish state 和已提交输出为准；stream 尾 chunk 只是传输通知，不能成为唯一账本。若客户端断流，记录已确认 token 数并按产品契约处理未发送部分。
+4. headers 已发送后不能再把 HTTP 状态码改成 5xx；只能发送协议允许的 error event、关闭 stream，并记录 request/trace ID。客户端必须把“收到部分 token 后连接关闭”视为不完整响应，而不是成功答案。
+5. 慢消费者会让 response queue、collector 和请求对象长期存活，进而延迟完成信号、KV free 和 connector cleanup。若没有 bounded buffer、write timeout 和 abort 策略，少数慢连接就能把 GPU KV 容量转化为长期内存占用。
+
 ## 下一步
 
 - [`07-hands-on/05-serve-openai-api.md`](../07-hands-on/05-serve-openai-api.md)：启动服务并验证 streaming/usage/error。

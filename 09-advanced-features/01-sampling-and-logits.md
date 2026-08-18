@@ -366,6 +366,13 @@ A: Leviathan 2023 证明：`min(1, p_t/p_d)` 接受 + `(p_t - p_d)_+ / Z` 拒绝
 3. 拒绝采样里被拒绝时从 `(p_target - p_draft)_+ / Z` 重采，这个公式保证了什么数学性质？
 4. 同一个 batch 既有 `logprobs=5` 也有不要 logprobs 的请求，sampler 如何让"不要的请求"不付出额外算力？
 
+### 参考答案
+
+1. `all_greedy` 为真时可以跳过随机采样、temperature/top-p 等随机路径；`all_random` 为真时可以避免为 greedy 请求准备不必要的随机分支。混合 batch 不能简单用一个全局 bool 代替 per-request metadata，必须按请求 mask/分组。
+2. Python 自定义 processor 可能包含动态控制流、任意 Python 状态或未注册 op，导致 graph break、无法 capture 或每步回到 Python。替代方案是使用支持的内置 processor、把逻辑实现成 `torch.library`/CUDA/Triton op，或明确接受 eager 路径并做性能 A/B。
+3. 拒绝 token 时从归一化的 `(p_target-p_draft)_+` 分布重采，保证最终输出分布仍等价于 target 分布，而不是简单“重采一次 target”。实现还要正确处理 accepted prefix、剩余候选和 RNG 状态。
+4. sampler 为 batch 建立紧凑的 per-request metadata，只对需要 logprobs 的行计算/保存 top-N 或 full-vocab 结果；其他请求不生成、不复制 logprobs。最终输出处理再按 request ID 对齐，避免用全 batch 的最大 logprobs 配置拖累所有请求。
+
 ## 下一步
 
 - 下一节：[`02-structured-output.md`](./02-structured-output.md)（用 grammar/JSON schema 把 logits 直接 mask 到合法集合）

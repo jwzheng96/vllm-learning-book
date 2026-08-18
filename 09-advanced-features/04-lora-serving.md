@@ -352,6 +352,13 @@ A: block_hash 的 extra_keys 含 LoRA adapter id。同一段 prompt 用不同 Lo
 3. 同一 prompt 用 LoRA A 和 LoRA B 命中的是同一段 prefix cache 吗？为什么？
 4. 开放运行时 LoRA path 为什么会扩大文件 / 网络与共享 worker 状态的攻击面？
 
+### 参考答案
+
+1. `index_mapping` 会把 batch 中每个 token/sequence 映射到对应 LoRA slot，例如 base 请求映射到 0，LoRA A 的若干 token 映射到 slot 1，LoRA B 映射到 slot 2；Punica kernel 据此选择 adapter 权重，避免为每个 LoRA 拆成独立 batch。
+2. `max_loras=8` 是单个 step/执行批次同时活跃的硬上限；队列有 12 个 adapter 时，另外 4 个可能等待、被分批或触发加载/淘汰。LRU 是跨时间的驻留策略，决定哪些 adapter 保留在 GPU/CPU，不能把一次 step 上限当成长期容量。
+3. 通常不能直接命中同一 prefix，因为 LoRA adapter 会改变隐状态和 KV；cache key 应包含 LoRA identity/version。只有明确证明某段计算完全不受 adapter 影响并设计了安全 namespace，才可共享部分 cache。
+4. 运行时 path 允许请求触发任意文件读取、下载、解压和动态加载，扩大 SSRF、路径穿越、恶意制品、资源耗尽与共享 worker 状态污染风险。应使用签名/allowlist 制品、沙箱、配额、强鉴权、审计和可回滚加载流程。
+
 ## 下一步
 
 - 下一节：[`05-embedding-and-pooling.md`](./05-embedding-and-pooling.md)（vLLM 不只是 generative）

@@ -210,6 +210,13 @@ A: 有。chunked prefill 的核心收益不依赖 cache，它是 schedule 层面
 3. 业务 SLO 是 TPOT p99 ≤ 30ms，你把 `max-num-batched-tokens` 从 8192 改成多少？
 4. chunked prefill 没开会让 `vllm:iteration_tokens_total` 直方图变什么样？
 
+### 参考答案
+
+1. 开启时，一个长 prompt 被拆成多个较窄的 prefill step，step 时长分布更集中，并能在中间插入 decode；关闭时，长 prompt 以大块甚至整段进入，直方图会出现更长的右尾，decode 请求的 ITL/TPOT 也更容易被尖峰拖慢。
+2. 第四个 chunk 完成后，请求的 prompt KV 已齐，scheduler 会把它从“仍在 prefill”转成可 decode 状态。若本步 token budget 和 KV 资源允许，它可以在后续 step 立即生成第一个 token，不必额外等待一个完整 batch 周期。
+3. 不能凭 SLO 直接写死一个数。应以 8192 为基线，按 4096、2048、1024 做单变量阶梯实验，固定到达率、长度分布和 warmup，选择仍满足 TPOT p99≤30 ms 且 goodput 最高的最大值；若 8192 已满足，就不应为了“看起来更小”盲目下调。
+4. 未开启时，`iteration_tokens_total` 更容易集中在大 token 数和长尾区间，长 prefill 形成明显尖峰；开启后会出现更多中小 token step，分布更平滑。应同时看 `request_prefill_time`、TPOT p99 和 waiting queue，不能只凭直方图形状下结论。
+
 ## 下一步
 
 - 至此 `02-core-concepts/` 全部读完。下一步进入 [`03-code-walkthrough/01-entry-points.md`](../03-code-walkthrough/01-entry-points.md)，从源码角度走一遍调用链。

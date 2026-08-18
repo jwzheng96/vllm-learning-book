@@ -237,6 +237,14 @@ curl -N -sS "$VLLM_TEST_ENDPOINT/v1/chat/completions" \
 4. client disconnect 后为何不能假设 GPU 立刻停止？
 5. 你会为 tokenizer mismatch 留下哪三份证据？
 
+### 参考答案
+
+1. protocol validation 负责通用 API 形状、字段类型、互斥参数和安全边界；platform request validation 负责当前模型、平台和 backend 能否执行，例如 multimodal、pooling、LoRA 或 attention 限制。前者是“请求是否合法”，后者是“当前服务能否接”。
+2. raw prompt 直传绕过了统一的 rendering/tokenizer/template 语义，容易让不同入口得到不同 token IDs、prompt length 和 cache key。它可能保留兼容性，但只能作为明确版本化的 fallback，不能成为生产默认路径。
+3. prompt embeds 绕过 tokenizer 和文本 template，因为调用方已经提供 embedding；但它没有绕过长度、dtype、shape、模型 hidden size、KV cache、scheduler、batching 和安全/配额校验。embeds 也不能自动证明与目标 tokenizer 语义等价。
+4. disconnect 通常只让 HTTP/streaming 层停止发送；EngineCore 可能已经把请求排入 GPU、NCCL 或 connector transfer。必须通过 abort/cancel 信号、request status、finished/aborted metrics 和 KV usage 下降确认最终释放，而不是看到 TCP 断开就认为 GPU 停了。
+5. 保存同一请求的 tokenizer/model revision/template 指纹、输入 token IDs/长度 hash、以及服务端与客户端的 rendered prompt/response usage 对照。不要把原始敏感 prompt 写进日志；可保存脱敏 hash、长度和必要的 token-ID 证据。
+
 ## 下一步
 
 - [`02-scheduler.md`](02-scheduler.md)：EngineCore Request 如何获得本步 token/KV 预算。

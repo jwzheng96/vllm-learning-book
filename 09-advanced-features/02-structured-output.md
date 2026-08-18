@@ -319,6 +319,13 @@ A: 不应承诺“标准 JSON Schema 全支持”。前端会按所选后端验�
 3. spec decode 拒绝时，grammar 状态机需要怎么处理才能保持一致？
 4. 为什么“schema 合法”仍不足以授权执行工具？生产入口还需要哪些校验？
 
+### 参考答案
+
+1. 同步编译会占住调用它的 scheduler/请求处理路径；异步编译把工作放到后台，其他请求可以继续调度，但该请求仍要等 future。`external_launcher` 为了保持外部进程/调度语义确定，当前路径禁用异步，不能假设所有部署都能后台编译。
+2. bitmask 用每个 token 一个 bit 表示允许/禁止，远小于保存完整 vocab 布尔数组，并适合 GPU 批量 apply。容量至少要知道 vocab size、并发约束请求数、bitmask dtype/word packing、每步更新频率和 grammar 状态缓存策略。
+3. 拒绝 speculative token 时，grammar 只能接受真正提交到输出的 token；被拒绝 token 必须 rollback，不得推进 FSM 或保留错误的 bitmask。然后用实际 accepted token 重新生成下一步约束。
+4. schema 只验证语法形状，不验证参数值是否安全、用户是否有权限、工具是否允许当前租户调用或目标资源是否可信。生产入口还需 auth/RBAC、schema/size limit、参数 allowlist、SSRF/路径检查、幂等/deadline、审计和执行沙箱。
+
 ## 下一步
 
 - 下一节：[`03-multimodal.md`](./03-multimodal.md)（多模态输入与 token 化）

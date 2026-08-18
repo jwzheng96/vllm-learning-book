@@ -757,6 +757,17 @@ vllm bench serve \
 7. 1M context 为什么必须独立服务等级？
 8. 如何区分 expert 热点、坏 NPU 和 HCCL 路径问题？
 
+### 参考答案
+
+1. 1/2/4 节点是模型权重、KV、并行布局和官方教程/配置给出的候选服务单元，不是当前工作区完成的硬件实测结论。必须在目标 CANN、torch-npu、vLLM Ascend、驱动和真实长度/并发矩阵上重新验证显存、HCCL、TTFT/TPOT 和 goodput。
+2. DP 是独立请求副本/数据并行维度，多个 DP rank 共享同一份模型逻辑但不等于每个 rank 都独立复制全部权重；TP/EP 仍会分片权重和 expert。实际内存取决于 TP/EP sharding、replicated layers、KV 和 runtime workspace。
+3. Pro 的一个 rank 属于完整 TP/PP/EP communicator；rank 失败会让 collective 参与者不一致，不能只摘一张卡继续服务。应摘除该四节点 service unit，重建一致的 rank/world-size，并让 router 在 readiness 通过前不送流量。
+4. balance scheduling 可能减少某些 rank 的 token imbalance、改善 TPOT，但也可能增加重排/同步、牺牲 TTFT、吞吐或公平性。固定 workload 做 off/on A/B，按 per-rank stage、HCCL wait、TTFT/TPOT p99、goodput 和能耗共同裁决。
+5. DSpark/speculative method 涉及 draft/target 模型、tokenizer、acceptance、rollback、sampling、reasoning/structured output 和硬件 backend。只改一个字符串可能启动成功但产生错误接受率、质量或长尾，必须跑正确性、接受率、TTFT/TPOT 和失败回退矩阵。
+6. spare 必须先扣除故障冗余和维护余量；Pro canary 一旦占用四节点，剩余节点可能不足以替换三个 GLM unit。应按 failure domain 建立资源账本，并设置 canary reservation、replacement reservation 和 stop condition。
+7. 1M context 的 KV、prefill 时间、通信和 OOM 风险与普通请求完全不同，混在同一池会造成 head-of-line blocking 和容量估算失真。应独立 admission、quota、SLO、GPU/内存池和长稳态压测。
+8. expert 热点看 per-expert token/compute/all-to-all；坏 NPU 看温度、频率、ECC/硬件事件、单卡 kernel 时间；HCCL 路径看 collective wait、链路错误、rank 对齐和拓扑。用同一 batch 对照多个 rank，才能区分数据倾斜与硬件/通信故障。
+
 ## 下一步
 
 - 端到端 profiling：[`15-end-to-end-latency-profiling-and-optimization.md`](15-end-to-end-latency-profiling-and-optimization.md)

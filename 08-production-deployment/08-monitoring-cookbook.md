@@ -512,6 +512,13 @@ scrape_configs:
 3. `histogram_quantile` 算 TTFT p99 持续返回最高 bucket 值，说明什么？怎么修？
 4. 给一个"oncall 早晨拿到 TTFT 飙到 3s 的告警"的场景，按 §5 根因树写出排查命令链。
 
+### 参考答案
+
+1. 按 token 计应为：`sum(rate(vllm:prefix_cache_hits_total[5m])) / clamp_min(sum(rate(vllm:prefix_cache_queries_total[5m])), 1)`；实际 metric 名和是否已经是 token counter 要先从 `/metrics` inventory 确认，不能盲抄旧 dashboard。
+2. 单 pod 的 KV 告警会按实例维度触发。还要查 `num_requests_running/waiting`、`num_preemptions`、prompt length 分布、prefix hit、GPU memory、request rate 和该 pod 的错误/重启，判断是长请求热点、路由倾斜还是内存泄漏。
+3. p99 长期等于最高 bucket，说明样本大量落在 bucket 上界之外或 bucket 太粗，不能解释真实尾延迟。应检查 `_count/_sum`、更细 bucket、scrape 时序和请求是否超时；必要时调整 histogram buckets/recording rule，而不是直接把最高值当真实 p99。
+4. 先确认告警时间窗和受影响 replica，再执行 `curl /metrics` 查 queue/KV/preemption/TTFT；随后看 gateway route/retry、vLLM 日志、pod events、NIC/GPU 状态，最后用 trace/profile 下钻。每一步都要写“支持/排除哪个假设”，避免无证据重启。
+
 ## 下一步
 
 - 想理解为什么这样定 SLO：[`05-slo-and-observability.md`](05-slo-and-observability.md)（理论层）。

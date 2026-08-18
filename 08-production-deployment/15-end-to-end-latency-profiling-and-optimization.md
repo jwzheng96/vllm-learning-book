@@ -1974,6 +1974,17 @@ arrival/burst
 7. 怎样证明 `max-num-batched-tokens` 的改动不是客户端到达率波动造成？
 8. 为什么优化结论要用 goodput 和 accelerator-seconds/request？
 
+### 参考答案
+
+1. client TTFT 比 engine TTFT 高，说明差值发生在连接池、DNS/TLS、Gateway、上传、proxy buffering 或客户端 event loop；attention 只解释 engine 内部。先用 `t0..t5` 时间戳和 Gateway span 定位差值，再决定是否 profile GPU。
+2. queue p99 高而 prefill/decode 正常，优先查 arrival rate、admission、Gateway queue、router 倾斜、慢消费者和有限连接池；确认 engine waiting reason 与客户端 missed schedule。若是队列问题，调 kernel 不会消除排队。
+3. layerwise NVTX 会增加标记、同步或关闭 graph 的开销，适合定位；graph-on 才代表生产路径。必须分别做 instrumentation baseline 与真实性能 profile，否则把 profiling overhead 当成模型瓶颈。
+4. hot expert 会在 per-rank expert token/compute 与 all-to-all bytes 中呈现稳定倾斜；坏卡会伴随频率、温度、硬件事件或所有 workload 的单卡变慢。固定输入并比较多个时间窗，若只有特定路由倾斜偏向 expert，若所有 workload 都慢偏向硬件。
+5. MS Service Profiler 更回答系统服务、设备/通信和服务级时间线；Ascend PyTorch Profiler 更回答框架 op、算子调用和 Python/torch 侧关联。先用 service 级证据锁定阶段，再用 PyTorch profiler 下钻具体 op，不能互相替代。
+6. acceptance rate 上升不保证收益；验证多个 draft token、rollback、额外 logits 和同步成本可能抬高 TPOT p99。只有质量、错误、TTFT/TPOT、goodput 和成本都通过门禁，才值得灰度。
+7. 固定 client request-rate/seed、输入输出长度分布、warmup、模型/镜像/硬件和测量窗口；A/B 交替或重复多轮，并记录客户端 missed schedule、retry、cache 状态和置信区间。若 arrival、cache 或编译状态漂移，应标 inconclusive。
+8. goodput 统计真正满足 SLO 的有效请求，能防止用超时/错误换吞吐；accelerator-seconds/request 把资源成本纳入决策，避免“更快但用了两倍卡”被误判为优化。两者一起看才能平衡用户体验、容量和成本。
+
 ## 下一步
 
 - Mooncake P/D、共享 DRAM / SSD Store 与数据面瓶颈：[`16-mooncake-distributed-inference-storage.md`](16-mooncake-distributed-inference-storage.md)

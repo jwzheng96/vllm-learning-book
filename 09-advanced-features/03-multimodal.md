@@ -303,6 +303,13 @@ A: 不能用“ViT 通常不 TP”概括。当前 `mm_encoder_tp_mode=weights` �
 3. mm hash 漏掉 processor 参数与 hash 不稳定分别会造成什么风险？
 4. 上线长视频前，入口限制、encoder budget、cache space 与 profile 分别要验证什么？
 
+### 参考答案
+
+1. 每个请求持有 encoder cache entry 的引用；请求完成、取消或不再需要该 embedding 时释放引用，计数降为零才允许淘汰。真正释放还受 eviction/异步 GPU free/后台 cleanup 调度影响，不是 refcount 归零的同一瞬间。
+2. `weights` 通常让各 TP rank 持有/计算 encoder 权重的分片方式不同；`data` 更偏向按输入样本分发、减少重复编码。具体是否支持取决于目标模型的 encoder、TP、gather 和 backend 实现，必须以模型文档、启动日志和正确性/显存 A/B 为准。
+3. hash 漏掉 processor 参数会让不同 resize/crop/采样配置错误共享 embedding，导致结果污染；hash 不稳定会让相同输入每次产生不同 key，命中率下降并增加编码成本。key 必须覆盖所有影响像素预处理和模型输入的语义字段。
+4. 入口限制验证单请求帧数、分辨率、总时长、请求体和并发；encoder budget 验证 token/patch 上限与 scheduler 行为；cache space 验证 GPU/CPU encoder cache 和 eviction；profile 验证编码、搬运、主模型、streaming 和长尾，而不是只测平均 FPS。
+
 ## 下一步
 
 - 下一节：[`04-lora-serving.md`](./04-lora-serving.md)（多租户 LoRA 的加载与路由）

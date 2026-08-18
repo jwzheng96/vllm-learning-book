@@ -341,6 +341,13 @@ A: 用生产长度直方图分别测 sequence / token 输出，记录 tokens/s�
 3. 一个 RAG pipeline 想同时支持 bi-encoder 检索和 cross-encoder rerank，什么时候需要两个模型实例？哪些 task 可能由一个多任务模型提供？
 4. 同一台 GPU 上的 embedding 与 generation 模型为什么不会自动进入同一个 runner batch？
 
+### 参考答案
+
+1. 先看模型 config、pooler 实现和训练/模型卡说明：CLS pooling 取特殊 token，Mean pooling 按 attention mask 对有效 token 平均，Last pooling 取最后有效 token。不能仅凭“兼容 BERT”猜，因为不同 embedding checkpoint 的训练目标和 pooler 约定不同。
+2. 需要模型声明支持输出维度、pooler/projector 的输入输出 shape，以及当前 task/backend 接受 `dimensions=256`。降维后还要评估归一化、余弦/内积分布、检索 recall、rerank 质量、吞吐和存储索引兼容性。
+3. bi-encoder 为 query/document 分别编码并可离线建索引；cross-encoder 要同时看 query+document 做 pairwise scoring，计算图和输入 schema 不同，通常需要两个模型实例。只有明确支持多个 task/runner 的多任务模型，才可能共享权重但仍要验证 batching 与质量。
+4. embedding/pooling 与 generation 的输出契约、模型 forward、采样/池化、KV cache 和 scheduler metadata 不同；同一 GPU 只能通过平台层做资源复用或多模型调度，不会自动把它们塞进同一个 runner batch。需要按 task 分池并设置显存、队列和优先级策略。
+
 ## 下一步
 
 - 横向延展：[`02-system-design.md`](../06-interview/02-system-design.md)（用 embedding+生成模型一起设计 RAG）

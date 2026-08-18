@@ -267,6 +267,14 @@ fi
 4. 客户端中断后如何确认 KV 最终释放？
 5. 为什么不使用 `pkill -f "vllm serve"`？
 
+### 参考答案
+
+1. `/health` 只说明 HTTP 进程存活；`/v1/models` 没目标模型通常要查模型加载日志、model ID/alias、revision、权重挂载和 readiness 条件。确认服务没有只启动了健康端口而尚未完成模型初始化。
+2. counter 通常单调递增并带 `_total`，gauge 可上下波动，histogram 会有 `_bucket/_count/_sum`。读取 `/metrics` 时还要确认 label、单位和当前版本名称，不能把任意带数字的行当成同一类型。
+3. 功能测试关注正确性、HTTP、streaming 和错误路径；benchmark 还必须固定模型、长度、到达率、warmup、并发、客户端和硬件，并报告 p50/p99、goodput 与 token throughput。功能测试通过不代表容量可用。
+4. 发送取消后，观察 request finished/aborted、KV usage、running/waiting、preemption 和 connector load/save 是否收敛；必要时用重复请求和时间窗口确认 block 最终归还。客户端断开本身不是释放证据。
+5. `pkill -f` 可能误杀同机其他 vLLM、测试进程或 supervisor，跳过优雅 drain 和子进程清理。应记录 PID/进程组，使用服务管理器或明确的优雅 shutdown，再按证据处理残留进程。
+
 ## 下一步
 
 - [`06-benchmark-methodology.md`](06-benchmark-methodology.md)：把“能服务”升级为可复现实验。

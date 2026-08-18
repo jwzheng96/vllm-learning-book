@@ -216,6 +216,13 @@ A: warmup（启动后跑几个 dummy 请求触发编译）。开 `VLLM_TORCH_COM
 3. 启动时报错 `cudaGraphInstantiate failed`，先动哪个 flag？
 4. 同样模型 batch 改变时 vLLM 为什么不重 capture 而是 pad？
 
+### 参考答案
+
+1. 若 20 ms 中 launch overhead 是 5 ms，理想化 CUDA Graph 只消除这部分，约为 15 ms，理论加速约 1.33×。真实收益还受 graph replay、同步、padding、memory bandwidth 和 kernel 本身影响，不能直接承诺 25% 固定收益。
+2. 未注册的自定义 op 通常成为 compile 的边界或 graph break，编译器无法安全融合它及其前后算子，性能往往更差或退回 eager；不会因为“没注册”自动变快。应提供 `torch.library` schema、meta/fake 实现和正确的 dispatch，再用 graph-on/off A/B 证明收益。
+3. 先用 `--enforce-eager` 建立能运行的正确性基线，确认不是模型、显存或输入 shape 问题；随后再逐步恢复 compile/graph，并检查 capture size、显存余量和 driver/runtime。不要在现场同时改多个参数。
+4. vLLM 通常选择已捕获的较大 shape，用 padding 和静态 buffer 复用 graph，避免每个新 batch 都重新 capture。代价是少量 padding 计算；收益是稳定 replay、较低启动开销和更可预测的 decode 延迟。
+
 ## 下一步
 
 - 深入编译器实现：[`04-compilation-internals.md`](04-compilation-internals.md)（CompilerManager / VllmBackend / 自定义 pass）。

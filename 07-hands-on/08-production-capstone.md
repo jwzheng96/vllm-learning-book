@@ -256,6 +256,14 @@ Alert 必须有：condition、for window、severity、impact、first checks、sa
 4. 事故演练如何设置 blast radius 与 stop condition？
 5. 面试中如何表述未做 GPU 实测的项目？
 
+### 参考答案
+
+1. 启动成功只证明进程能加载并监听端口，还没有证明正确性、streaming、容量、SLO、指标、故障恢复、安全、升级回滚和证据包完整。交付应覆盖“能跑、可测、可观测、可恢复、可解释”五层。
+2. Gateway/platform 更适合承担鉴权、租户 quota、路由、限流、重试、熔断、TLS、审计、模型制品和扩缩容；vLLM 负责模型执行、调度、采样和引擎级 metrics。边界清晰才能避免把控制面逻辑塞进 worker。
+3. 最大 throughput 可能在请求违反 SLO、错误上升或 retry storm 时取得。goodput@SLO 只统计满足时延、错误和质量门的有效请求，更接近真实业务容量和成本。
+4. 先定义隔离的 canary、最大影响范围、观察窗口、自动/人工 stop condition 和回滚命令；故障注入只针对一个 failure domain，并保留正常池。恢复后要跑 golden、指标回基线和资源清理验证。
+5. 明确区分静态源码复核、命令审查、模拟/无 GPU 验证和真实硬件实测；给出可复现实验命令、预期指标、硬件缺口和上线前 gate。不能用估算或文档阅读伪装成 GPU benchmark。
+
 ## 下一步
 
 进入 [`../08-production-deployment/01-deployment-architectures.md`](../08-production-deployment/01-deployment-architectures.md)，把 capstone 的架构、SLO、可靠性和生命周期设计进一步生产化。
