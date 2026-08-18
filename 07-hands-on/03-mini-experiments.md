@@ -65,6 +65,11 @@ run(enable_prefix_caching=True)
 - 如果改成 `temperature=0.7`（每次输出不同），prefix cache 还能命中吗？
 - 如果把 SYSTEM 改成 `"你是一个助手。" * 200 + str(time.time())`（每次微小不同），命中率会怎样？
 
+### 参考答案
+
+- **仍然可以命中。** Prefix cache 复用的是 prompt 对应的 KV，不是采样结果；`temperature=0.7` 只影响 prefill 完成后的 logits 采样和后续 decode，因此相同的完整前缀仍可复用。不同请求会从各自的 RNG 状态继续生成，输出不必相同。
+- **命中率会显著下降，甚至接近 0。** 时间戳改变了前缀 token 序列；链式 block hash 从发生变化的 block 开始全部不同，后续 block 也无法命中。若时间戳位于第一个完整 block 内，整个 prompt 的可复用前缀都会丢失；只有它之前已经闭合的完整 block 仍可能命中。验证时应比较命中 token 数，而不只看请求级 hit/miss。
+
 ---
 
 ## 实验 2：max-num-batched-tokens 对 TPOT 抖动的影响
@@ -132,6 +137,11 @@ asyncio.run(run(8002))   # 大 budget
 ### 自测题
 - 哪种配置更适合 chatbot？哪种更适合批量推理？
 
+### 参考答案
+
+- **Chatbot** 通常优先选择较小的 `max-num-batched-tokens`（例如从 2048/4096 起做压测），让长 prompt 被切成更小的 chunk，给正在 decode 的请求留下插入机会，从而控制 TPOT/ITL p99。最终值要以固定到达率、长度分布和 SLO 的 A/B 结果决定。
+- **批量推理** 更适合较大的 token budget（例如 8192 或更高），减少调度轮数和 kernel launch 次数，优先最大化 goodput。若离线任务完全不关心交互延迟，可以继续增大，但仍要监控显存峰值、OOM 和单步长尾。
+
 ---
 
 ## 实验 3：FP8 KV Cache 真的让 num_blocks 翻倍吗？
@@ -167,6 +177,10 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct \
 
 ### 自测题
 - 显存利用率从 0.5 改成 0.9，num_blocks 是否线性放大？
+
+### 参考答案
+
+**不保证严格线性。** 可用 KV 显存大致随 `gpu_memory_utilization` 增长，但 `num_blocks` 还受模型权重、CUDA/NCCL 缓冲区、activation 峰值、CUDA Graph workspace、对齐和 profiling 保留量影响。把 0.5 调到 0.9 通常会增加 block 数，却不会承诺变成 1.8 倍；过高还会挤压运行态临时显存并提高 OOM 风险。应保存两次启动日志中的实际 KV bytes、`num_gpu_blocks` 和运行态峰值，按实测比值判断。
 
 ---
 
@@ -217,6 +231,10 @@ watch -n 0.5 'curl -s localhost:8000/metrics | grep -E "vllm:(num_preemptions_to
 ### 自测题
 - 如果改成 `--scheduling-policy priority` 并给一半请求高 priority，会有什么变化？
 
+### 参考答案
+
+高 priority 请求会在 waiting 队列排序和资源不足时的准入顺序上占优，但 **priority 不是带宽配额**。高优先级请求可能更早获得 KV block、较少等待，低优先级请求的 queue time、preemption 或 starvation 风险则会上升；如果高优先级流量持续不断，低优先级流量可能长期得不到服务。比较时要同时记录按 priority 分组的 TTFT、TPOT、完成率、waiting 时长和 `num_preemptions`，不能只看全局吞吐。生产上通常还要加租户配额、最大等待时间或多实例隔离。
+
 ---
 
 ## 实验 5：投机解码的接受率与吞吐
@@ -252,6 +270,11 @@ vllm bench throughput \
 ### 自测题
 - 如果你换成 `{"method": "eagle", ...}` + 一个 EAGLE 模型，效果怎样？
 - 为什么 batch_size 越大，投机解码收益越小？
+
+### 参考答案
+
+- EAGLE 使用额外的 draft/预测头提出多个候选 token；如果目标模型、EAGLE 权重、tokenizer、dtype 和当前 vLLM 版本完全匹配，接受率可能高于 n-gram，长输出场景的 target forward 次数有机会下降。但它会增加 draft 计算、显存和启动配置复杂度，收益必须用 acceptance rate、accepted tokens/step、TTFT、TPOT、吞吐和拒绝路径开销一起验证；模型不匹配时可能无法启动或退回普通 decode。
+- batch 越大时，target 模型越接近 compute-bound。投机一次多验证几个 token 会真实增加矩阵计算和 KV 写入量，draft、候选整理与校验开销也会按 batch 放大；小 batch 下 GPU 原本有空余，额外 token 近似“搭便车”，大 batch 下则可能抵消甚至超过减少的 decode step。应按并发分桶测收益，不能用 batch=1 的加速比外推生产峰值。
 
 ---
 
@@ -367,6 +390,13 @@ done
 3. AWQ 和 GPTQ 哪个 calibration 时间更长？checkpoint 文件大小差多少？
 4. FP8 KV cache（`--kv-cache-dtype fp8`）和 FP8 权重 量化，能不能同时开？
 
+### 参考答案
+
+1. **batch=1 仍可能有收益，但来源不同。** 权重量化减少模型权重读取和显存占用，通常对 memory-bound decode 有帮助；但若 kernel fallback、反量化开销或 launch overhead 占主导，收益可能很小甚至变负。应固定模型、输入和采样参数，对比权重 dtype、实际量化 kernel、单 token 延迟和峰值显存。
+2. PPL 上升 2.7% 是否可接受不能脱离业务定义。应在代表性 chat/code/math 集上比较拒答率、事实性、格式成功率、人工偏好或离线 reward，并建立“PPL 变化 → 业务指标变化”的回归，而不是把 2.7% 直接等同于用户体验下降 2.7%。若质量影响只出现在少数高价值请求，应采用路由或模型分层，而不是全量上线。
+3. Calibration 时间取决于数据量、算法实现和硬件，不能只凭 AWQ/GPTQ 名称断言谁一定更慢；通常 GPTQ 的逐层 Hessian/误差优化更重，AWQ 的 activation-aware 搜索也可能成为瓶颈。checkpoint 大小主要由权重 bit 数、scale/zero-point、group size 和元数据决定，应对实际文件执行 `du -h`，并记录 safetensors 分片、索引和 tokenizer 是否计入。
+4. **通常可以同时开启，但要分开验证。** FP8 权重量化影响权重存储/矩阵计算，`--kv-cache-dtype fp8` 影响运行态 KV；是否可组合取决于目标模型、量化 backend、硬件和当前版本的支持矩阵。先用 `vllm serve --help`、启动日志和最小正确性请求确认 backend，随后分别做权重-only、KV-only、两者同时的质量与性能 A/B。
+
 ### 可产出的博客角度
 
 - "为什么 H100 用户应该默认上 FP8"——几乎零成本翻倍并发
@@ -454,6 +484,13 @@ done
 2. 如果换 PCIe 替 NVLink，TP=8 还能跑吗？为什么效率会暴跌？算一下传输时长。
 3. TP scaling 曲线在 batch=1 和 batch=64 下形状有何不同？为什么 batch 越大效率反而越高？
 4. 给定 70B 模型 + 4× A100 40G，能跑通吗？需要怎么配置？
+
+### 参考答案
+
+1. 没有普适答案：TP=4 把一个副本切到 4 卡，适合单请求延迟、模型必须跨卡才能放下或需要共享大 KV 的场景；4 实例 DP=4 复制四份模型，若单卡能放下且请求足够独立，通常总吞吐和故障隔离更好。应在相同 QPS、长度分布和 SLO 下比较 goodput，而不是只比较某一个 batch 的 tok/s。
+2. **能运行但效率可能暴跌。** TP=8 需要频繁 collective；PCIe 的有效带宽和延迟远差于 NVLink。粗略估算传输时间应使用本机 `nccl-tests` 或 `nvidia-smi topo -m` 得到的实测带宽：`t ≈ bytes / effective_bandwidth + latency`，不能直接套理论 PCIe 峰值；跨节点还要把 IB/RDMA、交换机拥塞和同步等待计入。
+3. batch=1 时通信延迟和 kernel launch 占比高，增加 TP 很快遇到收益递减；batch=64 时 GEMM 更饱和，计算量增大后 collective 可与计算重叠，曲线通常更平滑、scaling efficiency 更高。但 batch 过大也会受显存、KV 和通信带宽限制，因此仍需按 prefill/decode 分别测。
+4. 70B BF16 权重大约 140 GB，4×40 GB 只有 160 GB 原始容量，扣除 runtime、KV、通信和 workspace 后余量很紧；通常要使用 TP=4、低 `gpu_memory_utilization` 起步并启用权重量化（如 FP8/AWQ/GPTQ，取决于 backend），同时缩短 `max_model_len`、限制 `max_num_seqs`，必要时使用 CPU offload。能否稳定跑通必须以实际启动 profile、KV block 数和长上下文压测证明，不能只按容量相加。
 
 ### 可产出的博客角度
 
@@ -570,6 +607,13 @@ prof.export_chrome_trace("trace_async.json")
 3. 这套 producer-consumer overlap 在 OS 课里有什么对应概念？（double buffering / pipelining）
 4. 当前 CLI 若提供受支持的 async scheduling 开关，应如何设计只改该开关的 A/B？若没有，为什么不能用 patch V0 冒充可比基线？
 
+### 参考答案
+
+1. schedule 时间会随 batch 增大，主要因为：一是要遍历更多 running/waiting 请求、更新 token 数并评估 preempt victim；二是要为更多序列计算 prefix/KV 命中、分配 block、更新持久 `InputBatch` 和 metadata。还可能叠加 grammar、LoRA、encoder 或 connector 的 per-request 工作。
+2. 如果 schedule 比 forward 还慢，CPU 就会成为关键路径：GPU 完成一个 step 后等待下一轮 batch，吞吐下降、TPOT 抖动，队列也会堆积。长上下文、高并发、频繁 preemption、复杂 structured output/LoRA、CPU 过载或 Python profiling 往往会触发这种情况。应在 trace 中确认是 schedule 本身慢，还是 IPC、tokenizer 或日志造成的假象。
+3. 这对应 OS/体系结构中的 **producer-consumer、double buffering 和 pipeline overlap**：producer 在 CPU 准备下一批调度结果，consumer 在 GPU 执行当前批；两块缓冲区交替使用，只有生产速度跟不上消费速度时才暴露气泡。
+4. 若当前 CLI 提供受支持的 async 开关，A/B 只能改这一项，固定模型、硬件、环境变量、请求序列、warmup、采样与 benchmark 窗口，并同时记录 schedule CPU time、GPU step time、TTFT/TPOT 和吞吐。若没有该开关，不能把手工 patch V0 当基线：代码路径、调度语义、kernel capture 与 IPC 都变了，测到的是两个不同系统，无法把差异归因于 async scheduling。
+
 ### 可产出的博客角度
 
 - "V1 AsyncScheduler 看似简单，实则 vLLM 性能跃迁的关键之一"
@@ -632,6 +676,13 @@ grep -nE 'kv_connector|kv_role|proxy|pip install|pgrep|pkill|kill -9' "$EXAMPLE"
 2. 如果 prefill 节点 OOM crash，请求会怎样？跟单实例的故障模式有何不同？
 3. 多用户 chatbot 场景，prefix cache 命中率怎么影响 disaggregated 收益？
 4. 算一下 100K token prompt 的 KV 大小（Llama-2-7B GQA）。NVLink 与 PCIe 跨卡分别传多久？
+
+### 参考答案
+
+1. 路径取决于拓扑和 connector：同卡是 device copy；同机 GPU 间通常走 NVLink，若拓扑不支持则回退 PCIe；跨节点通常走 RDMA/GPUDirect（具体由 NIXL、Mooncake 或其他 connector 决定）。延迟与带宽必须用当前机器的 `nccl-tests`、`ib_write_bw`/connector benchmark 和实际 payload 测量；不能把“NVLink/PCIe/RDMA 理论值”当端到端 KV transfer 时间，因为还包括 metadata、同步、注册和重试。
+2. prefill 节点 OOM 时，它持有的请求和未完成 KV transfer 会失败；proxy/调度层应超时、取消或重试到健康的 prefill 节点，并防止 consumer 使用不完整 KV。与单实例相比，P/D 还有 transfer 状态、路由和幂等问题，可能出现“prefill 已算但 decode 未收到”的半完成状态，因此要有 request ID、generation/lease、超时和 fallback。
+3. prefix hit 越高，prefill 计算量越少，P/D 分离可节省的 prefill FLOPs 也越少；固定的路由、连接和 KV transfer 开销可能超过收益。应按 hit/miss、prompt 长度和输出长度分别测 break-even：高命中短 prompt 往往适合单实例，长且低命中的 prompt 才更可能从 P/D 获益。
+4. 以 Llama-2-7B 的 GQA 为例，需使用实际 `num_kv_heads`、`head_dim`、层数和 KV dtype 计算：`bytes = tokens × layers × 2(K/V) × num_kv_heads × head_dim × dtype_bytes`。若按常见 32 层、32 个 KV head、128 head_dim、BF16 估算，100K token 约 `100000×32×2×32×128×2 ≈ 52.4 GB`（十进制）；若 checkpoint 使用更少 KV head，结果按比例下降。传输时间应按 `t ≈ bytes / 实测有效带宽 + 固定延迟` 计算，并分别用 NVLink、PCIe 的本机实测带宽代入；不能用单纯链路峰值替代 connector 的端到端测量。
 
 ### 可产出的博客角度
 
