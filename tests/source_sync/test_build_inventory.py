@@ -141,6 +141,17 @@ class BuildInventoryTests(unittest.TestCase):
             '</div>',
         )
 
+    def test_markdown_link_rewrite_preserves_external_urls(self):
+        html = (
+            '<a href="../chapter.md#part">local</a>'
+            '<a href="https://github.com/org/repo/blob/sha/README.md">external</a>'
+        )
+        self.assertEqual(
+            build_html.rewrite_md_links(html),
+            '<a href="../chapter.html#part">local</a>'
+            '<a href="https://github.com/org/repo/blob/sha/README.md">external</a>',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

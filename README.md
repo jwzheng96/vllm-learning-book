@@ -3,10 +3,9 @@
 <!-- vllm-version:start -->
 - Validated vLLM: `b23bd73f540175f9e117eaee5029cd7d8df63964`
 - Upstream committed: `2026-07-20T15:32:54+00:00`
-- Validated: `2026-07-20T17:53:34Z`
-- Latest candidate: `b23bd73f540175f9e117eaee5029cd7d8df63964`
-- Candidate lag: `2268` commits
-- Impact report: [artifacts/source-sync/latest-impact.md](artifacts/source-sync/latest-impact.md)
+- Validated: `2026-08-25T07:44:40Z`
+- Latest candidate: `5e379a361e3ea8bb82b7efd768c36f39a0cf32fd`
+- Candidate lag: `1463` commits
 <!-- vllm-version:end -->
 
 [![Pages](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml)
@@ -156,7 +155,7 @@ flowchart TB
 ### 4. 优化 · `04-optimizations/` — 5 章
 
 - [`01-quantization.md`](04-optimizations/01-quantization.md) — FP8 / INT4 / AWQ / GPTQ / Marlin 的选型矩阵。
-- [`02-speculative-decoding.md`](04-optimizations/02-speculative-decoding.md) — n-gram / EAGLE / Medusa / MTP 的取舍。
+- [`02-speculative-decoding.md`](04-optimizations/02-speculative-decoding.md) — EAGLE3 / MTP / PARD / DFlash / DSpark、动态 K 与自适应验证的源码导读。
 - [`03-cudagraph-and-compile.md`](04-optimizations/03-cudagraph-and-compile.md) — CUDA Graph + torch.compile 何时开 / 何时关 / 失败降级路径。
 - [`04-compilation-internals.md`](04-optimizations/04-compilation-internals.md) — CompilerManager / VllmBackend / 自定义 pass 深度。
 - [`05-roofline-and-arithmetic-intensity.md`](04-optimizations/05-roofline-and-arithmetic-intensity.md) — 🆕 存算比定量推导：prefill 为何 compute-bound、decode 为何 memory-bound，Llama-70B 算一遍，batching 摊薄权重却摊不薄 KV。
@@ -280,7 +279,7 @@ flowchart TB
 3. **vLLM 官方文档** — https://docs.vllm.ai/ ，重点看 design / kernel 章节。
 4. **FlashAttention v1/v2/v3** — 理解 SRAM tiling 的关键。
 5. **Speculative Decoding 论文** — Leviathan et al., 2023, *Fast Inference from Transformers via Speculative Decoding*。
-6. **EAGLE / MTP** — 当下最强的投机方案系列。
+6. **EAGLE3 / MTP / PARD / Suffix Decoding** — 分别理解 hidden-state drafter、原生多 token 头、并行 draft 与 workload-aware proposal。
 
 ---
 

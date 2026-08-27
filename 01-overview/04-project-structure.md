@@ -222,11 +222,20 @@ v1/
 | 文件 | 作用 |
 | --- | --- |
 | `llm_base_proposer.py` | LLM-based draft proposer 基类 |
-| `ngram_proposer_gpu.py` | n-gram 提议（GPU） |
-| `eagle.py` | EAGLE proposer（vLLM 主力 spec method） |
-| `medusa.py` | Medusa（经典方法，被 EAGLE 替代） |
+| `draft_model.py` | 独立 draft model；可选跨词表 TLI |
+| `ngram_proposer.py` / `ngram_proposer_gpu.py` | CPU / GPU n-gram proposal |
+| `suffix_decoding.py` | 基于 prompt 与历史生成 suffix tree 的动态 proposal |
+| `eagle.py` | EAGLE / EAGLE3 hidden-state proposer |
+| `dflash.py` | DFlash 并行 masked-query block proposer |
+| `gemma4.py` / `step3p5.py` | 模型家族专用 MTP proposer |
+| `medusa.py` | Medusa 兼容路径 |
+| `custom_class_proposer.py` | 实验性自定义 proposer 装载入口 |
+| `vocab_mapping.py` | 异构 vocabulary 的 Token-Level Intersection 映射 |
+| `dynamic/` | dynamic speculative decoding 的 batch-size schedule 辅助 |
 | `metadata.py` | 共享数据结构 |
 | `utils.py` | rejection sampler 数学辅助 |
+
+验证与采样还分布在 `v1/sample/rejection_sampler.py`；Model Runner V2 的方法专用 speculator 和 block verification 位于 `v1/worker/gpu/spec_decode/`。完整调用链见 [`04-optimizations/02-speculative-decoding.md`](../04-optimizations/02-speculative-decoding.md)。
 
 ### 3.9 `v1/pool/`：embedding/pooling 模型用
 

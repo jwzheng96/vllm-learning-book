@@ -1096,7 +1096,13 @@ _md_link_pattern = re.compile(r'(href|src)="([^"#]+?)\.md(#[^"]*)?"')
 
 
 def rewrite_md_links(html: str) -> str:
-    return _md_link_pattern.sub(lambda m: f'{m.group(1)}="{m.group(2)}.html{m.group(3) or ""}"', html)
+    def replace(match: re.Match[str]) -> str:
+        target = match.group(2)
+        if "://" in target or target.startswith("//"):
+            return match.group(0)
+        return f'{match.group(1)}="{target}.html{match.group(3) or ""}"'
+
+    return _md_link_pattern.sub(replace, html)
 
 
 def add_three_line_class(html: str) -> str:
