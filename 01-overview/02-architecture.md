@@ -58,18 +58,18 @@ flowchart TD
 逻辑三层背后的真实进程长这样（每个 Worker 进程绑一张 GPU）：
 
 <!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
-[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/core_client.py#L503)
 <!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"launch_core_engines"} -->
-[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L1072)
+[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/utils.py#L1104)
 <!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core"} -->
-[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1253)
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/core.py#L1291)
 <!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"MultiprocExecutor"} -->
-[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L103)
+[源码锚点：vllm/v1/executor/multiproc_executor.py · MultiprocExecutor](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/executor/multiproc_executor.py#L111)
 
 <!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process"} -->
-[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L662)
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/executor/multiproc_executor.py#L705)
 <!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
-[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/executor/multiproc_executor.py#L853)
 
 ```mermaid
 flowchart TB
@@ -296,12 +296,12 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 ### 7.1 操作系统课
 
 <!-- vllm-source: {"path":"vllm/v1/engine/core.py","symbol":"EngineCoreProc.run_engine_core","anchor":"def signal_handler(signum, frame):"} -->
-[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core.py#L1311)
+[源码锚点：vllm/v1/engine/core.py · EngineCoreProc.run_engine_core](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/core.py#L1348)
 <!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.make_worker_process","anchor":"ready_reader, ready_writer = context.Pipe(duplex=False)"} -->
-[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L674)
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.make_worker_process](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/executor/multiproc_executor.py#L717)
 
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"SpinCondition"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · SpinCondition](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L104)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · SpinCondition](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L112)
 
 | 课上学过的 | vLLM 里的体现 | 详见 |
 | --- | --- | --- |
@@ -341,9 +341,9 @@ vLLM 几乎每一个设计决定都能在本科系统课里找到原型。把这
 ### 7.3 计算机体系结构 / GPU 编程
 
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue","anchor":"buf[1:offset] = to_bytes_big(len(all_buffers), 2)  # oob buf count"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L759)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L869)
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.dequeue","anchor":"buf_len = from_bytes_big(buf[offset:buf_offset])"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.dequeue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L787)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.dequeue](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L897)
 
 | 课上学过的 | vLLM 里的体现 | 详见 |
 | --- | --- | --- |

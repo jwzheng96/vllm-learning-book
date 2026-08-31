@@ -22,7 +22,7 @@ Scheduler 文章讲了"一步内怎么决定跑谁"，本节是其中**队列层
 ## 1. 仅有的 2 种官方策略
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/request_queue.py","symbol":"SchedulingPolicy"} -->
-[源码锚点：vllm/v1/core/sched/request_queue.py · SchedulingPolicy](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/request_queue.py#L13)
+[源码锚点：vllm/v1/core/sched/request_queue.py · SchedulingPolicy](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/request_queue.py#L13)
 
 源码：`vllm/v1/core/sched/request_queue.py`
 
@@ -35,7 +35,7 @@ class SchedulingPolicy(Enum):
 **没有 SJF（最短作业优先）、没有 EDF（最早 deadline）、没有 weighted fair queueing。** 想要这些都得自己在 routing 层做，或者通过 `--scheduling-policy=priority` + 自定义 `request.priority` 字段间接表达。
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.policy = SchedulingPolicy(self.scheduler_config.policy)"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L177)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L192)
 
 策略在启动时定，**全局生效**（`scheduler.py`），运行中不能切。
 
@@ -60,9 +60,9 @@ class SchedulingPolicy(Enum):
 ## 3. 多个队列：`waiting` 与 `skipped_waiting`
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.waiting = create_request_queue(self.policy)"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L183)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L198)
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.__init__","anchor":"self.skipped_waiting = create_request_queue(self.policy)"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L185)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.__init__](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L200)
 
 `scheduler.py` 创建两个：
 
@@ -72,9 +72,9 @@ self.skipped_waiting = create_request_queue(self.policy)
 ```
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"#    its max_total_tokens or max_model_len."} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L546)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L642)
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L501)
 
 `skipped_waiting` 是个"被本步跳过"的旁置队列。常见跳过原因（`scheduler.py` 区段）：
 
@@ -90,7 +90,7 @@ self.skipped_waiting = create_request_queue(self.policy)
 即：**FCFS 模式下，如果队头请求暂时不能跑（如等 encoder cache），后面的小请求会被先跑——FCFS 不严格守"先来先服务"**。这通常是好事（throughput +），但生产中调试"为什么我的请求被晚到的请求挤了"时要记住。
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler._select_waiting_queue_for_scheduling","anchor":"if self.policy == SchedulingPolicy.FCFS:"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler._select_waiting_queue_for_scheduling](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L1967)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler._select_waiting_queue_for_scheduling](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L2241)
 
 到下一步 `_select_waiting_queue_for_scheduling()`（`scheduler.py`）会决定先消费哪个：
 
@@ -102,9 +102,9 @@ self.skipped_waiting = create_request_queue(self.policy)
 ## 4. 抢占（preempt）：什么时候触发，谁被踢
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L501)
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"preempted_req.get_num_encoder_embeds(i)"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L591)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L700)
 
 抢占只在**给 running 请求 allocate KV 失败**时触发（`scheduler.py`）：
 
@@ -316,9 +316,9 @@ curl :8000/metrics | grep -E "preempt|kv_cache_usage|queue_time"
 
 - 下一节：[`03-kv-cache-manager.md`](03-kv-cache-manager.md)（理解 preempt 时 KV 是怎么 allocate / free 的）。
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"#    its max_total_tokens or max_model_len."} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L546)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L642)
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule","anchor":"preempted_req.get_num_encoder_embeds(i)"} -->
-[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L591)
+[源码锚点：vllm/v1/core/sched/scheduler.py · Scheduler.schedule](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/sched/scheduler.py#L700)
 
 - 想看源码：`vllm/v1/core/sched/request_queue.py`、`vllm/v1/core/sched/scheduler.py` 的 preempt 段。
 - 想做实验：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md) 第 4 个实验"batching 极限"中可手工触发 preempt 观察 `num_preemptions` 增长。

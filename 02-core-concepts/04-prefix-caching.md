@@ -66,7 +66,7 @@ vllm serve <model> [--no-enable-prefix-caching]   # 关闭
 ## 4. Hash 算法详解（V1）
 
 <!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
-[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/kv_cache_utils.py#L621)
 
 源码：`vllm/v1/core/kv_cache_utils.py` 的 `hash_block_tokens()`。
 
@@ -99,7 +99,7 @@ flowchart LR
 代码对应：
 
 <!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
-[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/kv_cache_utils.py#L621)
 
 ```python
 # vllm/v1/core/kv_cache_utils.py
@@ -309,7 +309,7 @@ A: 不会。cached 但 ref_cnt=0 的 block 仍在 free queue 里，可以被新�
 
 - 下一节 [`05-chunked-prefill.md`](05-chunked-prefill.md)：理解 prefix cache 命中后"剩余 prefill"是怎么切的。
 <!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
-[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/kv_cache_utils.py#L621)
 
 - 想看源码：`vllm/v1/core/kv_cache_utils.py` (`hash_block_tokens`) 和 `vllm/v1/core/kv_cache_manager.py`（allocate / free）。
 - 想做实验：[`07-hands-on/03-mini-experiments.md`](../07-hands-on/03-mini-experiments.md) 第 3 个实验"prefix hit"。

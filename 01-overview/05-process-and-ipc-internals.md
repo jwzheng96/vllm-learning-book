@@ -156,7 +156,7 @@ if __name__ == "__main__":
 ### 2.3 vLLM 如何选择
 
 <!-- vllm-source: {"path":"vllm/utils/system_utils.py","symbol":"_maybe_force_spawn"} -->
-[源码锚点：vllm/utils/system_utils.py · _maybe_force_spawn](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/system_utils.py#L126)
+[源码锚点：vllm/utils/system_utils.py · _maybe_force_spawn](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/utils/system_utils.py#L126)
 
 当前实现由 `get_mp_context()` 统一选择，源码是 `vllm/utils/system_utils.py`：
 
@@ -209,7 +209,7 @@ vLLM 没有用一种机制包打天下，而是把它们组合起来。
 ## 4. ZMQ 从零开始
 
 <!-- vllm-source: {"path":"vllm/utils/network_utils.py","symbol":"make_zmq_socket"} -->
-[源码锚点：vllm/utils/network_utils.py · make_zmq_socket](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/utils/network_utils.py#L284)
+[源码锚点：vllm/utils/network_utils.py · make_zmq_socket](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/utils/network_utils.py#L310)
 
 ### 4.1 ZMQ 是什么，不是什么
 
@@ -330,11 +330,11 @@ vLLM 的 `make_zmq_socket()` 对 `PULL/DEALER/ROUTER` 设置 `RCVHWM=0`，对 `P
 ## 5. vLLM V1 的进程拓扑
 
 <!-- vllm-source: {"path":"vllm/v1/engine/core_client.py","symbol":"MPClient"} -->
-[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/core_client.py#L467)
+[源码锚点：vllm/v1/engine/core_client.py · MPClient](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/core_client.py#L503)
 <!-- vllm-source: {"path":"vllm/v1/engine/utils.py","symbol":"launch_core_engines"} -->
-[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/engine/utils.py#L1072)
+[源码锚点：vllm/v1/engine/utils.py · launch_core_engines](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/engine/utils.py#L1104)
 <!-- vllm-source: {"path":"vllm/v1/executor/multiproc_executor.py","symbol":"WorkerProc.worker_main"} -->
-[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/executor/multiproc_executor.py#L810)
+[源码锚点：vllm/v1/executor/multiproc_executor.py · WorkerProc.worker_main](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/executor/multiproc_executor.py#L853)
 
 ### 5.1 单个在线实例的主链
 
@@ -430,7 +430,7 @@ sequenceDiagram
 ### 6.3 msgpack 主帧与附属 buffer
 
 <!-- vllm-source: {"path":"vllm/v1/serial_utils.py","symbol":"MsgpackEncoder"} -->
-[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/serial_utils.py#L136)
+[源码锚点：vllm/v1/serial_utils.py · MsgpackEncoder](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/serial_utils.py#L136)
 
 `MsgpackEncoder` 位于 `vllm/v1/serial_utils.py`：
 
@@ -460,11 +460,11 @@ sequenceDiagram
 ## 7. EngineCore ↔ Worker：MessageQueue 与共享内存
 
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L365)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L464)
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"ShmRingBuffer"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L216)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · ShmRingBuffer](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L250)
 <!-- vllm-source: {"path":"vllm/distributed/device_communicators/shm_broadcast.py","symbol":"MessageQueue.enqueue"} -->
-[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/distributed/device_communicators/shm_broadcast.py#L727)
+[源码锚点：vllm/distributed/device_communicators/shm_broadcast.py · MessageQueue.enqueue](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/distributed/device_communicators/shm_broadcast.py#L823)
 
 ### 7.1 先纠正“数据面完全不用 ZMQ”
 

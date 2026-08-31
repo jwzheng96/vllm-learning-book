@@ -72,7 +72,7 @@ class KVCacheBlock:
 ## 3. BlockPool：物理 block 的中央仓库
 
 <!-- vllm-source: {"path":"vllm/v1/core/block_pool.py","symbol":"BlockPool"} -->
-[源码锚点：vllm/v1/core/block_pool.py · BlockPool](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/block_pool.py#L143)
+[源码锚点：vllm/v1/core/block_pool.py · BlockPool](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/block_pool.py#L143)
 
 `vllm/v1/core/block_pool.py` — `class BlockPool`
 
@@ -183,7 +183,7 @@ def cache_full_blocks(self, request, blocks, num_cached_blocks, num_full_blocks,
 ## 4. KVCacheManager：Scheduler 看到的接口
 
 <!-- vllm-source: {"path":"vllm/v1/core/kv_cache_manager.py","symbol":"KVCacheManager.__init__"} -->
-[源码锚点：vllm/v1/core/kv_cache_manager.py · KVCacheManager.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_manager.py#L115)
+[源码锚点：vllm/v1/core/kv_cache_manager.py · KVCacheManager.__init__](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/kv_cache_manager.py#L119)
 
 `vllm/v1/core/kv_cache_manager.py` — `class KVCacheManager`
 

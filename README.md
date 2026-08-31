@@ -1,11 +1,12 @@
 # vLLM 学习手册
 
 <!-- vllm-version:start -->
-- Validated vLLM: `b23bd73f540175f9e117eaee5029cd7d8df63964`
-- Upstream committed: `2026-07-20T15:32:54+00:00`
-- Validated: `2026-08-25T07:44:40Z`
-- Latest candidate: `5e379a361e3ea8bb82b7efd768c36f39a0cf32fd`
-- Candidate lag: `1463` commits
+- Validated vLLM: `699e180df48d78b5275d528124641c67b4b1664c`
+- Upstream committed: `2026-08-31T09:44:42Z`
+- Validated: `2026-08-31T09:47:16Z`
+- Latest candidate: `699e180df48d78b5275d528124641c67b4b1664c`
+- Candidate lag: `1691` commits
+- Impact report: [artifacts/source-sync/latest-impact.md](artifacts/source-sync/latest-impact.md)
 <!-- vllm-version:end -->
 
 [![Pages](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml/badge.svg)](https://github.com/jwzheng96/vllm-learning-book/actions/workflows/pages.yml)
@@ -218,7 +219,7 @@ flowchart TB
 ## vLLM 仓库地标速查
 
 <!-- vllm-source: {"path":"vllm/v1/core/kv_cache_utils.py","symbol":"hash_block_tokens"} -->
-[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/kv_cache_utils.py#L596)
+[源码锚点：vllm/v1/core/kv_cache_utils.py · hash_block_tokens](https://github.com/vllm-project/vllm/blob/699e180df48d78b5275d528124641c67b4b1664c/vllm/v1/core/kv_cache_utils.py#L621)
 
 | 想知道什么 | 去哪里看 |
 | --- | --- |

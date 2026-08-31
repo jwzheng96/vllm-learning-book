@@ -2,7 +2,7 @@
   "schema_version": 1,
   "repository": "https://github.com/vllm-project/vllm",
   "branch": "main",
-  "commit": "b23bd73f540175f9e117eaee5029cd7d8df63964",
-  "committed_at": "2026-07-20T15:32:54+00:00",
-  "validated_at": "2026-08-25T07:44:40Z"
+  "commit": "699e180df48d78b5275d528124641c67b4b1664c",
+  "committed_at": "2026-08-31T09:44:42Z",
+  "validated_at": "2026-08-31T09:47:16Z"
 }
