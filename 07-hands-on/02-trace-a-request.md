@@ -46,7 +46,7 @@ vLLM 自带每 step 的统计输出。在创建 LLM 时加：
 llm = LLM(
     model="facebook/opt-125m",
     enforce_eager=True,
-    disable_log_stats=False,    # 默认是 False，意为开启
+    disable_log_stats=False,    # 默认值是 True，意为不打印统计日志，这里设为False表示开启统计日志
 )
 ```
 
