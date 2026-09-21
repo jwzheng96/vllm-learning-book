@@ -73,7 +73,7 @@ indexer.py              ← MLA 特定的 indexer
 ```
 
 <!-- vllm-source: {"path":"vllm/model_executor/layers/mla.py","symbol":"MultiHeadLatentAttentionWrapper"} -->
-[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/mla.py#L34)
+[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/model_executor/layers/mla.py#L44)
 
 主入口（包装层）：`vllm/model_executor/layers/mla.py`：
 
@@ -462,13 +462,13 @@ DeepSeek-V3 前 `first_k_dense_replace = 3` 层是普通 DeepseekV3MLP（dense F
 
 - `vllm/v1/attention/backends/mla/*`（flashmla.py、cutlass_mla.py、flashattn_mla.py、indexer.py 等）
 <!-- vllm-source: {"path":"vllm/model_executor/layers/mla.py","symbol":"MLAModules"} -->
-[源码锚点：vllm/model_executor/layers/mla.py · MLAModules](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/mla.py#L14)
+[源码锚点：vllm/model_executor/layers/mla.py · MLAModules](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/model_executor/layers/mla.py#L22)
 <!-- vllm-source: {"path":"vllm/model_executor/layers/mla.py","symbol":"MultiHeadLatentAttentionWrapper"} -->
-[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/mla.py#L34)
+[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/model_executor/layers/mla.py#L44)
 <!-- vllm-source: {"path":"vllm/model_executor/layers/mla.py","symbol":"MultiHeadLatentAttentionWrapper.__init__"} -->
-[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper.__init__](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/mla.py#L53)
+[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper.__init__](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/model_executor/layers/mla.py#L63)
 <!-- vllm-source: {"path":"vllm/model_executor/layers/mla.py","symbol":"MultiHeadLatentAttentionWrapper.forward"} -->
-[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper.forward](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/model_executor/layers/mla.py#L120)
+[源码锚点：vllm/model_executor/layers/mla.py · MultiHeadLatentAttentionWrapper.forward](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/model_executor/layers/mla.py#L163)
 
 - `vllm/model_executor/layers/mla.py`（MLAModules / MultiHeadLatentAttentionWrapper）
 - `vllm/model_executor/layers/mamba/{mamba_mixer,mamba_mixer2,gdn_linear_attn,short_conv}.py`

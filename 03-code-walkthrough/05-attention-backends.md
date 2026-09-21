@@ -81,7 +81,7 @@ class AttentionBackend(abc.ABC):
 ## 3. FlashAttentionBackend：一个重要 CUDA 候选
 
 <!-- vllm-source: {"path":"vllm/v1/attention/backends/flash_attn.py","symbol":"FlashAttentionBackend"} -->
-[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionBackend](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/attention/backends/flash_attn.py#L71)
+[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionBackend](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/v1/attention/backends/flash_attn.py#L283)
 
 `vllm/v1/attention/backends/flash_attn.py`
 
@@ -110,7 +110,7 @@ class FlashAttentionBackend(AttentionBackend):
 ## 4. FlashAttentionMetadata：每步的"地图"
 
 <!-- vllm-source: {"path":"vllm/v1/attention/backends/flash_attn.py","symbol":"FlashAttentionMetadata"} -->
-[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionMetadata](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/attention/backends/flash_attn.py#L232)
+[源码锚点：vllm/v1/attention/backends/flash_attn.py · FlashAttentionMetadata](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/v1/attention/backends/flash_attn.py#L454)
 
 `flash_attn.py`，注释画了精彩的一图：
 

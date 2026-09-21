@@ -20,7 +20,7 @@
 ## 1. 先抓住统一模型
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler.schedule"} -->
-[源码锚点：Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L421)
+[源码锚点：Scheduler.schedule](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/v1/core/sched/scheduler.py#L570)
 
 当前注释先否定“prefill phase / decode phase”二分法。每个请求只有两组关键量：
 
@@ -90,7 +90,7 @@ C 的 8 个 cache-hit token 影响 `num_computed_tokens` 起点，但不会消�
 ## 5. KV 不够时发生什么
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/scheduler.py","symbol":"Scheduler._preempt_request"} -->
-[源码锚点：Scheduler._preempt_request](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/scheduler.py#L1208)
+[源码锚点：Scheduler._preempt_request](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/v1/core/sched/scheduler.py#L1528)
 
 当前 `_preempt_request()` 做五件事：
 
@@ -112,7 +112,7 @@ victim 选择：
 ## 6. `SchedulerOutput` 是 runner 的差量协议
 
 <!-- vllm-source: {"path":"vllm/v1/core/sched/output.py","symbol":"SchedulerOutput"} -->
-[源码锚点：SchedulerOutput](https://github.com/vllm-project/vllm/blob/b23bd73f540175f9e117eaee5029cd7d8df63964/vllm/v1/core/sched/output.py#L191)
+[源码锚点：SchedulerOutput](https://github.com/vllm-project/vllm/blob/b8cf2753825d05d7f41eb4747480b78934953aac/vllm/v1/core/sched/output.py#L228)
 
 | 字段族 | 作用 |
 | --- | --- |
